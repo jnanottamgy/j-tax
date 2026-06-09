@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-06-09 (Session 6 — Proposals & Quotation System)
 **Branch:** `main`
-**Last commit:** `e2136bf` — Phase 3–6 audit fixes
+**Last commit:** `cc208bc` — docs: update session 6 state documents
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
 **Test credentials:** `admin@jtax.test` / `JTax@Admin2026!` (PARTNER role)
 
@@ -20,6 +20,8 @@ J-TAX is an enterprise tax operations management platform for Indian CA/tax firm
 - WhatsApp + email messaging (via Resend)
 - Client-facing portal (separate UI for CLIENT-role users)
 - Reporting center (CSV/XLSX/PDF export)
+- **Workforce Intelligence** (session tracking, attendance, performance, alerts — PARTNER-only)
+- **Proposals & Quotations** (Lead CRM, quotation builder, PDF, email automation, client portal)
 
 ---
 
@@ -81,7 +83,8 @@ j-tax/
 │   │   ├── settings.ts               # saveNotificationPreferences + getNotificationPreferences
 │   │   ├── client-360.ts
 │   │   └── client-portal-documents.ts
-│   ├── api/ (clients, auth/callback, cron/payments)
+│   ├── (quotation-portal)/q/[token]/   # Public client quotation portal (no auth)
+│   ├── api/ (clients, auth/callback, cron/payments, cron/quotation-followups, quotations/[id]/pdf)
 │   ├── unauthorized/page.tsx
 │   ├── error.tsx                     # Safe generic message (no raw error.message)
 │   └── not-found.tsx
@@ -116,6 +119,9 @@ All required vars set in `.env`:
 - `FROM_EMAIL` ✅
 - `NEXT_PUBLIC_APP_URL` ✅ (http://localhost:3000)
 - `CRON_SECRET` ✅ (random hex)
+- `FIRM_NAME` ⚠️ Optional — defaults to "TaxWise Consultants" in PDF/emails
+- `FIRM_PHONE` ⚠️ Optional — defaults to "+91-XXXXXXXXXX"
+- `FIRM_ADDRESS` ⚠️ Optional — defaults to "India"
 
 ---
 
@@ -165,12 +171,12 @@ All required vars set in `.env`:
 ## 7. GIT LOG (last 8 commits)
 
 ```
+cc208bc  docs: update session 6 state documents for proposals system
+222c43e  feat(proposals): quotation & proposal automation system
+ae17532  feat(workforce): enterprise employee performance & work tracking system
+4f5cef7  docs: add session 4 fixes to FIX_LOG.md
+abccd21  docs: update state documents after session 4 customer audit
 e2136bf  fix(audit): phases 3-6 — mock data, validations, production readiness
 6e7f386  fix(audit): dead buttons, onboarding data, setup checklist
-4f2bb59  docs: update session state documents for session 3
-368e8f5  chore: add GitHub Actions CI pipeline and Vercel cron config
-5b07df3  feat: client portal document upload + dashboard query caching
-13877ab  chore: remove dead lib/notifications directory
 19c8a91  fix: startup blockers, 19 security fixes, toUserError across all actions
-20b0c81  Initial upload
 ```
