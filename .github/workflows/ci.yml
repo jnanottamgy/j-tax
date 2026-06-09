@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Type-check & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Minimal env needed so Next.js can bundle NEXT_PUBLIC_* vars at build time.
+      # No real Supabase project is contacted — we just need the vars to be non-empty.
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder_anon_key
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
+      SUPABASE_SERVICE_ROLE_KEY: placeholder_service_role
+      RESEND_API_KEY: re_placeholder
+      FROM_EMAIL: noreply@example.com
+      CRON_SECRET: placeholder_cron_secret
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npx next build
+        env:
+          # Skip Prisma DB connection on build — no real DB in CI
+          SKIP_DB_VALIDATION: "1"
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npx next lint || true
+        # `|| true` because ESLint is not yet configured — remove once eslintrc is added
