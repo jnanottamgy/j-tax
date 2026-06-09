@@ -1,6 +1,6 @@
 # J-TAX Fix Log
 
-**Last updated:** 2026-06-09 (Session 3)
+**Last updated:** 2026-06-09 (Session 4 — Customer Audit)
 **Branch:** `main`
 
 ---
@@ -164,6 +164,125 @@
 
 ---
 
+---
+
+## SESSION 4 — CUSTOMER AUDIT (7-Phase First-Time User Audit)
+
+### FIX-A01 — Duplicate PageHeader + Dead `/clients/add` Link
+- **Severity:** 🔴 Critical — broken button on first page a new user visits
+- **Root cause:** `app/(app)/clients/page.tsx` rendered its own `PageHeader` with a `<Link href="/clients/add">` that routes to a non-existent page. `ClientsPageClient` already renders its own `PageHeader` with a working `AddClientDialog` modal.
+- **Fix:** Removed the server-component `PageHeader` and dead link entirely. The client component's header (with the working dialog) is the sole header now.
+- **Files:** `app/(app)/clients/page.tsx`
+
+---
+
+### FIX-A02 — `ClientsEmptyState` "Add client" Button Had No Handler
+- **Severity:** 🔴 Critical — dead button in the empty state for zero clients
+- **Root cause:** `Button` rendered with no `onClick`, no `asChild`, no `href`
+- **Fix:** Replaced dead button with guidance text pointing to the "Add Client" button in the action bar above
+- **Files:** `components/clients/clients-empty-state.tsx`
+
+---
+
+### FIX-A03 — 9 Dead Route Hrefs in `empty-states.tsx`
+- **Severity:** 🔴 Critical — every empty-state CTA navigated to a 404
+- **Root cause:** Routes like `/clients/new`, `/work-tracker/new`, `/documents/upload`, `/payments/new`, `/payments/settings`, `/compliance/setup`, `/messaging/new` do not exist
+- **Fix:** Replaced all dead hrefs with real existing routes or `onAction` callback props. Updated `EmptyStateInline` to support both `href` and `onClick` action types.
+- **Files:** `components/empty-states/empty-states.tsx`
+
+---
+
+### FIX-A04 — Onboarding Wizard Discarded All Form Data
+- **Severity:** 🟠 High — firm name, employee setup, service config, notification prefs were collected but never saved
+- **Root cause:** All `save*` server actions only updated `onboardingStep` counter; all input data was lost
+- **Fix:** Each action now persists data to Supabase `user_metadata` via `supabase.auth.updateUser({ data: {...} })`:
+  - Firm info: `firm_name`, `firm_gstin`, `firm_address`, `firm_phone`, `firm_email`
+  - Employee setup: `onboarding_employee_count`, `onboarding_departments`
+  - Service config: `onboarding_services`, `onboarding_reminder_days`
+  - Notification prefs: `notification_email`, `notification_sms`, `notification_whatsapp`, `notification_reminder_frequency`
+- **Files:** `app/actions/onboarding.ts`
+
+---
+
+### FIX-A05 — Settings Notification Toggles Were UI-Only (Never Saved)
+- **Severity:** 🟠 High — settings silently lost on every page reload
+- **Root cause:** `useState` in `SettingsPageClient` with no persistence; comment said "requires schema addition"
+- **Fix:**
+  - Added `saveNotificationPreferences(prefs)` → stores to Supabase `user_metadata`
+  - Added `getNotificationPreferences()` → reads from Supabase `user_metadata`
+  - `settings/page.tsx` made async; loads saved prefs server-side and passes to client
+  - "Save Preferences" button added with loading/success/error states
+- **Files:** `app/actions/settings.ts`, `app/(app)/settings/page.tsx`, `components/settings/settings-page-client.tsx`
+
+---
+
+### FIX-A06 — No Post-Onboarding Guidance (New User Stranded)
+- **Severity:** 🟠 High — after completing the wizard, new users land on an empty dashboard with no next steps
+- **Fix:** Created `SetupChecklist` dashboard widget:
+  - 6 steps: Add employees → Add clients → Create tasks → Review compliance → Upload documents → Create invoice
+  - Live DB counts (via cached dashboard fetcher)
+  - Visual progress bar, collapse/dismiss controls
+  - Only shown to PARTNER/MANAGER; vanishes once all steps complete
+- **Files:** `components/dashboard/setup-checklist.tsx`, `app/(app)/page.tsx`
+
+---
+
+### FIX-A07 — Onboarding Firm Name Not Required
+- **Severity:** 🟡 Medium — wizard step 1 could be submitted with an empty firm name
+- **Fix:** `handleNext()` returns early if `firmInfo.firmName` is blank; Next button disabled; validation hint shown
+- **Files:** `components/onboarding/onboarding-wizard.tsx`, `app/actions/onboarding.ts`
+
+---
+
+### FIX-B01 — `whatsapp-chat.tsx` Showed Hardcoded Fake Messages
+- **Severity:** 🟠 High — user sees fabricated "Hello! This is a test message." conversation
+- **Root cause:** `loadMessages()` had a `// TODO:` comment and populated state with 2 hardcoded mock messages
+- **Fix:** `loadMessages()` now sets `messages([])` (empty); real empty state shown; WhatsApp API config banner added
+- **Files:** `components/messaging/whatsapp-chat.tsx`
+
+---
+
+### FIX-B02 — `client-communication-history.tsx` Had Hardcoded Mock Messages
+- **Severity:** 🟠 High — Client 360 communication tab showed fake "GSTR-1 reminder" and "Invoice ₹50,000" messages
+- **Root cause:** Same `// TODO:` + mock data pattern; `getClientCommunicationHistory()` action already existed but was never called
+- **Fix:** `loadMessages()` now calls `getClientCommunicationHistory(clientId)` via dynamic import; dates normalized from ISO strings; improved empty state copy
+- **Files:** `components/messaging/client-communication-history.tsx`
+
+---
+
+### FIX-B03 — Onboarding Employee/Service Steps Data Not Saved (Duplicate)
+- Covered by FIX-A04 — same root cause, same fix.
+
+---
+
+### FIX-B04 — Invoice Due Date Could Be Before Issue Date
+- **Severity:** 🟡 Medium — invalid invoices could be created (e.g., due Jan 1, issued Jan 31)
+- **Fix:** Added Zod cross-field `.refine()`: `new Date(dueDate) >= new Date(issueDate)`, path `["dueDate"]`
+- **Files:** `lib/validations/invoice.ts`
+
+---
+
+### FIX-B05 — Phone/WhatsApp Fields Accepted Any String
+- **Severity:** 🟡 Medium — `+44 (20) 1234-5678` and `abc123` both accepted
+- **Fix:** Added `.refine()` with regex `/^[+]?[\d\s\-().]{7,20}$/` to both `phone` and `whatsapp` fields
+- **Files:** `lib/validations/client.ts`
+
+---
+
+### FIX-B06 — `error.tsx` Exposed Raw `error.message` to Users
+- **Severity:** 🟡 Medium — internal error details visible (Prisma errors, stack hints)
+- **Fix:** Replaced `{error.message || "..."}` with a safe generic message; error still logged to console for debugging
+- **Files:** `app/error.tsx`
+
+---
+
+### FIX-B07 — Dashboard `pendingDocuments` Hardcoded to 0
+- **Severity:** 🟡 Medium — Executive Summary KPI card always showed "0 Pending Documents"
+- **Fix:** Added `checklistDocCount` to cached fetcher's Promise.all; returned as `totalDocuments`; passed to `ExecutiveSummary`
+- **Files:** `app/(app)/page.tsx`
+
+---
+
 ## REMAINING WORK
 
 | Item | Priority | Notes |
@@ -171,7 +290,8 @@
 | Supabase RLS policies | HIGH | Application-layer auth only — no DB-level protection |
 | Upstash Redis rate limiter | HIGH | In-memory rate limiter resets on cold starts |
 | Playwright E2E tests | MEDIUM | No automated tests at all |
-| ESLint configuration | LOW | CI lint is permissive until `.eslintrc.json` added |
+| ESLint configuration | LOW | CI lint is permissive (`|| true`) |
 | `any` types in Prisma where clauses | LOW | `where: any` in listEmployeesData and others |
+| WhatsApp Business API | LOW | Needs WHATSAPP_API_TOKEN + WHATSAPP_PHONE_NUMBER_ID |
 | Supabase email templates | LOW | Using Supabase defaults |
-| Supabase `documents` bucket | SETUP | Check dashboard — bucket may need manual creation |
+| Supabase `documents` bucket | SETUP | Verify in dashboard — `assertDocumentBucketExists()` creates on first upload |
