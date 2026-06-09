@@ -1,0 +1,734 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Staff & auth sync ───────────────────────────────────────────────────────
+
+enum Role {
+  PARTNER
+  MANAGER
+  EXECUTIVE
+  CLIENT
+}
+
+model User {
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  role            Role
+  onboardingCompleted Boolean @default(false)
+  onboardingStep  Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  employee        Employee?
+  notifications   Notification[]
+}
+
+model Employee {
+  id         String   @id @default(cuid())
+  userId     String?  @unique
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name       String
+  email      String   @unique
+  department String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  clients Client[]
+  tasks    Task[]
+
+  @@index([name])
+  @@index([department])
+  @@map("employees")
+}
+
+// ─── Client master entity ────────────────────────────────────────────────────
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  ON_HOLD
+}
+
+enum ClientPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ServiceType {
+  GST_RETURN
+  INCOME_TAX
+  TDS
+  PAYROLL
+  BOOKKEEPING
+  AUDIT
+  COMPANY_LAW
+  OTHER
+}
+
+enum ServiceFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  ONE_TIME
+}
+
+model Client {
+  id                   String         @id @default(cuid())
+  clientCode           String         @unique
+  name                 String
+  gstin                String? @unique
+  pan                  String? @unique
+  email                String?
+  phone                String?
+  whatsapp             String?
+  address              String?
+  notes                String?
+  status               ClientStatus   @default(PENDING)
+  priority             ClientPriority @default(MEDIUM)
+  assignedEmployeeId   String?
+  assignedEmployeeName String?
+  assignedEmployee     Employee?      @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  phoneNumber          String?
+
+  services             ClientService[]
+  tasks                Task[]
+  complianceSchedules  ComplianceSchedule[]
+  documents            Document[]
+  invoices             Invoice[]
+  reminders            Reminder[]
+  messages             Message[]
+  complianceEvents     ComplianceEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([priority])
+  @@index([name])
+  @@index([assignedEmployeeId])
+  @@index([status, priority])
+  @@index([assignedEmployeeId, status])
+  @@map("clients")
+}
+
+model ClientService {
+  id          String           @id @default(cuid())
+  clientId    String
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  serviceType ServiceType
+  frequency   ServiceFrequency
+  isActive    Boolean          @default(true)
+  nextDueDate DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([clientId, serviceType])
+  @@map("client_services")
+}
+
+// ─── Connected modules (placeholders ready) ────────────────────────────────
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  DATA_AWAITED
+  UNDER_REVIEW
+  FILED_DONE
+  ON_HOLD
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id                String           @id @default(cuid())
+  clientId          String
+  client            Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title             String
+  description       String?
+  status            TaskStatus       @default(NOT_STARTED)
+  priority          TaskPriority     @default(MEDIUM)
+  dueDate           DateTime?
+  completionDate    DateTime?
+  serviceType       ServiceType?
+  assignedEmployeeId String?
+  assignedEmployee  Employee?        @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  remarks           String?
+  isOverdue         Boolean          @default(false)
+  escalated         Boolean          @default(false)
+  escalationLevel   Int              @default(0)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  comments          TaskComment[]
+  attachments       TaskAttachment[]
+  automations       TaskAutomation[]
+  complianceEvents  ComplianceEvent[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@index([assignedEmployeeId])
+  @@index([status, priority])
+  @@index([assignedEmployeeId, status])
+  @@index([clientId, status])
+  @@index([dueDate, status])
+  @@index([title])
+  @@map("tasks")
+}
+
+enum ComplianceStatus {
+  SCHEDULED
+  DUE
+  COMPLETED
+  OVERDUE
+}
+
+model ComplianceSchedule {
+  id           String           @id @default(cuid())
+  clientId     String
+  client       Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title        String
+  jurisdiction String?
+  dueDate      DateTime
+  status       ComplianceStatus @default(SCHEDULED)
+  serviceType  ServiceType?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([clientId])
+  @@index([dueDate])
+  @@index([status])
+  @@index([clientId, dueDate])
+  @@index([dueDate, status])
+  @@map("compliance_schedules")
+}
+
+// ─── Document Vault Models ─────────────────────────────────────────────────
+
+enum DocumentCategory {
+  GST
+  TDS
+  ROC
+  AUDIT
+  INCOME_TAX
+  PAYROLL
+  BANK_STATEMENTS
+  INVOICES
+  AGREEMENTS
+  OTHER
+}
+
+model Document {
+  id          String            @id @default(cuid())
+  clientId    String
+  client      Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title       String
+  category    DocumentCategory  @default(OTHER)
+  fileName    String
+  fileSize    Int
+  fileType    String
+  storagePath String            // Supabase Storage path
+  url         String?           // Temporary signed URL
+  uploadedBy  String
+  description String?
+  isConfidential Boolean         @default(false)
+  version     Int               @default(1)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  versions    DocumentVersion[]
+  tags        DocumentTag[]
+  activities  DocumentActivity[]
+
+  @@index([clientId])
+  @@index([category])
+  @@index([uploadedBy])
+  @@index([createdAt])
+  @@index([clientId, category])
+  @@index([uploadedBy, createdAt])
+  @@index([title])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version     Int
+  fileName    String
+  fileSize    Int
+  storagePath String
+  uploadedBy  String
+  changeNotes String?
+  createdAt   DateTime @default(now())
+
+  @@index([documentId])
+  @@index([version])
+  @@map("document_versions")
+}
+
+model DocumentTag {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag         String
+  createdAt   DateTime @default(now())
+
+  @@unique([documentId, tag])
+  @@index([documentId])
+  @@index([tag])
+  @@map("document_tags")
+}
+
+enum DocumentActivityType {
+  UPLOADED
+  DOWNLOADED
+  VIEWED
+  RENAMED
+  DELETED
+  VERSION_CREATED
+  TAG_ADDED
+  TAG_REMOVED
+}
+
+model DocumentActivity {
+  id          String              @id @default(cuid())
+  documentId  String
+  document    Document            @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId      String
+  activityType DocumentActivityType
+  metadata    Json?
+  createdAt   DateTime            @default(now())
+
+  @@index([documentId])
+  @@index([userId])
+  @@index([activityType])
+  @@map("document_activities")
+}
+
+// ─── WhatsApp Automation Models ────────────────────────────────────────────
+
+enum MessageStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  RETRYING
+}
+
+enum TemplateType {
+  DOCUMENT_REMINDER
+  COMPLIANCE_REMINDER
+  PAYMENT_REMINDER
+  TASK_ASSIGNMENT
+  OVERDUE_NOTIFICATION
+  CUSTOM
+}
+
+model MessageTemplate {
+  id          String        @id @default(cuid())
+  name        String
+  type        TemplateType  @default(CUSTOM)
+  content     String        // Template content with variables like {{client_name}}
+  variables   Json?         // Array of variable names: ["client_name", "due_date"]
+  isActive    Boolean       @default(true)
+  createdBy   String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  messages    Message[]
+
+  @@index([type])
+  @@index([isActive])
+  @@map("message_templates")
+}
+
+model Message {
+  id          String        @id @default(cuid())
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  phoneNumber String        // WhatsApp phone number or email address
+  templateId  String?
+  template    MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  content     String
+  status      MessageStatus @default(PENDING)
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  failedAt    DateTime?
+  retryCount  Int           @default(0)
+  maxRetries  Int           @default(3)
+  errorMessage String?
+  metadata    Json?         // Additional context (task_id, document_id, provider, etc.)
+  sentBy      String        // User who triggered the message
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  logs        MessageLog[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([sentAt])
+  @@index([templateId])
+  @@map("messages")
+}
+
+model MessageLog {
+  id          String        @id @default(cuid())
+  messageId   String
+  message     Message       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  status      MessageStatus
+  timestamp   DateTime      @default(now())
+  details     Json?         // Additional log details
+
+  @@index([messageId])
+  @@index([status])
+  @@index([timestamp])
+  @@map("message_logs")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  DISPUTED
+  WAIVED
+}
+
+model Invoice {
+  id                String        @id @default(cuid())
+  invoiceNumber     String        @unique
+  clientId          String
+  client            Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  amount            Decimal       @db.Decimal(12, 2)
+  paidAmount        Decimal       @default(0) @db.Decimal(12, 2)
+  outstandingAmount Decimal       @default(0) @db.Decimal(12, 2)
+  status            InvoiceStatus @default(DRAFT)
+  dueDate           DateTime
+  issueDate         DateTime      @default(now())
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  payments          PaymentReceipt[]
+  followUps         FollowUp[]
+  reminders         InvoiceReminder[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("invoices")
+}
+
+model PaymentReceipt {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount      Decimal  @db.Decimal(12, 2)
+  paymentDate DateTime @default(now())
+  reference   String?  // transaction ID, check number
+  method      String?  // Bank Transfer, Cash, UPI
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("payment_receipts")
+}
+
+model FollowUp {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  notes       String
+  date        DateTime @default(now())
+  followUpBy  String?  // User ID or name
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("follow_ups")
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  entityType  String   // CLIENT, TASK, INVOICE, DOCUMENT, EMPLOYEE, COMPLIANCE
+  entityId    String   // ID of the entity
+  action      String   // CREATED, UPDATED, DELETED, COMPLETED, OVERDUE, etc.
+  description String
+  userId      String?  // ID of the user who performed the action
+  userName    String?  // Name of the user who performed the action
+  timestamp   DateTime @default(now())
+  metadata    Json?    // Additional context data
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([timestamp])
+  @@map("activity_logs")
+}
+
+model InvoiceReminder {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  type        String   // "BEFORE_DUE", "AFTER_DUE", "CUSTOM"
+  scheduledFor DateTime
+  sentAt      DateTime?
+  status      String   @default("PENDING") // PENDING, SENT, FAILED
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([scheduledFor])
+  @@map("invoice_reminders")
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_OVERDUE
+  COMPLIANCE_DUE
+  PAYMENT_RECEIVED
+  INVOICE_OVERDUE
+  DOCUMENT_UPLOADED
+  INFO
+  WARNING
+  ALERT
+}
+
+enum NotificationEntityType {
+  TASK
+  COMPLIANCE
+  INVOICE
+  PAYMENT
+  DOCUMENT
+  CLIENT
+  USER
+}
+
+model Notification {
+  id          String                @id @default(cuid())
+  userId      String
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  type        NotificationType      @default(INFO)
+  entityType  NotificationEntityType?
+  entityId    String?
+  actionType  String?
+  read        Boolean               @default(false)
+  archived    Boolean               @default(false)
+  createdAt   DateTime              @default(now())
+
+  @@index([userId])
+  @@index([read])
+  @@index([archived])
+  @@index([type])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([userId, read])
+  @@index([userId, archived])
+  @@map("notifications")
+}
+
+model Reminder {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title     String
+  dueAt     DateTime
+  sent      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@map("reminders")
+}
+
+// ─── Work Tracker Models ─────────────────────────────────────────────────────
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String?
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+  @@map("task_comments")
+}
+
+model TaskAttachment {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fileName    String
+  fileUrl     String
+  fileSize    Int?
+  fileType    String?
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+
+  @@index([taskId])
+  @@map("task_attachments")
+}
+
+enum AutomationType {
+  RECURRING_TASK
+  REMINDER
+  ESCALATION
+}
+
+enum AutomationFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+model TaskAutomation {
+  id          String              @id @default(cuid())
+  taskId      String?
+  task        Task?               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  type        AutomationType
+  frequency   AutomationFrequency
+  isActive    Boolean             @default(true)
+  nextRunDate DateTime?
+  lastRunDate DateTime?
+  config      Json?               // Store custom configuration
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([taskId])
+  @@index([nextRunDate])
+  @@map("task_automations")
+}
+
+// ─── Compliance Calendar Models ─────────────────────────────────────────────
+
+enum ComplianceType {
+  GSTR_1
+  GSTR_3B
+  TDS
+  ROC
+  ITR
+  PF_ESIC
+  AUDIT
+  CUSTOM
+}
+
+enum ComplianceEventStatus {
+  PENDING
+  COMPLETED
+  OVERDUE
+  CANCELLED
+}
+
+enum ComplianceWorkflowStatus {
+  NOT_STARTED
+  DOCUMENTS_AWAITED
+  IN_PROGRESS
+  UNDER_REVIEW
+  FILED
+  COMPLETED
+  OVERDUE
+}
+
+model ComplianceEvent {
+  id             String                   @id @default(cuid())
+  clientId       String?
+  client         Client?                  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  type           ComplianceType
+  title          String
+  description    String?
+  dueDate        DateTime
+  status         ComplianceEventStatus    @default(PENDING)
+  workflowStatus ComplianceWorkflowStatus @default(NOT_STARTED)
+  isStatutory    Boolean                  @default(true)
+  taskId         String?
+  task           Task?                    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  reminderDays   Int                      @default(7)
+  completedAt    DateTime?
+  filingPeriod   String?                  // e.g. "Apr 2026", "Q1 FY2026"
+  notes          String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@index([clientId])
+  @@index([dueDate])
+  @@index([type])
+  @@index([status])
+  @@index([workflowStatus])
+  @@index([dueDate, status])
+  @@index([type, status])
+  @@index([clientId, status])
+  @@map("compliance_events")
+}
+
+// ─── Security & Audit ──────────────────────────────────────────────────────────
+
+enum AuditEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  PASSWORD_CHANGE
+  SESSION_EXPIRED
+  ACCESS_GRANTED
+  ACCESS_DENIED
+  PERMISSION_CHANGE
+  DATA_CREATE
+  DATA_READ
+  DATA_UPDATE
+  DATA_DELETE
+  FILE_UPLOAD
+  FILE_DOWNLOAD
+  FILE_DELETE
+  RATE_LIMIT_EXCEEDED
+  CSRF_TOKEN_INVALID
+  SUSPICIOUS_ACTIVITY
+  BRUTE_FORCE_ATTEMPT
+  CONFIG_CHANGE
+  USER_CREATE
+  USER_UPDATE
+  USER_DELETE
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  eventType   AuditEventType
+  userId      String?
+  userEmail   String?
+  userRole    String?
+  ipAddress   String?
+  userAgent   String?
+  resourceType String?
+  resourceId  String?
+  action      String?
+  details     String?  // JSON stringified
+  success     Boolean  @default(true)
+  errorMessage String?
+  timestamp   DateTime @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([ipAddress])
+  @@index([timestamp])
+  @@index([userId, timestamp])
+  @@index([eventType, timestamp])
+  @@map("audit_logs")
+}
