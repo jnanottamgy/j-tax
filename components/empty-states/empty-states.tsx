@@ -21,9 +21,11 @@ import { cn } from "@/lib/utils"
 interface EmptyStateProps {
   type: "clients" | "tasks" | "documents" | "payments" | "compliance" | "messages" | "search"
   className?: string
+  /** Optional callback to open an in-page dialog/sheet (replaces dead href links) */
+  onAction?: () => void
 }
 
-export function EmptyState({ type, className }: EmptyStateProps) {
+export function EmptyState({ type, className, onAction }: EmptyStateProps) {
   switch (type) {
     case "clients":
       return (
@@ -34,22 +36,14 @@ export function EmptyState({ type, className }: EmptyStateProps) {
             </div>
             <h3 className="text-lg font-semibold mb-2">No clients yet</h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Get started by adding your first client. You can add clients manually or import them from a CSV file.
+              Get started by adding your first client. Use the <span className="font-medium text-foreground">Add Client</span> button in the top-right to create a client profile.
             </p>
-            <div className="flex gap-3">
-              <Button asChild>
-                <Link href="/clients/new">
-                  <Plus className="size-4 mr-2" />
-                  Add Client
-                </Link>
+            {onAction && (
+              <Button onClick={onAction}>
+                <Plus className="size-4 mr-2" />
+                Add Client
               </Button>
-              <Button variant="outline" asChild>
-                <Link href="/clients/import">
-                  <Upload className="size-4 mr-2" />
-                  Import CSV
-                </Link>
-              </Button>
-            </div>
+            )}
           </div>
         </Card>
       )
@@ -61,17 +55,17 @@ export function EmptyState({ type, className }: EmptyStateProps) {
             <div className="flex size-16 items-center justify-center rounded-full bg-blue-500/10 mb-4">
               <CheckSquare className="size-8 text-blue-500" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">All caught up!</h3>
+            <h3 className="text-lg font-semibold mb-2">No tasks here</h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              You have no pending tasks. This is a great time to review completed filings or plan upcoming deadlines.
+              Tasks are created for each client filing. Use the <span className="font-medium text-foreground">Add Task</span> button to create your first work item.
             </p>
             <div className="flex gap-3">
-              <Button asChild>
-                <Link href="/work-tracker/new">
+              {onAction ? (
+                <Button onClick={onAction}>
                   <Plus className="size-4 mr-2" />
                   Create Task
-                </Link>
-              </Button>
+                </Button>
+              ) : null}
               <Button variant="outline" asChild>
                 <Link href="/calendar">
                   <Clock className="size-4 mr-2" />
@@ -90,24 +84,16 @@ export function EmptyState({ type, className }: EmptyStateProps) {
             <div className="flex size-16 items-center justify-center rounded-full bg-green-500/10 mb-4">
               <FileText className="size-8 text-green-500" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">No documents</h3>
+            <h3 className="text-lg font-semibold mb-2">No documents yet</h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Upload documents to keep all your client files organized and accessible in one place.
+              Upload documents to keep all client files organised and accessible. Use the <span className="font-medium text-foreground">Upload Document</span> button above.
             </p>
-            <div className="flex gap-3">
-              <Button asChild>
-                <Link href="/documents/upload">
-                  <Upload className="size-4 mr-2" />
-                  Upload Document
-                </Link>
+            {onAction && (
+              <Button onClick={onAction}>
+                <Upload className="size-4 mr-2" />
+                Upload Document
               </Button>
-              <Button variant="outline" asChild>
-                <Link href="/documents/request">
-                  <Plus className="size-4 mr-2" />
-                  Request Document
-                </Link>
-              </Button>
-            </div>
+            )}
           </div>
         </Card>
       )
@@ -121,22 +107,14 @@ export function EmptyState({ type, className }: EmptyStateProps) {
             </div>
             <h3 className="text-lg font-semibold mb-2">No invoices yet</h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Create your first invoice to start tracking payments and managing your billing efficiently.
+              Create invoices to track payments and manage billing. Use the <span className="font-medium text-foreground">Create Invoice</span> button above to get started.
             </p>
-            <div className="flex gap-3">
-              <Button asChild>
-                <Link href="/payments/new">
-                  <Plus className="size-4 mr-2" />
-                  Create Invoice
-                </Link>
+            {onAction && (
+              <Button onClick={onAction}>
+                <Plus className="size-4 mr-2" />
+                Create Invoice
               </Button>
-              <Button variant="outline" asChild>
-                <Link href="/payments/settings">
-                  <Sparkles className="size-4 mr-2" />
-                  Setup Billing
-                </Link>
-              </Button>
-            </div>
+            )}
           </div>
         </Card>
       )
@@ -150,12 +128,12 @@ export function EmptyState({ type, className }: EmptyStateProps) {
             </div>
             <h3 className="text-lg font-semibold mb-2">No compliance events</h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Compliance events will be automatically created based on your clients' filing requirements.
+              Compliance events are automatically created when you add clients with active services. Add a client with GST, TDS, or Income Tax services to see deadlines here.
             </p>
             <Button variant="outline" asChild>
-              <Link href="/compliance/setup">
+              <Link href="/clients">
                 <ArrowRight className="size-4 mr-2" />
-                Setup Compliance
+                Go to Clients
               </Link>
             </Button>
           </div>
@@ -171,14 +149,14 @@ export function EmptyState({ type, className }: EmptyStateProps) {
             </div>
             <h3 className="text-lg font-semibold mb-2">No messages yet</h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Start a conversation with your team or clients. Communication helps keep everyone aligned.
+              Use the <span className="font-medium text-foreground">Compose</span> button to send a message to your clients via email or WhatsApp.
             </p>
-            <Button asChild>
-              <Link href="/messaging/new">
+            {onAction && (
+              <Button onClick={onAction}>
                 <Plus className="size-4 mr-2" />
-                New Message
-              </Link>
-            </Button>
+                Compose Message
+              </Button>
+            )}
           </div>
         </Card>
       )
@@ -192,11 +170,13 @@ export function EmptyState({ type, className }: EmptyStateProps) {
             </div>
             <h3 className="text-lg font-semibold mb-2">No results found</h3>
             <p className="text-sm text-muted-foreground max-w-md mb-6">
-              Try adjusting your search terms or filters to find what you're looking for.
+              Try adjusting your search terms or filters to find what you&apos;re looking for.
             </p>
-            <Button variant="outline" onClick={() => window.location.reload()}>
-              Clear Search
-            </Button>
+            {onAction && (
+              <Button variant="outline" onClick={onAction}>
+                Clear Search
+              </Button>
+            )}
           </div>
         </Card>
       )
@@ -229,7 +209,7 @@ export function EmptyStateInline({
   type?: "clients" | "tasks" | "documents" | "payments"
   title: string
   description: string
-  action?: { label: string; href: string; icon?: React.ElementType }
+  action?: { label: string; href?: string; onClick?: () => void; icon?: React.ElementType }
   className?: string
 }) {
   const getIcon = () => {
@@ -257,12 +237,19 @@ export function EmptyStateInline({
       <h4 className="font-medium text-sm mb-1">{title}</h4>
       <p className="text-xs text-muted-foreground max-w-sm mb-4">{description}</p>
       {action && (
-        <Button size="sm" variant="outline" asChild>
-          <Link href={action.href}>
+        action.href ? (
+          <Button size="sm" variant="outline" asChild>
+            <Link href={action.href}>
+              {action.icon && <action.icon className="size-3.5 mr-1.5" />}
+              {action.label}
+            </Link>
+          </Button>
+        ) : action.onClick ? (
+          <Button size="sm" variant="outline" onClick={action.onClick}>
             {action.icon && <action.icon className="size-3.5 mr-1.5" />}
             {action.label}
-          </Link>
-        </Button>
+          </Button>
+        ) : null
       )}
     </div>
   )

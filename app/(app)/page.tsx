@@ -8,6 +8,7 @@ import { OutstandingPayments } from "@/components/dashboard/outstanding-payments
 import { QuickActions } from "@/components/dashboard/quick-actions"
 import { RecentActivity } from "@/components/dashboard/recent-activity"
 import { RevenueChart } from "@/components/dashboard/revenue-chart"
+import { SetupChecklist } from "@/components/dashboard/setup-checklist"
 import { TasksDueToday } from "@/components/dashboard/tasks-due-today"
 import { PageContainer } from "@/components/layout/page-container"
 import { PageHeader } from "@/components/layout/page-header"
@@ -58,6 +59,12 @@ function makeDashboardFetcher(userId: string, role: string) {
         overdueTasksCount,
         upcomingDeadlinesCount,
         totalTasks,
+        checklistEmployeeCount,
+        checklistClientCount,
+        checklistTaskCount,
+        checklistDocCount,
+        checklistInvoiceCount,
+        checklistComplianceCount,
       ] = await Promise.all([
         prisma.client.count({ where: clientFilter }),
         prisma.client.count({ where: { ...clientFilter, status: "ACTIVE" } }),
@@ -147,6 +154,15 @@ function makeDashboardFetcher(userId: string, role: string) {
         }),
         // Total tasks (for workload calc)
         prisma.task.count({ where: clientFilter }),
+        // Setup checklist data (global counts, role-scoped)
+        prisma.employee.count(),
+        prisma.client.count({ where: clientFilter }),
+        prisma.task.count({ where: clientFilter }),
+        prisma.document.count({ where: { client: clientFilter } }),
+        prisma.invoice.count({ where: { client: clientFilter } }),
+        prisma.complianceEvent.count({
+          where: { client: Object.keys(clientFilter).length ? clientFilter : undefined },
+        }),
       ])
 
       // Serialize Decimal → number before returning from cached function
@@ -175,6 +191,14 @@ function makeDashboardFetcher(userId: string, role: string) {
         overdueTasksCount,
         upcomingDeadlinesCount,
         totalTasks,
+        setupChecklist: {
+          hasEmployees: checklistEmployeeCount > 0,
+          hasClients: checklistClientCount > 0,
+          hasTasks: checklistTaskCount > 0,
+          hasDocuments: checklistDocCount > 0,
+          hasInvoices: checklistInvoiceCount > 0,
+          hasCompliance: checklistComplianceCount > 0,
+        },
       }
     },
     // Cache key: per user + today's date (ensures daily rollover)
@@ -212,6 +236,7 @@ export default async function DashboardPage() {
     overdueTasksCount,
     upcomingDeadlinesCount,
     totalTasks,
+    setupChecklist,
   } = data
 
   const totalCompliance = pendingComplianceCount + completedComplianceCount
@@ -241,6 +266,11 @@ export default async function DashboardPage() {
         title="Tax Operations Dashboard"
         description="Monitor filings, compliance, and payments across your client portfolio in real time."
       />
+
+      {/* Setup checklist — only shown to PARTNER/MANAGER, hidden once all steps done */}
+      {(session.user.role === "PARTNER" || session.user.role === "MANAGER") && (
+        <SetupChecklist data={setupChecklist} />
+      )}
 
       <ExecutiveSummary
         overdueTasks={overdueTasksCount}

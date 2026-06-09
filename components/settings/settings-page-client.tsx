@@ -10,14 +10,18 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { saveProfile, changePassword } from "@/app/actions/settings"
+import { saveProfile, changePassword, saveNotificationPreferences, type NotificationPrefs } from "@/app/actions/settings"
 import { useAuth } from "@/components/auth/auth-provider"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
 import { useValidatedForm } from "@/hooks/use-validated-form"
 import { passwordSchema, profileSchema } from "@/lib/validations/settings"
 
-export function SettingsPageClient() {
+export function SettingsPageClient({
+  initialNotificationPrefs,
+}: {
+  initialNotificationPrefs?: NotificationPrefs
+}) {
   const { user } = useAuth()
 
   // Profile form
@@ -27,6 +31,11 @@ export function SettingsPageClient() {
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+
+  // Notification prefs
+  const [notifSaving, setNotifSaving] = useState(false)
+  const [notifSaved, setNotifSaved] = useState(false)
+  const [notifError, setNotifError] = useState("")
 
   const profileForm = useValidatedForm({
     schema: profileSchema,
@@ -55,11 +64,11 @@ export function SettingsPageClient() {
     },
   })
 
-  // Notification toggles (UI only — persisting requires a schema addition)
-  const [notifications, setNotifications] = useState({
-    email: true,
-    sms: false,
-    push: true,
+  // Notification toggles — persisted to Supabase user_metadata
+  const [notifications, setNotifications] = useState<NotificationPrefs>({
+    email: initialNotificationPrefs?.email ?? true,
+    sms: initialNotificationPrefs?.sms ?? false,
+    push: initialNotificationPrefs?.push ?? true,
   })
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -70,6 +79,20 @@ export function SettingsPageClient() {
   const handleChangePassword = (e: React.FormEvent) => {
     e.preventDefault()
     passwordForm.submit({ currentPassword, newPassword, confirmPassword })
+  }
+
+  const handleSaveNotifications = async () => {
+    setNotifSaving(true)
+    setNotifSaved(false)
+    setNotifError("")
+    const result = await saveNotificationPreferences(notifications)
+    setNotifSaving(false)
+    if (result.error) {
+      setNotifError(result.error)
+    } else {
+      setNotifSaved(true)
+      setTimeout(() => setNotifSaved(false), 3000)
+    }
   }
 
   return (
@@ -181,6 +204,25 @@ export function SettingsPageClient() {
               checked={notifications.push}
               onCheckedChange={(checked) => setNotifications({ ...notifications, push: checked })}
             />
+          </div>
+          {notifError && (
+            <p className="text-sm text-destructive">{notifError}</p>
+          )}
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleSaveNotifications}
+              disabled={notifSaving}
+              variant="outline"
+              className="input-premium h-10 rounded-xl"
+            >
+              {notifSaving ? (
+                <><Loader2 className="size-4 animate-spin mr-2" />Saving...</>
+              ) : notifSaved ? (
+                "Saved ✓"
+              ) : (
+                "Save Preferences"
+              )}
+            </Button>
           </div>
         </CardContent>
       </Card>

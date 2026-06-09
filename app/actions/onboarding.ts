@@ -93,9 +93,20 @@ export async function saveFirmInformation(data: {
   email?: string
 }) {
   const session = await requireAuth()
-  
-  // Store firm information in a separate Firm model or as metadata
-  // For now, we'll update the onboarding step
+
+  // Persist firm info to Supabase user_metadata (no schema change required)
+  const { createClient } = await import("@/lib/supabase/server")
+  const supabase = await createClient()
+  await supabase.auth.updateUser({
+    data: {
+      firm_name: data.firmName?.trim() || null,
+      firm_gstin: data.gstin?.trim() || null,
+      firm_address: data.address?.trim() || null,
+      firm_phone: data.phone?.trim() || null,
+      firm_email: data.email?.trim() || null,
+    },
+  })
+
   await prisma.user.upsert({
     where: { id: session.user.id },
     update: { onboardingStep: 1 },
@@ -109,7 +120,7 @@ export async function saveFirmInformation(data: {
   })
 
   revalidatePath("/")
-  
+
   return { success: true }
 }
 

@@ -10,6 +10,12 @@ import { prisma } from "@/lib/prisma"
 import { createClient } from "@/lib/supabase/server"
 import { passwordSchema, profileSchema } from "@/lib/validations/settings"
 
+export type NotificationPrefs = {
+  email: boolean
+  sms: boolean
+  push: boolean
+}
+
 export type SettingsActionState = FormActionState
 
 /**
@@ -124,5 +130,49 @@ export async function changePassword(
       return { error: toUserError(error) }
     }
     return { error: "Failed to change password. Please try again." }
+  }
+}
+
+/**
+ * Persist notification preferences in Supabase user_metadata.
+ * No schema change required — stored as a JSON blob on the auth user.
+ */
+export async function saveNotificationPreferences(
+  prefs: NotificationPrefs
+): Promise<FormActionState> {
+  try {
+    await requireAuth()
+    const supabase = await createClient()
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        notification_email: prefs.email,
+        notification_sms: prefs.sms,
+        notification_push: prefs.push,
+      },
+    })
+    if (error) {
+      return { error: "Failed to save notification preferences. Please try again." }
+    }
+    revalidatePath("/settings")
+    return { success: true }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: toUserError(error) }
+    }
+    return { error: "Failed to save preferences. Please try again." }
+  }
+}
+
+/**
+ * Read notification preferences from Supabase user_metadata.
+ */
+export async function getNotificationPreferences(): Promise<NotificationPrefs> {
+  await requireAuth()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return {
+    email: user?.user_metadata?.notification_email ?? true,
+    sms: user?.user_metadata?.notification_sms ?? false,
+    push: user?.user_metadata?.notification_push ?? true,
   }
 }

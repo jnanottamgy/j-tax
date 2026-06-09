@@ -116,6 +116,10 @@ export function OnboardingWizard() {
     try {
       switch (currentStep) {
         case 1:
+          if (!firmInfo.firmName?.trim()) {
+            // Don't proceed without a firm name — show inline error via UI
+            return
+          }
           await saveFirmInformation(firmInfo)
           break
         case 2:
@@ -253,6 +257,7 @@ export function OnboardingWizard() {
               onChange={setFirmInfo}
               onNext={handleNext}
               onBack={handleBack}
+              canProceed={!!firmInfo.firmName?.trim()}
             />
           )}
           {currentStep === 2 && (
@@ -350,11 +355,13 @@ function FirmInformationStep({
   onChange,
   onNext,
   onBack,
+  canProceed = true,
 }: {
   data: any
   onChange: (data: any) => void
   onNext: () => void
   onBack: () => void
+  canProceed?: boolean
 }) {
   return (
     <motion.div
@@ -430,12 +437,15 @@ function FirmInformationStep({
           </div>
         </div>
 
+        {!canProceed && (
+          <p className="text-xs text-destructive -mt-2">Firm name is required to continue.</p>
+        )}
         <div className="flex justify-between">
           <Button variant="outline" onClick={onBack} className="rounded-xl">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
-          <Button onClick={onNext} className="rounded-xl">
+          <Button onClick={onNext} className="rounded-xl" disabled={!canProceed}>
             Next
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>

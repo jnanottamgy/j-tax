@@ -1,4 +1,4 @@
-import { Building2, Plus, SearchX } from "lucide-react"
+import { Building2, SearchX } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -55,10 +55,9 @@ export function ClientsEmptyState({
           </Button>
         )}
         {!isFiltered && (
-          <Button size="sm" className="btn-glow gap-1.5 rounded-xl">
-            <Plus className="size-3.5" />
-            Add client
-          </Button>
+          <p className="text-xs text-muted-foreground mt-2">
+            Use the <span className="font-medium text-foreground">Add Client</span> button above to get started.
+          </p>
         )}
       </div>
     </div>
