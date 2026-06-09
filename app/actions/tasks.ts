@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { toUserError } from "@/lib/forms/errors"
 import { z } from "zod"
 
 import {
@@ -138,7 +139,7 @@ export async function createTask(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to create tasks." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to create task. Please try again." }
   }
@@ -218,7 +219,7 @@ export async function updateTask(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to edit this task." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to update task. Please try again." }
   }
@@ -262,7 +263,7 @@ export async function updateTaskStatus(
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to update task status. Please try again." }
   }
@@ -284,7 +285,7 @@ export async function deleteTask(taskId: string): Promise<TaskActionState> {
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to delete tasks." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to delete task. Please try again." }
   }
@@ -371,7 +372,7 @@ export async function addComment(
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to add comment. Please try again." }
   }
@@ -403,7 +404,7 @@ export async function deleteComment(commentId: string): Promise<TaskActionState>
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to delete comment. Please try again." }
   }
@@ -449,7 +450,7 @@ export async function addAttachment(
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to add attachment. Please try again." }
   }
@@ -481,7 +482,7 @@ export async function deleteAttachment(attachmentId: string): Promise<TaskAction
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to delete attachment. Please try again." }
   }

@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { toUserError } from "@/lib/forms/errors"
 import { z } from "zod"
 
 import { requireAuth } from "@/lib/auth/guards"
@@ -59,7 +60,7 @@ export async function saveProfile(
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to save profile. Please try again." }
   }
@@ -114,13 +115,13 @@ export async function changePassword(
     })
 
     if (updateError) {
-      return { error: updateError.message }
+      return { error: "Failed to update password. Please try again." }
     }
 
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to change password. Please try again." }
   }

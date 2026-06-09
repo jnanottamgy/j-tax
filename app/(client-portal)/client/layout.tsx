@@ -25,14 +25,11 @@ export default async function ClientPortalLayout({
     redirect("/")
   }
 
-  // Find the Client record for this user
+  // Find the Client record for this user — match on email only.
+  // HIGH-04: removed GSTIN fallback which allowed any user whose email matched
+  // a client's GSTIN to gain access to that client's portal.
   const clientRecord = await prisma.client.findFirst({
-    where: {
-      OR: [
-        { email: session.user.email },
-        { gstin: session.user.email }, // Fallback match
-      ],
-    },
+    where: { email: session.user.email },
     select: {
       id: true,
       name: true,

@@ -37,7 +37,12 @@ const API_CONFIG: RateLimitConfig = {
   blockDurationMs: 60 * 1000,   // 1 minute block
 }
 
-// In-memory store (use Redis in production)
+// HIGH-06: In-memory store resets on serverless cold starts (Vercel).
+// For true distributed rate limiting, replace with Redis (e.g. Upstash):
+//   import { Ratelimit } from "@upstash/ratelimit"
+//   import { Redis } from "@upstash/redis"
+// This in-memory implementation still provides protection on long-lived
+// servers and development environments.
 const store = new Map<string, RateLimitEntry>()
 
 // Cleanup old entries periodically

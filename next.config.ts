@@ -1,4 +1,17 @@
 import type { NextConfig } from "next"
+import { getSecurityHeaders } from "./lib/security/security-headers"
+
+const isDev = process.env.NODE_ENV === "development"
+const domain = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/https?:\/\//, "") ?? ""
+
+const secHeaders = getSecurityHeaders({ isDev, domain })
+
+// Convert Record<string,string> to Next.js header array format,
+// skipping COEP which breaks third-party fonts and images
+const SKIP_HEADERS = new Set(["Cross-Origin-Embedder-Policy"])
+const headersList = Object.entries(secHeaders)
+  .filter(([key]) => !SKIP_HEADERS.has(key))
+  .map(([key, value]) => ({ key, value }))
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
@@ -6,85 +19,25 @@ const nextConfig: NextConfig = {
     root: process.cwd(),
   },
 
-  // Security Headers
   async headers() {
     return [
       {
         source: "/:path*",
         headers: [
-          {
-            key: "X-DNS-Prefetch-Control",
-            value: "on",
-          },
-          {
-            key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains; preload",
-          },
-          {
-            key: "X-XSS-Protection",
-            value: "1; mode=block",
-          },
-          {
-            key: "X-Frame-Options",
-            value: "DENY",
-          },
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-          {
-            key: "Referrer-Policy",
-            value: "strict-origin-when-cross-origin",
-          },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
-          },
-          {
-            key: "Cross-Origin-Opener-Policy",
-            value: "same-origin",
-          },
-          {
-            key: "Cross-Origin-Resource-Policy",
-            value: "same-origin",
-          },
-          {
-            key: "Cache-Control",
-            value: "no-store, no-cache, must-revalidate, proxy-revalidate",
-          },
-          {
-            key: "Pragma",
-            value: "no-cache",
-          },
-          {
-            key: "Expires",
-            value: "0",
-          },
+          { key: "X-DNS-Prefetch-Control", value: "on" },
+          ...headersList,
         ],
       },
     ]
   },
 
-  // Content Security Policy
   async rewrites() {
     return []
   },
 
-  // Rate limiting will be handled in middleware
-
-  // Experimental features
-  experimental: {
-    // Enable React strict mode for better security
-    // reactRoot: true,
-  },
-
-  // Disable powered-by header
   poweredByHeader: false,
-
-  // Server external packages
   serverExternalPackages: [],
 
-  // Image security
   images: {
     remotePatterns: [
       {
@@ -92,16 +45,10 @@ const nextConfig: NextConfig = {
         hostname: "*.supabase.co",
       },
     ],
-    // Disable static image optimization for security
     unoptimized: false,
   },
 
-  // Typescript config
   typescript: {
-    // !! WARN !!
-    // Dangerously allow production builds to successfully complete even if
-    // your project has type errors.
-    // !! WARN !!
     ignoreBuildErrors: false,
   },
 }

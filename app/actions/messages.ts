@@ -1,6 +1,7 @@
 ﻿"use server"
 
 import { revalidatePath } from "next/cache"
+import { toUserError } from "@/lib/forms/errors"
 import { z } from "zod"
 
 import {
@@ -208,7 +209,7 @@ export async function createMessage(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to send messages." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to send message. Please try again." }
   }
@@ -221,11 +222,19 @@ export async function createTemplate(
   try {
     const session = await requirePartnerOrManager()
 
+    // MED-01: parse JSON safely with error handling
+    let variables: unknown
+    const rawVars = formData.get("variables")
+    if (rawVars) {
+      try { variables = JSON.parse(rawVars as string) }
+      catch { return { error: "Invalid variables format — must be valid JSON." } }
+    }
+
     const raw = {
       name: formData.get("name"),
       type: formData.get("type") || "CUSTOM",
       content: formData.get("content"),
-      variables: formData.get("variables") ? JSON.parse(formData.get("variables") as string) : undefined,
+      variables,
     }
 
     const parsed = templateSchema.safeParse(raw)
@@ -252,7 +261,7 @@ export async function createTemplate(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to create templates." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to create template. Please try again." }
   }
@@ -270,11 +279,19 @@ export async function updateTemplate(
       return { error: "Missing template id" }
     }
 
+    // MED-01: parse JSON safely with error handling
+    let variables: unknown
+    const rawVars2 = formData.get("variables")
+    if (rawVars2) {
+      try { variables = JSON.parse(rawVars2 as string) }
+      catch { return { error: "Invalid variables format — must be valid JSON." } }
+    }
+
     const raw = {
       name: formData.get("name"),
       type: formData.get("type"),
       content: formData.get("content"),
-      variables: formData.get("variables") ? JSON.parse(formData.get("variables") as string) : undefined,
+      variables,
     }
 
     const parsed = templateSchema.partial().safeParse(raw)
@@ -299,7 +316,7 @@ export async function updateTemplate(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to edit templates." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to update template. Please try again." }
   }
@@ -321,7 +338,7 @@ export async function deleteTemplate(templateId: string): Promise<MessageActionS
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to delete templates." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to delete template. Please try again." }
   }
@@ -444,7 +461,7 @@ export async function sendBulkReminders(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to send bulk messages." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to send bulk reminders. Please try again." }
   }
@@ -486,6 +503,9 @@ export async function updateMessageStatus(
   details?: any
 ): Promise<MessageActionState> {
   try {
+    // CRIT-02: require authentication — previously had no auth check at all
+    await requireAuth()
+
     const updateData: any = { status }
     
     if (status === "SENT") {
@@ -515,7 +535,7 @@ export async function updateMessageStatus(
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to update message status. Please try again." }
   }

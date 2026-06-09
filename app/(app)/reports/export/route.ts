@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import PDFDocument from "pdfkit"
 import * as XLSX from "xlsx"
 
+import { requirePartnerOrManager } from "@/lib/auth/guards"
 import {
   getClientReport,
   getComplianceReport,
@@ -72,6 +73,15 @@ async function pdfBufferFromText(title: string, lines: string[]) {
 }
 
 export async function GET(request: NextRequest) {
+  // MED-02: enforce auth at the route level — do not rely solely on inner action guards
+  try {
+    await requirePartnerOrManager()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : ""
+    if (msg.includes("Unauthorized")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
   const url = new URL(request.url)
   const report = (url.searchParams.get("report") || "") as ReportKey
   const format = (url.searchParams.get("format") || "csv") as FormatKey
@@ -83,6 +93,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid format" }, { status: 400 })
   }
 
+  try {
   const filters = pickFilters(url.searchParams)
   const stamp = new Date().toISOString().slice(0, 10)
   const baseName = safeFileName(`${report}-report-${stamp}`)
@@ -308,5 +319,9 @@ export async function GET(request: NextRequest) {
       "Content-Disposition": `attachment; filename="${baseName}.pdf"`,
     },
   })
+  } catch (e) {
+    console.error("[/reports/export]", e)
+    return NextResponse.json({ error: "Export failed. Please try again." }, { status: 500 })
+  }
 }
 

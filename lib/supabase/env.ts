@@ -1,17 +1,18 @@
-function requireEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
-  return value
-}
-
-/** Strips trailing slashes and API paths from misconfigured URLs */
+/** Strips trailing slashes and REST API paths from misconfigured URLs */
 export function getSupabaseUrl(): string {
-  const raw = requireEnv("NEXT_PUBLIC_SUPABASE_URL")
-  return raw.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "")
+  // Must be a static reference so Next.js can inline NEXT_PUBLIC_* at compile time
+  const value = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!value) {
+    throw new Error("Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL")
+  }
+  return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "")
 }
 
 export function getSupabaseAnonKey(): string {
-  return requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+  // Must be a static reference so Next.js can inline NEXT_PUBLIC_* at compile time
+  const value = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!value) {
+    throw new Error("Missing required environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY")
+  }
+  return value
 }

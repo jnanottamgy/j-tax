@@ -1,6 +1,7 @@
 ﻿"use server"
 
 import { revalidatePath } from "next/cache"
+import { toUserError } from "@/lib/forms/errors"
 import { z } from "zod"
 
 import {
@@ -359,7 +360,7 @@ export async function uploadDocument(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to upload documents." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to upload document. Please try again." }
   }
@@ -416,7 +417,7 @@ export async function createDocumentUploadUrl(input: {
 
     return { storagePath, signedUrl: signed.data.signedUrl }
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to prepare upload" }
+    return { error: toUserError(error) }
   }
 }
 
@@ -534,7 +535,7 @@ export async function finalizeDocumentUpload(
 
     return { success: true }
   } catch (error) {
-    if (error instanceof Error) return { error: error.message }
+    if (error instanceof Error) return { error: toUserError(error) }
     return { error: "Failed to finalize upload. Please try again." }
   }
 }
@@ -605,7 +606,7 @@ export async function renameDocumentFile(
 
     return { success: true }
   } catch (error) {
-    if (error instanceof Error) return { error: error.message }
+    if (error instanceof Error) return { error: toUserError(error) }
     return { error: "Failed to rename document. Please try again." }
   }
 }
@@ -648,7 +649,7 @@ export async function getDocumentDownloadUrl(documentId: string): Promise<{ url?
     return { url: result.data!.signedUrl }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to generate download link. Please try again." }
   }
@@ -728,7 +729,7 @@ export async function updateDocument(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to edit documents." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to update document. Please try again." }
   }
@@ -768,7 +769,7 @@ export async function deleteDocument(documentId: string): Promise<DocumentAction
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to delete documents." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to delete document. Please try again." }
   }
@@ -818,7 +819,7 @@ export async function addDocumentTag(documentId: string, tag: string): Promise<D
       if (error.message.includes("Unique constraint")) {
         return { success: true }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to add tag. Please try again." }
   }
@@ -865,7 +866,7 @@ export async function removeDocumentTag(documentId: string, tag: string): Promis
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to remove tag. Please try again." }
   }

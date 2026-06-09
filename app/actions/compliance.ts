@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { toUserError } from "@/lib/forms/errors"
 import { z } from "zod"
 import { addMonths, addYears, addDays, format } from "date-fns"
 
@@ -340,7 +341,7 @@ export async function createComplianceEvent(
     if (error instanceof z.ZodError) return { fieldErrors: error.flatten().fieldErrors }
     if (error instanceof Error) {
       if (error.message.includes("Forbidden")) return { error: "You do not have permission to create compliance events." }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to create compliance event. Please try again." }
   }
@@ -398,7 +399,7 @@ export async function updateComplianceEvent(
     if (error instanceof z.ZodError) return { fieldErrors: error.flatten().fieldErrors }
     if (error instanceof Error) {
       if (error.message.includes("Forbidden")) return { error: "You do not have permission to edit compliance events." }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to update compliance event. Please try again." }
   }
@@ -447,7 +448,7 @@ export async function updateComplianceWorkflowStatus(
 
     return { success: true }
   } catch (error) {
-    if (error instanceof Error) return { error: error.message }
+    if (error instanceof Error) return { error: toUserError(error) }
     return { error: "Failed to update status. Please try again." }
   }
 }
@@ -491,7 +492,7 @@ export async function updateComplianceEventStatus(
 
     return { success: true }
   } catch (error) {
-    if (error instanceof Error) return { error: error.message }
+    if (error instanceof Error) return { error: toUserError(error) }
     return { error: "Failed to update compliance event status. Please try again." }
   }
 }
@@ -524,7 +525,7 @@ export async function deleteComplianceEvent(eventId: string): Promise<Compliance
   } catch (error) {
     if (error instanceof Error) {
       if (error.message.includes("Forbidden")) return { error: "You do not have permission to delete compliance events." }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to delete compliance event. Please try again." }
   }
@@ -728,7 +729,7 @@ export async function generateStatutoryComplianceEvents(clientId: string) {
 
     return { success: true, count: result.count }
   } catch (error) {
-    if (error instanceof Error) return { error: error.message }
+    if (error instanceof Error) return { error: toUserError(error) }
     return { error: "Failed to generate compliance events." }
   }
 }

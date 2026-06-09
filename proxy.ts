@@ -3,8 +3,16 @@ import { type NextRequest, NextResponse } from "next/server"
 import { canAccessRoute, parseAppRole } from "@/lib/auth/roles"
 import { updateSession } from "@/lib/supabase/middleware"
 
-const PUBLIC_ROUTES = ["/login", "/auth/callback", "/api/cron/payments"]
-const AUTH_ROUTES = ["/login"]
+const PUBLIC_ROUTES = [
+  "/login",
+  "/signup",
+  "/reset-password",
+  "/auth/callback",
+  "/auth/reset-password",
+  "/api/cron/payments",
+  "/unauthorized",
+]
+const AUTH_ROUTES = ["/login", "/signup"]
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -33,7 +41,8 @@ export async function proxy(request: NextRequest) {
     }
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = "/login"
-    loginUrl.searchParams.set("redirectTo", pathname)
+    loginUrl.search = ""
+    if (pathname !== "/") loginUrl.searchParams.set("redirectTo", pathname)
     return NextResponse.redirect(loginUrl)
   }
 
@@ -50,10 +59,12 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isAuthRoute) {
-    const redirectTo =
-      request.nextUrl.searchParams.get("redirectTo") || "/"
+    const raw = request.nextUrl.searchParams.get("redirectTo") || "/"
+    // LOW-01: only allow same-origin relative paths — reject //evil.com etc.
+    const isSafe =
+      raw.startsWith("/") && !raw.startsWith("//") && !raw.includes(":")
     const homeUrl = request.nextUrl.clone()
-    homeUrl.pathname = redirectTo
+    homeUrl.pathname = isSafe ? raw : "/"
     homeUrl.search = ""
     return NextResponse.redirect(homeUrl)
   }

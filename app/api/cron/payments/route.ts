@@ -1,5 +1,16 @@
+import { timingSafeEqual } from "crypto"
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+
+// HIGH-05: constant-time comparison to prevent timing attacks on the cron secret
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  try {
+    return timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"))
+  } catch {
+    return false
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -9,8 +20,8 @@ export async function GET(request: Request) {
       return new NextResponse("Cron secret is not configured", { status: 503 })
     }
 
-    const authHeader = request.headers.get("authorization")
-    if (authHeader !== `Bearer ${cronSecret}`) {
+    const authHeader = request.headers.get("authorization") ?? ""
+    if (!safeCompare(authHeader, `Bearer ${cronSecret}`)) {
       return new NextResponse("Unauthorized", { status: 401 })
     }
 

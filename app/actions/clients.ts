@@ -20,6 +20,7 @@ import {
   updateClientSchema,
 } from "@/lib/validations/client"
 import { logClientActivity } from "@/lib/activity/logger"
+import { toUserError } from "@/lib/forms/errors"
 
 export type ClientActionState = {
   success?: boolean
@@ -105,16 +106,8 @@ export async function createClient(
     if (error instanceof z.ZodError) {
       return { fieldErrors: error.flatten().fieldErrors }
     }
-    if (error instanceof Error) {
-      if (error.message.includes("Unique constraint")) {
-        return { error: "A client with this GSTIN or code already exists." }
-      }
-      if (error.message.includes("Forbidden")) {
-        return { error: "You do not have permission to create clients." }
-      }
-      return { error: error.message }
-    }
-    return { error: "Failed to create client. Please try again." }
+    // LOW-05: map internal errors to safe messages
+    return { error: toUserError(error) }
   }
 }
 
@@ -174,7 +167,7 @@ export async function updateClient(
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to edit clients." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to update client. Please try again." }
   }
@@ -215,7 +208,7 @@ export async function deleteClient(clientId: string): Promise<ClientActionState>
       if (error.message.includes("Forbidden")) {
         return { error: "You do not have permission to delete clients." }
       }
-      return { error: error.message }
+      return { error: toUserError(error) }
     }
     return { error: "Failed to delete client. Please try again." }
   }

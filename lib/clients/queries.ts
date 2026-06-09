@@ -9,8 +9,10 @@ import type {
 } from "@/lib/validations/client"
 import { prisma } from "@/lib/prisma"
 
+// MED-03: sequential code (matches seeded CLI-NNNN pattern) instead of Math.random()
 async function generateClientCode(): Promise<string> {
-  return `CLT-${Math.random().toString(36).substring(2, 10)}`
+  const count = await prisma.client.count()
+  return `CLI-${String(count + 1).padStart(4, "0")}`
 }
 
 function mapClientToListItem(

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { format } from "date-fns"
-import { FileText, Download, Upload, Trash2, Search, Filter } from "lucide-react"
+import { FileText, Upload, Search } from "lucide-react"
+import { DownloadButton } from "./download-button"
 
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
@@ -214,23 +215,8 @@ export default async function ClientDocumentsPage({
                     </div>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      title="Download"
-                    >
-                      <Download className="size-4" />
-                    </Button>
-                    {/* Delete button - only if client uploaded it */}
-                    {/* <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-muted-foreground hover:text-destructive"
-                      title="Delete"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button> */}
+                    {/* LOW-03: wired to getDocumentDownloadUrl via signed URL */}
+                    <DownloadButton documentId={doc.id} />
                   </div>
                 </div>
               ))}
