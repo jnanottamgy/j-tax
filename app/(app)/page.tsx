@@ -191,6 +191,7 @@ function makeDashboardFetcher(userId: string, role: string) {
         overdueTasksCount,
         upcomingDeadlinesCount,
         totalTasks,
+        totalDocuments: checklistDocCount,
         setupChecklist: {
           hasEmployees: checklistEmployeeCount > 0,
           hasClients: checklistClientCount > 0,
@@ -236,6 +237,7 @@ export default async function DashboardPage() {
     overdueTasksCount,
     upcomingDeadlinesCount,
     totalTasks,
+    totalDocuments,
     setupChecklist,
   } = data
 
@@ -276,7 +278,7 @@ export default async function DashboardPage() {
         overdueTasks={overdueTasksCount}
         upcomingDeadlines={upcomingDeadlinesCount}
         outstandingInvoices={overdueCount}
-        pendingDocuments={0}
+        pendingDocuments={totalDocuments}
         complianceScore={complianceScore}
         workload={Math.min(workload, 100)}
       />

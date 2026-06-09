@@ -129,7 +129,16 @@ export async function saveEmployeeSetup(data: {
   departments: string[]
 }) {
   const session = await requireAuth()
-  
+
+  const { createClient } = await import("@/lib/supabase/server")
+  const supabase = await createClient()
+  await supabase.auth.updateUser({
+    data: {
+      onboarding_employee_count: data.employeeCount,
+      onboarding_departments: data.departments,
+    },
+  })
+
   await prisma.user.upsert({
     where: { id: session.user.id },
     update: { onboardingStep: 2 },
@@ -143,7 +152,6 @@ export async function saveEmployeeSetup(data: {
   })
 
   revalidatePath("/")
-  
   return { success: true }
 }
 
@@ -152,7 +160,16 @@ export async function saveServiceConfiguration(data: {
   defaultReminderDays: number
 }) {
   const session = await requireAuth()
-  
+
+  const { createClient } = await import("@/lib/supabase/server")
+  const supabase = await createClient()
+  await supabase.auth.updateUser({
+    data: {
+      onboarding_services: data.services,
+      onboarding_reminder_days: data.defaultReminderDays,
+    },
+  })
+
   await prisma.user.upsert({
     where: { id: session.user.id },
     update: { onboardingStep: 3 },
@@ -166,7 +183,6 @@ export async function saveServiceConfiguration(data: {
   })
 
   revalidatePath("/")
-  
   return { success: true }
 }
 
@@ -175,7 +191,8 @@ export async function saveClientImport(data: {
   clientCount?: number
 }) {
   const session = await requireAuth()
-  
+
+  // Client import method is informational only — no data to persist
   await prisma.user.upsert({
     where: { id: session.user.id },
     update: { onboardingStep: 4 },
@@ -189,7 +206,6 @@ export async function saveClientImport(data: {
   })
 
   revalidatePath("/")
-  
   return { success: true }
 }
 
@@ -200,13 +216,21 @@ export async function saveNotificationPreferences(data: {
   reminderFrequency: string
 }) {
   const session = await requireAuth()
-  
+
+  const { createClient } = await import("@/lib/supabase/server")
+  const supabase = await createClient()
+  await supabase.auth.updateUser({
+    data: {
+      notification_email: data.emailEnabled,
+      notification_sms: data.smsEnabled,
+      notification_whatsapp: data.whatsappEnabled,
+      notification_reminder_frequency: data.reminderFrequency,
+    },
+  })
+
   await prisma.user.upsert({
     where: { id: session.user.id },
-    update: {
-      onboardingStep: 5,
-      onboardingCompleted: true,
-    },
+    update: { onboardingStep: 5, onboardingCompleted: true },
     create: {
       id: session.user.id,
       email: session.user.email,
@@ -218,6 +242,5 @@ export async function saveNotificationPreferences(data: {
   })
 
   revalidatePath("/")
-  
   return { success: true }
 }

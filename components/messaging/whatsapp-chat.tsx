@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { format } from "date-fns"
-import { Send, Search, MoreVertical, Phone, Video, Paperclip, Smile, Check, CheckCheck } from "lucide-react"
+import { Send, Search, MoreVertical, Phone, Video, Paperclip, Smile, Check, CheckCheck, MessageSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,24 +45,10 @@ export function WhatsAppChat({ clients, onSendMessage, onClientSelect, currentUs
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const loadMessages = useCallback(async (_clientId: string) => {
-    // TODO: Load actual messages from server
-    // For now, we'll use mock data
-    setMessages([
-      {
-        id: "1",
-        content: "Hello! This is a test message.",
-        sent: false,
-        timestamp: new Date(Date.now() - 3600000),
-        status: "read",
-      },
-      {
-        id: "2",
-        content: "Hi there! How can I help you today?",
-        sent: true,
-        timestamp: new Date(Date.now() - 3000000),
-        status: "read",
-      },
-    ])
+    // WhatsApp message history is not yet stored server-side.
+    // Messages sent via the Messaging Dashboard are tracked in the DB,
+    // but real-time WhatsApp conversations require the Business API webhook.
+    setMessages([])
   }, [])
 
   const scrollToBottom = useCallback(() => {
@@ -247,9 +233,25 @@ export function WhatsAppChat({ clients, onSendMessage, onClientSelect, currentUs
             </div>
           </div>
 
+          {/* WhatsApp API status banner */}
+          {!process.env.NEXT_PUBLIC_WHATSAPP_CONFIGURED && (
+            <div className="mx-4 mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+              WhatsApp Business API not configured. Messages sent here will be logged but not delivered until
+              WHATSAPP_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID are set in your environment.
+            </div>
+          )}
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white/[0.01]">
-            {messages.map((message) => (
+            {messages.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-center text-muted-foreground">
+                <div>
+                  <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm font-medium">No messages yet</p>
+                  <p className="text-xs mt-1 opacity-70">Send a message below to start the conversation</p>
+                </div>
+              </div>
+            ) : messages.map((message) => (
               <div
                 key={message.id}
                 className={cn(

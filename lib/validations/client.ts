@@ -42,8 +42,22 @@ export const createClientSchema = z.object({
     .optional()
     .transform((v) => v?.trim() || undefined)
     .refine((v) => !v || z.string().email().safeParse(v).success, "Invalid email"),
-  phone: z.string().optional().transform((v) => v?.trim() || undefined),
-  whatsapp: z.string().optional().transform((v) => v?.trim() || undefined),
+  phone: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined)
+    .refine(
+      (v) => !v || /^[+]?[\d\s\-().]{7,20}$/.test(v),
+      "Invalid phone number format"
+    ),
+  whatsapp: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined)
+    .refine(
+      (v) => !v || /^[+]?[\d\s\-().]{7,20}$/.test(v),
+      "Invalid WhatsApp number format"
+    ),
   address: z.string().optional().transform((v) => v?.trim() || undefined),
   notes: z.string().optional().transform((v) => v?.trim() || undefined),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("MEDIUM"),

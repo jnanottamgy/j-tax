@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { format } from "date-fns"
-import { Clock, MessageSquare, FileText, CheckCircle2, XCircle, RefreshCw } from "lucide-react"
+import { Clock, MessageSquare, FileText, CheckCircle2, XCircle, RefreshCw, Inbox } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -37,43 +37,19 @@ export function ClientCommunicationHistory({ clientId }: CommunicationHistoryPro
   const loadMessages = useCallback(async () => {
     try {
       setLoading(true)
-      // TODO: Load actual messages from server
-      // For now, we'll use mock data
-      setMessages([
-        {
-          id: "1",
-          content: "Reminder: Your GSTR-1 return is due on January 31st. Please ensure all documents are submitted.",
-          status: "DELIVERED",
-          sentAt: new Date(Date.now() - 86400000),
-          template: {
-            name: "GST Reminder",
-            type: "COMPLIANCE_REMINDER",
-          },
-          logs: [
-            { status: "PENDING", timestamp: new Date(Date.now() - 86400000) },
-            { status: "QUEUED", timestamp: new Date(Date.now() - 86000000) },
-            { status: "SENT", timestamp: new Date(Date.now() - 85000000) },
-            { status: "DELIVERED", timestamp: new Date(Date.now() - 84000000) },
-          ],
-        },
-        {
-          id: "2",
-          content: "Payment reminder: Invoice #INV-001 is pending payment of ₹50,000.",
-          status: "READ",
-          sentAt: new Date(Date.now() - 172800000),
-          template: {
-            name: "Payment Reminder",
-            type: "PAYMENT_REMINDER",
-          },
-          logs: [
-            { status: "PENDING", timestamp: new Date(Date.now() - 172800000) },
-            { status: "QUEUED", timestamp: new Date(Date.now() - 172700000) },
-            { status: "SENT", timestamp: new Date(Date.now() - 172600000) },
-            { status: "DELIVERED", timestamp: new Date(Date.now() - 172500000) },
-            { status: "READ", timestamp: new Date(Date.now() - 172400000) },
-          ],
-        },
-      ])
+      const { getClientCommunicationHistory } = await import("@/app/actions/messages")
+      const data = await getClientCommunicationHistory(clientId)
+      // Normalize dates (server actions return serialised ISO strings)
+      setMessages(
+        data.messages.map((m: any) => ({
+          ...m,
+          sentAt: new Date(m.createdAt),
+          logs: (m.logs ?? []).map((l: any) => ({
+            ...l,
+            timestamp: new Date(l.timestamp),
+          })),
+        }))
+      )
     } catch (error) {
       console.error("Failed to load communication history:", error)
     } finally {
@@ -131,8 +107,11 @@ export function ClientCommunicationHistory({ clientId }: CommunicationHistoryPro
   if (messages.length === 0) {
     return (
       <Card className="bg-white/[0.02] border-white/[0.08] p-12 text-center">
-        <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-        <p className="text-muted-foreground">No communication history found</p>
+        <Inbox className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+        <p className="font-medium text-muted-foreground">No messages sent yet</p>
+        <p className="text-sm text-muted-foreground/70 mt-1 max-w-sm mx-auto">
+          Messages sent to this client via the Messaging module will appear here.
+        </p>
       </Card>
     )
   }
