@@ -1,6 +1,6 @@
 # J-TAX Fix Log
 
-**Last updated:** 2026-06-09 (Session 4 — Customer Audit)
+**Last updated:** 2026-06-09 (Session 6 — Proposals & Quotation System)
 **Branch:** `main`
 
 ---
@@ -331,3 +331,24 @@
 | Supabase email templates | LOW | Using Supabase defaults |
 | Supabase `documents` bucket | SETUP | Verify in dashboard — `assertDocumentBucketExists()` creates on first upload |
 | Workforce heartbeat | LOW | `recordHeartbeat()` action exists — wire to client component for IDLE detection |
+
+---
+
+## SESSION 6 — PROPOSALS & QUOTATION AUTOMATION SYSTEM
+
+### FEAT-007 — Lead CRM + Quotation Builder + Email Automation
+- **New DB models:** Lead, Quotation, QuotationItem, QuotationEmailLog, QuotationFollowUp (5 tables)
+- **New enums:** LeadStatus (6), LeadSource (6), QuotationStatus (8)
+- **lib/quotations/pdf-generator.ts:** pdfkit A4 PDF — branded header (BRAND blue #1e3a8a), info bar, bill-to, items table with alternating rows, totals block, notes, terms, footer
+- **lib/quotations/email-templates.ts:** quotation email + Day 3/7/14 follow-up emails with inline CSS
+- **app/actions/proposals.ts:** full CRM and quotation server actions including analytics
+- **Approval workflow:** DRAFT → PENDING_APPROVAL (Manager) → Partner approves → email sent → follow-ups scheduled
+- **Client portal `/q/[token]`:** no auth, marks VIEWED on load, accept/reject with optional reason
+- **Auto follow-ups:** Day 3/7/14 cron at `/api/cron/quotation-followups` (09:00 UTC)
+- **PDF route:** `/api/quotations/[id]/pdf` (authenticated)
+- **Analytics:** acceptance rate, conversion rate, avg deal size, pipeline value, won revenue
+- **Build:** 42 routes, 0 TS errors
+
+### CONFIG-001 — Firm branding env vars
+- Three new optional env vars: `FIRM_NAME`, `FIRM_PHONE`, `FIRM_ADDRESS`
+- Default to TaxWise Consultants placeholders if not set

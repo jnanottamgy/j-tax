@@ -1,7 +1,7 @@
 # J-TAX Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-09 (Session 5 — Workforce Intelligence)
+**Date of prior session:** 2026-06-09 (Session 6 — Proposals & Quotation System)
 **Branch:** `main`
 **Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
 
@@ -9,14 +9,55 @@
 
 ## QUICK STATUS
 
-Build is clean: 36 routes, 0 TypeScript errors, 0 build errors.
-Workforce Intelligence module is fully functional and PARTNER-only.
+Build is clean: 42 routes, 0 TypeScript errors, 0 build errors.
+Proposals & Quotation system fully functional. Public quotation portal at `/q/[token]`.
 
 ```bash
 npm run dev    # → http://localhost:3000
 # Login: admin@jtax.test / JTax@Admin2026!  (PARTNER role)
-# Workforce: http://localhost:3000/workforce
+# Proposals: http://localhost:3000/proposals
+# New Quotation: http://localhost:3000/proposals/quotations/new
+# Client portal: http://localhost:3000/q/[token]  (no auth required)
 ```
+
+---
+
+## WHAT WAS DONE IN SESSION 6
+
+### New Feature: Proposals & Quotation Automation System
+
+**Database** — 5 new models pushed via `prisma db push`:
+- `Lead` — CRM entity (name/email/phone/company/service/source/status/estimatedValue)
+- `Quotation` — full quotation with token, status, approval/sent/viewed timestamps
+- `QuotationItem` — line items (description/serviceType/qty/unitPrice/taxRate/totals)
+- `QuotationEmailLog` — every email sent (type/status/resendId/timestamps)
+- `QuotationFollowUp` — Day 3/7/14 scheduled follow-ups
+
+**Core libs:**
+- `lib/quotations/pdf-generator.ts` — pdfkit A4 PDF with branded header, items table, totals
+- `lib/quotations/email-templates.ts` — quotation + follow-up HTML email templates
+
+**Server actions** (`app/actions/proposals.ts`):
+- Lead CRUD: `createLead`, `updateLead`, `updateLeadStatus`, `deleteLead`, `getLeads`
+- Quotation: `createQuotation`, `approveAndSendQuotation`, `getQuotations`, `getQuotationById`, `deleteQuotation`
+- Public: `respondToQuotation`, `markQuotationViewed`
+- Analytics: `getProposalAnalytics`
+
+**API routes:**
+- `GET /api/quotations/[id]/pdf` — authenticated PDF download
+- `GET /api/cron/quotation-followups` — daily cron, processes pending Day 3/7/14 follow-ups
+
+**Pages:**
+- `/proposals` — dashboard (KPI cards + Leads CRM / Quotations / Analytics tabs)
+- `/proposals/quotations/new` — dynamic builder, live total computation, pre-fill from lead
+- `/proposals/quotations/[id]` — detail with approve-and-send, email log, follow-up schedule
+- `/q/[token]` — public client portal (no auth), accept/reject with reason, marks VIEWED on load
+
+**Approval flow:** Manager → DRAFT → PENDING_APPROVAL (Partner notified) → Partner clicks "Approve & Send" → email sent, follow-ups scheduled → client responds → lead status updated → Partners notified.
+
+**Follow-up engine:** On send, creates 3 `QuotationFollowUp` records (Day 3, 7, 14). Daily cron at 09:00 UTC processes pending ones. Skips if quotation already accepted/rejected.
+
+**Navigation:** "Proposals" added to sidebar (PARTNER + MANAGER).
 
 ---
 
@@ -63,6 +104,15 @@ npm run dev    # → http://localhost:3000
 ---
 
 ## REMAINING WORK (priority order)
+
+### 0. Proposals: Configure firm env vars (SETUP)
+Set these in `.env` for correct PDF/email branding:
+```
+FIRM_NAME="Your Firm Name"
+FIRM_PHONE="+91-XXXXXXXXXX"
+FIRM_ADDRESS="123 Street, City, State — 400001"
+```
+`FROM_EMAIL` is already set from Session 1.
 
 ### 1. Supabase RLS Policies (HIGH — security)
 No DB-level protection. Application-layer auth only.

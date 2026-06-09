@@ -1,6 +1,6 @@
 # J-TAX — Complete Project State Document
 
-**Last updated:** 2026-06-09 (Session 5 — Workforce Intelligence)
+**Last updated:** 2026-06-09 (Session 6 — Proposals & Quotation System)
 **Branch:** `main`
 **Last commit:** `e2136bf` — Phase 3–6 audit fixes
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
@@ -54,7 +54,10 @@ j-tax/
 │   │   ├── page.tsx                  # Dashboard with setup checklist + 60s cache
 │   │   ├── clients/page.tsx          # Single PageHeader (fixed dupe)
 │   │   ├── employees/page.tsx
-│   │   ├── workforce/page.tsx            # NEW — PARTNER-only workforce dashboard
+│   │   ├── proposals/page.tsx            # NEW — Leads CRM + Quotations + Analytics
+│   │   ├── proposals/quotations/new/page.tsx  # NEW — quotation builder
+│   │   ├── proposals/quotations/[id]/page.tsx # NEW — quotation detail + approve/send
+│   │   ├── workforce/page.tsx            # PARTNER-only workforce dashboard
 │   │   ├── workforce/[employeeId]/page.tsx  # NEW — employee detail + timeline
 │   │   ├── work-tracker/
 │   │   ├── compliance/
@@ -73,7 +76,8 @@ j-tax/
 │   │   ├── compliance.ts, documents.ts, invoices.ts
 │   │   ├── messages.ts, notifications.ts, onboarding.ts
 │   │   ├── reports.ts, search.ts, activity.ts
-│   │   ├── workforce.ts                  # NEW — analytics, timeline, attendance, alerts
+│   │   ├── workforce.ts                  # analytics, timeline, attendance, alerts
+│   │   ├── proposals.ts                  # NEW — lead CRM, quotation CRUD, analytics
 │   │   ├── settings.ts               # saveNotificationPreferences + getNotificationPreferences
 │   │   ├── client-360.ts
 │   │   └── client-portal-documents.ts
@@ -119,7 +123,7 @@ All required vars set in `.env`:
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Production build | ✅ Passes | 36 routes, 0 errors |
+| Production build | ✅ Passes | 42 routes, 0 errors |
 | TypeScript strict mode | ✅ Passes | 0 errors |
 | Login/auth flow | ✅ Manual | |
 | All major pages | ✅ Manual | |
@@ -135,6 +139,7 @@ All required vars set in `.env`:
 | Phone validation | ✅ Done | Format regex |
 | Dead buttons/links | ✅ Done | All 14 found + fixed |
 | Workforce Intelligence | ✅ Done | PARTNER-only, 3 new DB tables, full tracking |
+| Proposals & Quotations | ✅ Done | Lead CRM, PDF, email automation, client portal |
 | Automated tests | ❌ None | No Jest/Vitest/Playwright |
 | RLS policies | ❌ None | Application-layer auth only |
 
