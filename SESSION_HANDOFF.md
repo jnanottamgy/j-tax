@@ -1,8 +1,7 @@
 # J-TAX Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-09 (Session 3)
-**Prior session model:** Claude Sonnet 4.6
+**Date of prior session:** 2026-06-09 (Session 4 — Customer Audit)
 **Branch:** `main`
 **Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
 
@@ -10,204 +9,134 @@
 
 ## QUICK STATUS
 
-The application is **fully functional and production-ready** modulo the two remaining security gaps (RLS + Redis rate limiter). All startup blockers fixed, 19 security vulnerabilities resolved, all originally-documented features implemented.
+The application has passed a full 7-phase customer audit. All critical issues found
+have been fixed. Build is clean, TypeScript is strict-mode clean, 34 routes compile.
 
 ```bash
-# Start the app
-npm run dev        # → http://localhost:3000
-
-# Login
-Email:    admin@jtax.test
-Password: JTax@Admin2026!
-Role:     PARTNER (sees everything)
+npm run dev    # → http://localhost:3000
+# Login: admin@jtax.test / JTax@Admin2026!  (PARTNER role)
 ```
 
 ---
 
-## WHAT WAS ACCOMPLISHED IN SESSION 3
+## WHAT WAS DONE IN SESSION 4
 
-1. **Completed `toUserError()` coverage** — two remaining raw `error.message` returns in `documents.ts` and `settings.ts` fixed
+### Phase 1–2: Auth + Onboarding
+- All auth flows (login, signup, reset) verified — working correctly
+- Onboarding wizard: `saveFirmInformation`, `saveEmployeeSetup`, `saveServiceConfiguration`,
+  `saveNotificationPreferences` now all persist data to Supabase `user_metadata`
+- Firm name required validation + disabled Next button added to wizard step 1
 
-2. **Verified env vars** — `NEXT_PUBLIC_APP_URL=http://localhost:3000` and `CRON_SECRET` already set from session 2
+### Phase 3: Feature Discoverability
+- **Setup Checklist** added to dashboard (PARTNER/MANAGER only):
+  - 6-step progress widget: employees → clients → tasks → compliance → documents → invoices
+  - Live DB counts, collapse/dismiss, progress bar
+  - Vanishes once all steps complete
 
-3. **Deleted `lib/notifications/`** — dead directory confirmed not imported by anything
+### Phase 4–5: Dead Buttons + Validations
+- **`clients/page.tsx`**: removed duplicate PageHeader with broken `/clients/add` link
+- **`ClientsEmptyState`**: dead "Add client" button → guidance text
+- **`empty-states.tsx`**: 9 dead route hrefs → real routes or `onAction` callbacks
+- **Settings notification toggles**: now save/load via `saveNotificationPreferences` action
+- **Invoice validation**: `dueDate >= issueDate` cross-field refine added
+- **Client phone/whatsapp**: format validation regex added
 
-4. **Committed all session 1+2 work** — `19c8a91` + `13877ab` (28 files changed, 1680 insertions)
-
-5. **Client portal document upload** (`5b07df3`):
-   - `app/actions/client-portal-documents.ts` — `createClientPortalUploadUrl()` + `finalizeClientPortalUpload()`
-   - `app/(client-portal)/client/documents/upload-form.tsx` — drag-drop + XHR progress bar
-   - Wired into client documents page
-
-6. **Dashboard query caching** (`5b07df3`):
-   - 14 Prisma queries → single `unstable_cache` wrapper
-   - 60s TTL, per-user cache key, daily rollover
-
-7. **GitHub Actions CI** (`368e8f5`):
-   - `.github/workflows/ci.yml` — tsc + next build + lint on push/PR
-
-8. **Vercel configuration** (`368e8f5`):
-   - `vercel.json` — daily cron at 02:00 UTC + noindex header
-
----
-
-## CURRENT STATE — NOTHING BROKEN
-
-- `npm run build` → 34 routes, 0 errors ✅
-- TypeScript strict mode → 0 errors ✅
-- All env vars set in `.env` ✅
-- Git clean (all committed) ✅
+### Phase 6: Production Readiness
+- **Mock data in `whatsapp-chat.tsx`**: fake chat messages removed → real empty state
+- **Mock data in `client-communication-history.tsx`**: hardcoded messages replaced with
+  real DB data via `getClientCommunicationHistory()` action
+- **`error.tsx`**: raw `error.message` no longer shown to users
+- **Dashboard `pendingDocuments={0}`**: replaced with real document count from cached fetcher
 
 ---
 
 ## REMAINING WORK (priority order)
 
-### 1. Supabase RLS Policies (HIGH — 2–3 hours)
-```
-Context: All authorization is application-layer only. If service role key leaks
-         or DB is accessed directly, all data is exposed.
-
-Tables to protect (SQL to run in Supabase SQL Editor):
-
--- Enable RLS
+### 1. Supabase RLS Policies (HIGH — security)
+```sql
+-- Run in Supabase SQL Editor:
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "User" ENABLE ROW LEVEL SECURITY;
 
--- Example policy for clients (PARTNER/MANAGER see all; EXECUTIVE sees assigned):
-CREATE POLICY "staff_read_clients" ON clients FOR SELECT
+-- Example policy (adapt for each table):
+CREATE POLICY "staff_clients" ON clients FOR ALL
   USING (
-    (auth.jwt()->>'role') IN ('PARTNER', 'MANAGER')
+    (auth.jwt()->'app_metadata'->>'role') IN ('PARTNER', 'MANAGER')
     OR (
-      (auth.jwt()->>'role') = 'EXECUTIVE'
-      AND assignedEmployeeId IN (
-        SELECT id FROM employees WHERE userId = auth.uid()::text
+      (auth.jwt()->'app_metadata'->>'role') = 'EXECUTIVE'
+      AND "assignedEmployeeId" IN (
+        SELECT id FROM employees WHERE "userId" = auth.uid()::text
       )
     )
-    OR (
-      (auth.jwt()->>'role') = 'CLIENT'
-      AND email = (SELECT email FROM "User" WHERE id = auth.uid()::text)
-    )
   );
-
-Note: The role is stored in JWT app_metadata. Access via auth.jwt()->'app_metadata'->>'role'
-      (Supabase stores app_metadata in the JWT claims)
 ```
 
-### 2. Upstash Redis Rate Limiter (HIGH — 1 hour + Redis setup)
-```
-Context: lib/security/rate-limiter.ts uses in-memory Map — resets on cold starts.
-
-Steps:
-1. Create free Upstash Redis at console.upstash.com
-2. npm install @upstash/ratelimit @upstash/redis
-3. In lib/security/rate-limiter.ts, replace the Map with:
-   import { Ratelimit } from "@upstash/ratelimit"
-   import { Redis } from "@upstash/redis"
-   const ratelimit = new Ratelimit({
-     redis: Redis.fromEnv(),
-     limiter: Ratelimit.slidingWindow(10, "15 m"),
-   })
-4. Add to .env.example:
-   UPSTASH_REDIS_REST_URL=https://...
-   UPSTASH_REDIS_REST_TOKEN=...
+### 2. Upstash Redis Rate Limiter (HIGH)
+```bash
+npm install @upstash/ratelimit @upstash/redis
+# Replace lib/security/rate-limiter.ts Map with Ratelimit.slidingWindow(10, "15 m")
+# Add UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN to .env
 ```
 
-### 3. Playwright E2E Tests (MEDIUM — 3–4 hours)
-```
-Context: Zero automated tests. App has been manually tested only.
-
-Steps:
-1. npm install -D @playwright/test
-2. Create playwright.config.ts pointing to http://localhost:3000
-3. Create tests/auth.spec.ts:
-   - Login with valid credentials → lands on dashboard
-   - Login with wrong password → error shown
-   - Open redirect blocked
-4. Create tests/clients.spec.ts:
-   - Create a new client
-   - Search for it
-   - Edit it
-5. Create tests/documents.spec.ts:
-   - Upload a PDF as a staff user
-   - Verify it appears in the list
+### 3. Playwright E2E Tests (MEDIUM)
+```bash
+npm install -D @playwright/test
+# Create tests/auth.spec.ts, tests/clients.spec.ts, tests/documents.spec.ts
 ```
 
-### 4. ESLint Configuration (LOW — 30 min)
+### 4. ESLint (LOW)
+```json
+// .eslintrc.json
+{ "extends": ["next/core-web-vitals", "next/typescript"] }
+// Remove `|| true` from .github/workflows/ci.yml lint step
 ```
-Currently: CI lint job runs `next lint || true` (permissive — always passes)
 
-Steps:
-1. Create .eslintrc.json:
-   {
-     "extends": ["next/core-web-vitals", "next/typescript"]
-   }
-2. Run npx next lint to see current violations
-3. Fix or suppress justified ones
-4. Remove `|| true` from .github/workflows/ci.yml lint step
-```
+### 5. Supabase Documents Bucket (SETUP)
+- Verify in Supabase dashboard → Storage that bucket `documents` (private) exists
+- OR run app — `assertDocumentBucketExists()` creates it on first upload
 
 ---
 
-## KEY FILES TO KNOW
+## KEY ARCHITECTURAL NOTES (session 4 additions)
 
-| File | Purpose |
-|------|---------|
-| `proxy.ts` | Auth + RBAC edge enforcement for every request |
-| `lib/auth/session.ts` | `getSession()` / `requireSession()` — uses `supabase.auth.getUser()` |
-| `lib/auth/guards.ts` | `requireAuth()`, `requireClient()`, `requirePartnerOrManager()` etc. |
-| `lib/auth/scope.ts` | `getExecutiveEmployeeId()` — EXECUTIVE row-scoping |
-| `lib/supabase/env.ts` | Static NEXT_PUBLIC_* accessors — do NOT change to dynamic |
-| `lib/prisma.ts` | Prisma singleton with pg adapter — use everywhere |
-| `lib/forms/errors.ts` | `toUserError()` — use in all catch blocks |
-| `app/actions/documents.ts` | Staff file upload with magic byte validation |
-| `app/actions/client-portal-documents.ts` | CLIENT file upload (email-scoped, signed URL) |
-| `app/(app)/page.tsx` | Dashboard with `unstable_cache` wrapper |
-| `prisma/schema.prisma` | Single source of truth for DB |
+### Notification Preferences Storage
+- Stored in Supabase `user_metadata` (no schema change)
+- Keys: `notification_email`, `notification_sms`, `notification_push`
+- Read: `getNotificationPreferences()` in `app/actions/settings.ts`
+- Write: `saveNotificationPreferences(prefs)` in `app/actions/settings.ts`
+- Also persisted during onboarding final step
 
----
+### Onboarding Data Storage
+- All onboarding form data persisted to Supabase `user_metadata`
+- Firm info keys: `firm_name`, `firm_gstin`, `firm_address`, `firm_phone`, `firm_email`
+- Employee setup keys: `onboarding_employee_count`, `onboarding_departments`
+- Service config keys: `onboarding_services`, `onboarding_reminder_days`
+- Notification prefs keys: `notification_email`, `notification_sms`, `notification_whatsapp`, `notification_reminder_frequency`
 
-## IMPORTANT ARCHITECTURAL FACTS
+### Setup Checklist
+- Component: `components/dashboard/setup-checklist.tsx`
+- Only shown to PARTNER/MANAGER
+- Automatically hides when all 6 steps complete
+- User can collapse or dismiss permanently (session-local state)
+- Lives at top of dashboard, above ExecutiveSummary
 
-### Next.js 16 Specifics
-- Middleware file is `proxy.ts` — export must be named `proxy`, not `middleware`
-- `NEXT_PUBLIC_*` vars MUST be referenced as static literals
-- `unstable_cache` available; React `cache()` is per-request only
-
-### Client Portal Upload Security
-- `requireClient()` guard — only CLIENT role can call these actions
-- Client record found by `session.user.email` ONLY (GSTIN fallback removed — SEC-007)
-- `storagePath` prefix validated: must start with `documents/{clientId}/`
-- File type and size re-validated server-side in `finalizeClientPortalUpload`
-
-### Cache Invalidation
-```typescript
-import { revalidateTag } from "next/cache"
-// Purge dashboard cache for all users:
-revalidateTag("dashboard")
-// Purge for specific user:
-revalidateTag(`dashboard-${userId}`)
-```
-
-### Supabase Auth — Role Assignment
-- New users → proxy redirects to `/unauthorized?reason=missing_role`
-- Fix: Supabase dashboard → Authentication → Users → Edit → `app_metadata: {"role": "PARTNER"}`
-- Also create User table row with matching `id`
+### WhatsApp Chat
+- Mock messages removed — shows proper empty state
+- API banner warns if `WHATSAPP_API_TOKEN` not configured
+- Messages ARE stored in DB (`Message` + `MessageLog` tables) when sent via Messaging module
+- Real-time two-way conversation requires WhatsApp Webhook — not implemented
 
 ---
 
-## RECOMMENDED FIRST ACTIONS FOR NEXT SESSION
+## RECOMMENDED NEXT SESSION ACTIONS
 
 ```
-1. Read PROJECT_STATE.md, FIX_LOG.md, SESSION_HANDOFF.md (this file)
-
-2. Implement Supabase RLS policies (highest security value, all SQL provided above)
-
-3. Set up Upstash Redis and update rate limiter
-
-4. Add Playwright E2E test suite (minimum: login + one CRUD flow)
-
-5. Configure ESLint (.eslintrc.json) and fix lint job in CI
+1. Implement Supabase RLS (SQL above — highest security value)
+2. Set up Upstash Redis for production rate limiting
+3. Add Playwright E2E tests (login, client CRUD, file upload)
+4. Configure ESLint and fix lint job in CI
+5. Verify Supabase documents bucket exists in dashboard
 ```
