@@ -10,7 +10,9 @@ const PUBLIC_ROUTES = [
   "/auth/callback",
   "/auth/reset-password",
   "/api/cron/payments",
+  "/api/cron/quotation-followups",
   "/unauthorized",
+  "/q",
 ]
 const AUTH_ROUTES = ["/login", "/signup"]
 

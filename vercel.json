@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/payments",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/quotation-followups",
+      "schedule": "0 9 * * *"
     }
   ],
   "headers": [

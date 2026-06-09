@@ -32,6 +32,7 @@ export const PROTECTED_ROUTE_PREFIXES = [
   "/settings",
   "/activity",
   "/workforce",
+  "/proposals",
 ] as const
 
 /** Minimum role required per route (most permissive list) */
@@ -50,6 +51,7 @@ export const ROUTE_ACCESS: Record<string, AppRole[]> = {
   "/settings": [...APP_ROLES],
   "/activity": [...APP_ROLES],
   "/workforce": ["PARTNER"],
+  "/proposals": ["PARTNER", "MANAGER"],
 }
 
 export function parseAppRole(value: unknown): AppRole | null {

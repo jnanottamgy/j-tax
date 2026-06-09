@@ -13,6 +13,7 @@ import {
   Users,
   Wallet,
   BarChart3,
+  Send,
 } from "lucide-react"
 
 import type { AppRole } from "@/lib/auth/types"
@@ -37,6 +38,7 @@ export const mainNavigation: NavItem[] = [
   { title: "Messaging",   href: "/messaging",   icon: MessageSquare },
   { title: "Reports",     href: "/reports",     icon: PieChart },
   { title: "Employees",   href: "/employees",   icon: Users },
+  { title: "Proposals",   href: "/proposals",   icon: Send },
   { title: "Workforce",   href: "/workforce",   icon: BarChart3, roles: ["PARTNER"] },
 ]
 
