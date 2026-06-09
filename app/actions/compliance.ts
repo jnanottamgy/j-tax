@@ -442,6 +442,25 @@ export async function updateComplianceWorkflowStatus(
       metadata: { workflowStatus },
     })
 
+    // Workforce tracking
+    if (workflowStatus === "COMPLETED" || workflowStatus === "FILED") {
+      try {
+        const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
+        const employee = await getEmployeeByUserId(session.user.id)
+        if (employee) {
+          await trackEmployeeActivity({
+            employeeId: employee.id,
+            userId: session.user.id,
+            activityType: "COMPLIANCE_COMPLETED",
+            description: `Completed compliance "${event.title}"`,
+            entityType: "COMPLIANCE",
+            entityId: eventId,
+            entityName: event.title,
+          })
+        }
+      } catch {}
+    }
+
     revalidatePath("/calendar")
     revalidatePath("/compliance")
     if (event.clientId) revalidatePath(`/clients/${event.clientId}`)

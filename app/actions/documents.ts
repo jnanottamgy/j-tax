@@ -348,6 +348,23 @@ export async function uploadDocument(
       },
     })
 
+    // Workforce tracking
+    try {
+      const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
+      const employee = await getEmployeeByUserId(session.user.id)
+      if (employee) {
+        await trackEmployeeActivity({
+          employeeId: employee.id,
+          userId: session.user.id,
+          activityType: "DOCUMENT_UPLOADED",
+          description: `Uploaded document "${parsed.data.title}"`,
+          entityType: "DOCUMENT",
+          entityId: document.id,
+          entityName: parsed.data.title,
+        })
+      }
+    } catch {}
+
     revalidatePath("/documents")
     revalidatePath(`/clients/${parsed.data.clientId}`)
 

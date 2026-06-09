@@ -1,7 +1,7 @@
 # J-TAX Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-09 (Session 4 — Customer Audit)
+**Date of prior session:** 2026-06-09 (Session 5 — Workforce Intelligence)
 **Branch:** `main`
 **Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
 
@@ -9,134 +9,106 @@
 
 ## QUICK STATUS
 
-The application has passed a full 7-phase customer audit. All critical issues found
-have been fixed. Build is clean, TypeScript is strict-mode clean, 34 routes compile.
+Build is clean: 36 routes, 0 TypeScript errors, 0 build errors.
+Workforce Intelligence module is fully functional and PARTNER-only.
 
 ```bash
 npm run dev    # → http://localhost:3000
 # Login: admin@jtax.test / JTax@Admin2026!  (PARTNER role)
+# Workforce: http://localhost:3000/workforce
 ```
 
 ---
 
-## WHAT WAS DONE IN SESSION 4
+## WHAT WAS DONE IN SESSION 5
 
-### Phase 1–2: Auth + Onboarding
-- All auth flows (login, signup, reset) verified — working correctly
-- Onboarding wizard: `saveFirmInformation`, `saveEmployeeSetup`, `saveServiceConfiguration`,
-  `saveNotificationPreferences` now all persist data to Supabase `user_metadata`
-- Firm name required validation + disabled Next button added to wizard step 1
+### New Feature: Enterprise Workforce Intelligence (PARTNER-only)
 
-### Phase 3: Feature Discoverability
-- **Setup Checklist** added to dashboard (PARTNER/MANAGER only):
-  - 6-step progress widget: employees → clients → tasks → compliance → documents → invoices
-  - Live DB counts, collapse/dismiss, progress bar
-  - Vanishes once all steps complete
+**Database** — 3 new models pushed via `prisma db push`:
+- `EmployeeSession` — login/logout/lastActiveAt/durationMinutes
+- `EmployeeActivity` — immutable audit log of every significant action (21 types)
+- `AttendanceRecord` — daily attendance (PRESENT/ABSENT/LATE_LOGIN/HALF_DAY/ON_LEAVE)
+- `Employee` model updated with 3 new relations
 
-### Phase 4–5: Dead Buttons + Validations
-- **`clients/page.tsx`**: removed duplicate PageHeader with broken `/clients/add` link
-- **`ClientsEmptyState`**: dead "Add client" button → guidance text
-- **`empty-states.tsx`**: 9 dead route hrefs → real routes or `onAction` callbacks
-- **Settings notification toggles**: now save/load via `saveNotificationPreferences` action
-- **Invoice validation**: `dueDate >= issueDate` cross-field refine added
-- **Client phone/whatsapp**: format validation regex added
+**Core Tracker** — `lib/workforce/tracker.ts`:
+- `startEmployeeSession` / `endEmployeeSession` — called on login/logout
+- `trackEmployeeActivity` — called by all mutation actions
+- `updateSessionLastActive` — heartbeat
+- `upsertAttendanceOnLogin` — auto PRESENT or LATE_LOGIN based on 09:30 IST
 
-### Phase 6: Production Readiness
-- **Mock data in `whatsapp-chat.tsx`**: fake chat messages removed → real empty state
-- **Mock data in `client-communication-history.tsx`**: hardcoded messages replaced with
-  real DB data via `getClientCommunicationHistory()` action
-- **`error.tsx`**: raw `error.message` no longer shown to users
-- **Dashboard `pendingDocuments={0}`**: replaced with real document count from cached fetcher
+**Activity hooks wired into:**
+- `app/actions/auth.ts` → LOGIN, LOGOUT
+- `app/actions/clients.ts` → CLIENT_CREATED, CLIENT_UPDATED
+- `app/actions/tasks.ts` → TASK_CREATED, TASK_COMPLETED
+- `app/actions/documents.ts` → DOCUMENT_UPLOADED
+- `app/actions/compliance.ts` → COMPLIANCE_COMPLETED
+
+**Server actions** — `app/actions/workforce.ts`:
+- `getWorkforceDashboard()` — live status + team summary
+- `getPerformanceMetrics(period)` — ranked scorecard with 0–100 score
+- `getEmployeeTimeline(employeeId, filter, ...)` — paginated activity log
+- `getEmployeeDetail(employeeId)` — full context for employee detail page
+- `getAttendanceReport(year, month)` — monthly summary with CSV export
+- `getWorkloadAlerts()` — overloaded/underutilized/no-activity/excessive-overdue
+- `getProductivityChartData(employeeId, period)` — area chart series
+- `getTeamComparisonData(period)` — bar chart comparison
+- `recordHeartbeat()` — server action for client-side heartbeat (NOT yet wired to UI)
+
+**UI pages:**
+- `/workforce` — main dashboard (KPI cards, Live Status grid, Performance, Attendance, Alerts tabs)
+- `/workforce/[employeeId]` — employee detail (status, tasks, timeline, activity chart)
+
+**Sidebar:** "Workforce" nav item added — only visible to PARTNER role
 
 ---
 
 ## REMAINING WORK (priority order)
 
 ### 1. Supabase RLS Policies (HIGH — security)
-```sql
--- Run in Supabase SQL Editor:
-ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "User" ENABLE ROW LEVEL SECURITY;
-
--- Example policy (adapt for each table):
-CREATE POLICY "staff_clients" ON clients FOR ALL
-  USING (
-    (auth.jwt()->'app_metadata'->>'role') IN ('PARTNER', 'MANAGER')
-    OR (
-      (auth.jwt()->'app_metadata'->>'role') = 'EXECUTIVE'
-      AND "assignedEmployeeId" IN (
-        SELECT id FROM employees WHERE "userId" = auth.uid()::text
-      )
-    )
-  );
-```
+No DB-level protection. Application-layer auth only.
 
 ### 2. Upstash Redis Rate Limiter (HIGH)
-```bash
-npm install @upstash/ratelimit @upstash/redis
-# Replace lib/security/rate-limiter.ts Map with Ratelimit.slidingWindow(10, "15 m")
-# Add UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN to .env
+In-memory rate limiter resets on serverless cold starts.
+
+### 3. Workforce Heartbeat (MEDIUM)
+`recordHeartbeat()` server action exists in `app/actions/workforce.ts` but is not wired to any client component. For accurate IDLE detection, create a client component that calls it every 5 minutes:
+```tsx
+// Add to AppShell or a client wrapper:
+useEffect(() => {
+  const interval = setInterval(() => recordHeartbeat(), 5 * 60 * 1000)
+  return () => clearInterval(interval)
+}, [])
 ```
 
-### 3. Playwright E2E Tests (MEDIUM)
-```bash
-npm install -D @playwright/test
-# Create tests/auth.spec.ts, tests/clients.spec.ts, tests/documents.spec.ts
-```
+### 4. Playwright E2E Tests (MEDIUM)
+No automated tests at all.
 
-### 4. ESLint (LOW)
-```json
-// .eslintrc.json
-{ "extends": ["next/core-web-vitals", "next/typescript"] }
-// Remove `|| true` from .github/workflows/ci.yml lint step
-```
-
-### 5. Supabase Documents Bucket (SETUP)
-- Verify in Supabase dashboard → Storage that bucket `documents` (private) exists
-- OR run app — `assertDocumentBucketExists()` creates it on first upload
+### 5. ESLint (LOW)
+CI lint is permissive (`|| true`).
 
 ---
 
-## KEY ARCHITECTURAL NOTES (session 4 additions)
+## KEY ARCHITECTURAL NOTES (session 5 additions)
 
-### Notification Preferences Storage
-- Stored in Supabase `user_metadata` (no schema change)
-- Keys: `notification_email`, `notification_sms`, `notification_push`
-- Read: `getNotificationPreferences()` in `app/actions/settings.ts`
-- Write: `saveNotificationPreferences(prefs)` in `app/actions/settings.ts`
-- Also persisted during onboarding final step
+### Attendance Auto-Detection
+`upsertAttendanceOnLogin` in `lib/workforce/tracker.ts`:
+- Login before 09:30 IST (04:00 UTC) → `PRESENT`
+- Login after 09:30 IST → `LATE_LOGIN`
+- ABSENT must be set externally (no automatic absence detection)
+- Logout time and `workMinutes` updated in `endEmployeeSession`
 
-### Onboarding Data Storage
-- All onboarding form data persisted to Supabase `user_metadata`
-- Firm info keys: `firm_name`, `firm_gstin`, `firm_address`, `firm_phone`, `firm_email`
-- Employee setup keys: `onboarding_employee_count`, `onboarding_departments`
-- Service config keys: `onboarding_services`, `onboarding_reminder_days`
-- Notification prefs keys: `notification_email`, `notification_sms`, `notification_whatsapp`, `notification_reminder_frequency`
+### Performance Score Algorithm (0–100)
+Weighted formula in `getPerformanceMetrics`:
+- 40% task completion rate
+- 20% active clients (normalized to 10 max)
+- 20% documents processed (5 pts per doc, max 100)
+- 20% overdue task penalty (100 - overdue × 10)
 
-### Setup Checklist
-- Component: `components/dashboard/setup-checklist.tsx`
-- Only shown to PARTNER/MANAGER
-- Automatically hides when all 6 steps complete
-- User can collapse or dismiss permanently (session-local state)
-- Lives at top of dashboard, above ExecutiveSummary
+### Workload Alert Thresholds
+- OVERLOADED: >20 active tasks (HIGH if >30)
+- EXCESSIVE_OVERDUE: >5 overdue (HIGH if >10)
+- UNDERUTILIZED: <2 tasks AND <5 actions in 7 days
+- NO_ACTIVITY: 0 actions in 7 days (always HIGH)
 
-### WhatsApp Chat
-- Mock messages removed — shows proper empty state
-- API banner warns if `WHATSAPP_API_TOKEN` not configured
-- Messages ARE stored in DB (`Message` + `MessageLog` tables) when sent via Messaging module
-- Real-time two-way conversation requires WhatsApp Webhook — not implemented
-
----
-
-## RECOMMENDED NEXT SESSION ACTIONS
-
-```
-1. Implement Supabase RLS (SQL above — highest security value)
-2. Set up Upstash Redis for production rate limiting
-3. Add Playwright E2E tests (login, client CRUD, file upload)
-4. Configure ESLint and fix lint job in CI
-5. Verify Supabase documents bucket exists in dashboard
-```
+### Session IDLE Threshold
+15 minutes since `lastActiveAt` → IDLE status (configured in `getWorkforceDashboard`)

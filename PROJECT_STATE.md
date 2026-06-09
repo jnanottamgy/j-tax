@@ -1,6 +1,6 @@
 # J-TAX — Complete Project State Document
 
-**Last updated:** 2026-06-09 (Session 4 — Customer Audit)
+**Last updated:** 2026-06-09 (Session 5 — Workforce Intelligence)
 **Branch:** `main`
 **Last commit:** `e2136bf` — Phase 3–6 audit fixes
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
@@ -54,6 +54,8 @@ j-tax/
 │   │   ├── page.tsx                  # Dashboard with setup checklist + 60s cache
 │   │   ├── clients/page.tsx          # Single PageHeader (fixed dupe)
 │   │   ├── employees/page.tsx
+│   │   ├── workforce/page.tsx            # NEW — PARTNER-only workforce dashboard
+│   │   ├── workforce/[employeeId]/page.tsx  # NEW — employee detail + timeline
 │   │   ├── work-tracker/
 │   │   ├── compliance/
 │   │   ├── payments/invoices/
@@ -71,6 +73,7 @@ j-tax/
 │   │   ├── compliance.ts, documents.ts, invoices.ts
 │   │   ├── messages.ts, notifications.ts, onboarding.ts
 │   │   ├── reports.ts, search.ts, activity.ts
+│   │   ├── workforce.ts                  # NEW — analytics, timeline, attendance, alerts
 │   │   ├── settings.ts               # saveNotificationPreferences + getNotificationPreferences
 │   │   ├── client-360.ts
 │   │   └── client-portal-documents.ts
@@ -116,7 +119,7 @@ All required vars set in `.env`:
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Production build | ✅ Passes | 34 routes, 0 errors |
+| Production build | ✅ Passes | 36 routes, 0 errors |
 | TypeScript strict mode | ✅ Passes | 0 errors |
 | Login/auth flow | ✅ Manual | |
 | All major pages | ✅ Manual | |
@@ -131,6 +134,7 @@ All required vars set in `.env`:
 | Invoice validation | ✅ Done | dueDate >= issueDate |
 | Phone validation | ✅ Done | Format regex |
 | Dead buttons/links | ✅ Done | All 14 found + fixed |
+| Workforce Intelligence | ✅ Done | PARTNER-only, 3 new DB tables, full tracking |
 | Automated tests | ❌ None | No Jest/Vitest/Playwright |
 | RLS policies | ❌ None | Application-layer auth only |
 

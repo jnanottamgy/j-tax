@@ -98,7 +98,7 @@ export async function createTask(
   formData: FormData
 ): Promise<TaskActionState> {
   try {
-    await requirePartnerOrManager()
+    const session = await requirePartnerOrManager()
 
     const parsed = parseCreateTaskFormData(formData)
 
@@ -117,7 +117,7 @@ export async function createTask(
       ...taskFields
     } = parsed.data
 
-    await prisma.task.create({
+    const newTask = await prisma.task.create({
       data: {
         ...taskFields,
         clientId,
@@ -126,7 +126,25 @@ export async function createTask(
         dueDate: dueDate ? new Date(dueDate) : null,
         completionDate: completionDate ? new Date(completionDate) : null,
       },
+      include: { client: { select: { name: true } } },
     })
+
+    // Workforce tracking
+    try {
+      const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
+      const employee = await getEmployeeByUserId(session.user.id)
+      if (employee) {
+        await trackEmployeeActivity({
+          employeeId: employee.id,
+          userId: session.user.id,
+          activityType: "TASK_CREATED",
+          description: `Created task "${newTask.title}" for ${newTask.client.name}`,
+          entityType: "TASK",
+          entityId: newTask.id,
+          entityName: newTask.title,
+        })
+      }
+    } catch {}
 
     revalidatePath("/work-tracker")
 
@@ -256,6 +274,25 @@ export async function updateTaskStatus(
       where: { id: taskId },
       data: updateData,
     })
+
+    // Workforce tracking
+    if (status === "FILED_DONE") {
+      try {
+        const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
+        const employee = await getEmployeeByUserId(session.user.id)
+        if (employee) {
+          await trackEmployeeActivity({
+            employeeId: employee.id,
+            userId: session.user.id,
+            activityType: "TASK_COMPLETED",
+            description: `Completed task "${task.title}"`,
+            entityType: "TASK",
+            entityId: taskId,
+            entityName: task.title,
+          })
+        }
+      } catch {}
+    }
 
     revalidatePath("/work-tracker")
     revalidatePath(`/work-tracker/${taskId}`)

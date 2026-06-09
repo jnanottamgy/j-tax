@@ -81,6 +81,25 @@ export async function signIn(
   // MED-04: Log successful login to audit trail
   if (data.user) {
     await logLoginSuccess(data.user.id, data.user.email ?? "", ip)
+
+    // Workforce: start session + track LOGIN activity
+    try {
+      const { startEmployeeSession, getEmployeeByUserId, trackEmployeeActivity } = await import("@/lib/workforce/tracker")
+      const employee = await getEmployeeByUserId(data.user.id)
+      if (employee) {
+        const h = await headers()
+        const ua = h.get("user-agent") ?? undefined
+        await startEmployeeSession(employee.id, data.user.id, ip, ua)
+        await trackEmployeeActivity({
+          employeeId: employee.id,
+          userId: data.user.id,
+          activityType: "LOGIN",
+          description: "Logged in",
+        })
+      }
+    } catch (err) {
+      console.error("[workforce] login tracking error:", err)
+    }
   }
 
   // CRIT-01: Validate redirectTo is a safe same-origin path
@@ -217,6 +236,27 @@ export async function updatePassword(
 }
 
 export async function signOut(): Promise<void> {
+  // Workforce: end session + track LOGOUT
+  try {
+    const { getSession } = await import("@/lib/auth/session")
+    const session = await getSession()
+    if (session) {
+      const { endEmployeeSession, getEmployeeByUserId, trackEmployeeActivity } = await import("@/lib/workforce/tracker")
+      const employee = await getEmployeeByUserId(session.user.id)
+      if (employee) {
+        await trackEmployeeActivity({
+          employeeId: employee.id,
+          userId: session.user.id,
+          activityType: "LOGOUT",
+          description: "Logged out",
+        })
+        await endEmployeeSession(employee.id)
+      }
+    }
+  } catch (err) {
+    console.error("[workforce] logout tracking error:", err)
+  }
+
   const supabase = await createClient()
   await supabase.auth.signOut()
   revalidatePath("/", "layout")

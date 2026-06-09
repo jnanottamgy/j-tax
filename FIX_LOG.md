@@ -283,6 +283,41 @@
 
 ---
 
+---
+
+## SESSION 5 — WORKFORCE INTELLIGENCE SYSTEM
+
+### FEAT-006 — Enterprise Employee Performance & Work Tracking System
+- **Severity:** Feature (PARTNER-only, new module)
+- **New DB models:** `EmployeeSession`, `EmployeeActivity`, `AttendanceRecord` (3 new tables, pushed via `prisma db push`)
+- **New enums:** `EmployeeActivityType` (21 values), `AttendanceStatus` (5 values)
+- **New lib:** `lib/workforce/tracker.ts` — `trackEmployeeActivity`, `startEmployeeSession`, `endEmployeeSession`, `updateSessionLastActive`, `upsertAttendanceOnLogin`
+- **New actions:** `app/actions/workforce.ts` — 8 server actions:
+  - `getWorkforceDashboard()` — live status grid, session minutes, online/idle/offline/leave counts
+  - `getPerformanceMetrics(period)` — per-employee scorecard with score algorithm
+  - `getEmployeeTimeline(employeeId, filter)` — paginated activity timeline
+  - `getEmployeeDetail(employeeId)` — full employee context
+  - `getAttendanceReport(year, month)` — monthly attendance summary
+  - `getDailyAttendance(year, month)` — raw daily records
+  - `getWorkloadAlerts()` — overloaded/underutilized/no-activity warnings
+  - `getProductivityChartData(employeeId, period)` — chart series
+  - `getTeamComparisonData(period)` — horizontal bar chart data
+- **Activity hooks added to:** `auth.ts` (LOGIN/LOGOUT), `clients.ts` (CLIENT_CREATED/CLIENT_UPDATED), `tasks.ts` (TASK_CREATED/TASK_COMPLETED), `documents.ts` (DOCUMENT_UPLOADED), `compliance.ts` (COMPLIANCE_COMPLETED)
+- **New pages:** `/workforce` (dashboard), `/workforce/[employeeId]` (employee detail)
+- **New components (6):**
+  - `components/workforce/workforce-dashboard-client.tsx` — tabbed dashboard (Live Status / Performance / Attendance / Alerts)
+  - `components/workforce/employee-status-grid.tsx` — live status cards per employee
+  - `components/workforce/performance-scorecard-table.tsx` — ranked scorecard table
+  - `components/workforce/team-comparison-chart.tsx` — Recharts horizontal bar
+  - `components/workforce/workload-alerts-panel.tsx` — alert list with severity badges
+  - `components/workforce/attendance-report-table.tsx` — monthly attendance with CSV export
+  - `components/workforce/employee-detail-client.tsx` — full employee detail: status, tasks, timeline, activity chart
+- **Navigation:** Added "Workforce" to sidebar (PARTNER-only via `ROUTE_ACCESS["/workforce"] = ["PARTNER"]`)
+- **Added:** `components/ui/tabs.tsx` (shadcn add tabs)
+- **Build:** 36 routes, 0 TypeScript errors, 0 build errors
+
+---
+
 ## REMAINING WORK
 
 | Item | Priority | Notes |
@@ -295,3 +330,4 @@
 | WhatsApp Business API | LOW | Needs WHATSAPP_API_TOKEN + WHATSAPP_PHONE_NUMBER_ID |
 | Supabase email templates | LOW | Using Supabase defaults |
 | Supabase `documents` bucket | SETUP | Verify in dashboard — `assertDocumentBucketExists()` creates on first upload |
+| Workforce heartbeat | LOW | `recordHeartbeat()` action exists — wire to client component for IDLE detection |

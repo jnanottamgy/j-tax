@@ -39,8 +39,11 @@ model Employee {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  clients Client[]
-  tasks    Task[]
+  clients            Client[]
+  tasks              Task[]
+  sessions           EmployeeSession[]
+  activities         EmployeeActivity[]
+  attendanceRecords  AttendanceRecord[]
 
   @@index([name])
   @@index([department])
@@ -731,4 +734,102 @@ model AuditLog {
   @@index([userId, timestamp])
   @@index([eventType, timestamp])
   @@map("audit_logs")
+}
+
+// ─── Workforce Intelligence ───────────────────────────────────────────────────
+
+enum EmployeeActivityType {
+  LOGIN
+  LOGOUT
+  CLIENT_CREATED
+  CLIENT_UPDATED
+  CLIENT_VIEWED
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_COMPLETED
+  DOCUMENT_UPLOADED
+  DOCUMENT_DOWNLOADED
+  INVOICE_CREATED
+  INVOICE_UPDATED
+  PAYMENT_UPDATED
+  COMPLIANCE_COMPLETED
+  COMPLIANCE_UPDATED
+  EMAIL_SENT
+  WHATSAPP_SENT
+  NOTIFICATION_SENT
+  REPORT_GENERATED
+  SEARCH_PERFORMED
+  SETTINGS_CHANGED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE_LOGIN
+  HALF_DAY
+  ON_LEAVE
+}
+
+model EmployeeSession {
+  id              String    @id @default(cuid())
+  employeeId      String
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  userId          String
+  loginAt         DateTime  @default(now())
+  logoutAt        DateTime?
+  lastActiveAt    DateTime  @default(now())
+  durationMinutes Int?
+  ipAddress       String?
+  userAgent       String?
+  isActive        Boolean   @default(true)
+
+  @@index([employeeId])
+  @@index([userId])
+  @@index([loginAt])
+  @@index([isActive])
+  @@index([employeeId, loginAt])
+  @@map("employee_sessions")
+}
+
+model EmployeeActivity {
+  id           String               @id @default(cuid())
+  employeeId   String
+  employee     Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  userId       String
+  activityType EmployeeActivityType
+  description  String
+  entityType   String?
+  entityId     String?
+  entityName   String?
+  metadata     Json?
+  performedAt  DateTime             @default(now())
+
+  @@index([employeeId])
+  @@index([userId])
+  @@index([activityType])
+  @@index([performedAt])
+  @@index([employeeId, performedAt])
+  @@index([entityType, entityId])
+  @@map("employee_activities")
+}
+
+model AttendanceRecord {
+  id           String           @id @default(cuid())
+  employeeId   String
+  employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date         DateTime
+  status       AttendanceStatus
+  loginAt      DateTime?
+  logoutAt     DateTime?
+  workMinutes  Int?
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+  @@index([employeeId, date])
+  @@map("attendance_records")
 }

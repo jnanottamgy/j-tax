@@ -94,6 +94,23 @@ export async function createClient(
       { services: parsed.data.services }
     )
 
+    // Workforce tracking
+    try {
+      const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
+      const employee = await getEmployeeByUserId(session.user.id)
+      if (employee) {
+        await trackEmployeeActivity({
+          employeeId: employee.id,
+          userId: session.user.id,
+          activityType: "CLIENT_CREATED",
+          description: `Created client "${client.name}"`,
+          entityType: "CLIENT",
+          entityId: client.id,
+          entityName: client.name,
+        })
+      }
+    } catch {}
+
     // Auto-generate compliance events for all assigned services
     const { generateComplianceEventsForClient } = await import("@/app/actions/compliance")
     const serviceTypes = parsed.data.services.map((s) => s.serviceType)
@@ -154,7 +171,24 @@ export async function updateClient(
       session.user.name,
       parsed.data
     )
-    
+
+    // Workforce tracking
+    try {
+      const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
+      const employee = await getEmployeeByUserId(session.user.id)
+      if (employee) {
+        await trackEmployeeActivity({
+          employeeId: employee.id,
+          userId: session.user.id,
+          activityType: "CLIENT_UPDATED",
+          description: `Updated client "${parsed.data.name}"`,
+          entityType: "CLIENT",
+          entityId: id,
+          entityName: parsed.data.name,
+        })
+      }
+    } catch {}
+
     revalidatePath("/clients")
     revalidatePath(`/clients/${id}`)
 
