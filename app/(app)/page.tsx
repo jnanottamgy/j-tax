@@ -1,3 +1,5 @@
+import { unstable_cache } from "next/cache"
+
 import { ComplianceOverview } from "@/components/dashboard/compliance-overview"
 import { ExecutiveSummary } from "@/components/dashboard/executive-summary"
 import { FilingChart } from "@/components/dashboard/filing-chart"
@@ -14,139 +16,211 @@ import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
 
+// ─── Cached data fetcher ──────────────────────────────────────────────────────
+// Per-user cache keyed by userId + today's date string (YYYY-MM-DD).
+// 60-second TTL keeps data fresh while eliminating repeated DB hits during
+// rapid page visits (e.g., navigating away and back).
+
+function makeDashboardFetcher(userId: string, role: string) {
+  const todayKey = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+
+  return unstable_cache(
+    async () => {
+      const now = new Date()
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+
+      // Build EXECUTIVE client scope filter
+      const isExecutive = role === "EXECUTIVE"
+      const assignedEmployee = isExecutive
+        ? await prisma.employee.findUnique({
+            where: { userId },
+            select: { id: true },
+          })
+        : null
+      const clientFilter: { assignedEmployeeId?: string } =
+        isExecutive && assignedEmployee
+          ? { assignedEmployeeId: assignedEmployee.id }
+          : {}
+
+      const [
+        totalClients,
+        activeClients,
+        invoiceAgg,
+        overdueInvoiceAgg,
+        pendingComplianceCount,
+        completedComplianceCount,
+        tasksDueTodayRaw,
+        recentActivityRaw,
+        outstandingInvoicesRaw,
+        complianceEventsRaw,
+        taskStatusCounts,
+        overdueTasksCount,
+        upcomingDeadlinesCount,
+        totalTasks,
+      ] = await Promise.all([
+        prisma.client.count({ where: clientFilter }),
+        prisma.client.count({ where: { ...clientFilter, status: "ACTIVE" } }),
+        prisma.invoice.aggregate({
+          where: { client: clientFilter },
+          _sum: { amount: true, paidAmount: true, outstandingAmount: true },
+          _count: true,
+        }),
+        prisma.invoice.aggregate({
+          where: { client: clientFilter, status: "OVERDUE" },
+          _sum: { outstandingAmount: true },
+          _count: true,
+        }),
+        prisma.complianceEvent.count({
+          where: {
+            client: Object.keys(clientFilter).length ? clientFilter : undefined,
+            status: "PENDING",
+          },
+        }),
+        prisma.complianceEvent.count({
+          where: {
+            client: Object.keys(clientFilter).length ? clientFilter : undefined,
+            status: "COMPLETED",
+          },
+        }),
+        // Tasks due today
+        prisma.task.findMany({
+          where: {
+            client: clientFilter,
+            dueDate: { gte: todayStart, lt: todayEnd },
+            status: { not: "FILED_DONE" },
+          },
+          include: { client: true },
+          orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
+          take: 5,
+        }),
+        // Recent activity logs
+        prisma.activityLog.findMany({
+          orderBy: { timestamp: "desc" },
+          take: 6,
+        }),
+        // Outstanding invoices for the payments widget
+        prisma.invoice.findMany({
+          where: {
+            client: clientFilter,
+            status: { in: ["OVERDUE", "SENT", "PARTIALLY_PAID"] },
+            outstandingAmount: { gt: 0 },
+          },
+          include: { client: { select: { name: true } } },
+          orderBy: [{ status: "asc" }, { dueDate: "asc" }],
+          take: 4,
+        }),
+        // Compliance events for overview
+        prisma.complianceEvent.findMany({
+          where: {
+            client: Object.keys(clientFilter).length ? clientFilter : undefined,
+            dueDate: { gte: now },
+            status: { in: ["PENDING", "OVERDUE"] },
+          },
+          orderBy: { dueDate: "asc" },
+          take: 5,
+        }),
+        // Task status breakdown for filing chart
+        prisma.task.groupBy({
+          by: ["status"],
+          where: { client: clientFilter },
+          _count: true,
+        }),
+        // Overdue tasks count
+        prisma.task.count({
+          where: {
+            client: clientFilter,
+            dueDate: { lt: todayStart },
+            status: { not: "FILED_DONE" },
+          },
+        }),
+        // Upcoming deadlines this week
+        prisma.complianceEvent.count({
+          where: {
+            client: Object.keys(clientFilter).length ? clientFilter : undefined,
+            dueDate: {
+              gte: now,
+              lt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+            },
+            status: { in: ["PENDING", "OVERDUE"] },
+          },
+        }),
+        // Total tasks (for workload calc)
+        prisma.task.count({ where: clientFilter }),
+      ])
+
+      // Serialize Decimal → number before returning from cached function
+      // (Prisma Decimal objects are not plain-serializable)
+      const serializedOutstandingInvoices = outstandingInvoicesRaw.map((inv) => ({
+        ...inv,
+        amount: Number(inv.amount),
+        paidAmount: Number(inv.paidAmount),
+        outstandingAmount: Number(inv.outstandingAmount),
+      }))
+
+      return {
+        totalClients,
+        activeClients,
+        totalOutstanding: Number(invoiceAgg._sum.outstandingAmount ?? 0),
+        totalCollected: Number(invoiceAgg._sum.paidAmount ?? 0),
+        totalOverdue: Number(overdueInvoiceAgg._sum.outstandingAmount ?? 0),
+        overdueCount: overdueInvoiceAgg._count,
+        pendingComplianceCount,
+        completedComplianceCount,
+        tasksDueTodayRaw,
+        recentActivityRaw,
+        serializedOutstandingInvoices,
+        complianceEventsRaw,
+        taskStatusCounts,
+        overdueTasksCount,
+        upcomingDeadlinesCount,
+        totalTasks,
+      }
+    },
+    // Cache key: per user + today's date (ensures daily rollover)
+    [`dashboard-${userId}-${todayKey}`],
+    {
+      revalidate: 60, // 60-second TTL — fresh enough for a live dashboard
+      tags: [`dashboard`, `dashboard-${userId}`],
+    }
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default async function DashboardPage() {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+  const fetcher = makeDashboardFetcher(session.user.id, session.user.role)
+  const data = await fetcher()
 
-  // Scope queries for EXECUTIVE to their assigned clients only
-  const isExecutive = session.user.role === "EXECUTIVE"
-  const assignedEmployee = isExecutive
-    ? await prisma.employee.findUnique({
-        where: { userId: session.user.id },
-        select: { id: true },
-      })
-    : null
-  const clientFilter = isExecutive && assignedEmployee
-    ? { assignedEmployeeId: assignedEmployee.id }
-    : {}
-
-  const [
+  const {
     totalClients,
     activeClients,
-    invoiceAgg,
-    overdueInvoiceAgg,
+    totalOutstanding,
+    totalCollected,
+    totalOverdue,
+    overdueCount,
     pendingComplianceCount,
     completedComplianceCount,
     tasksDueTodayRaw,
     recentActivityRaw,
-    outstandingInvoicesRaw,
+    serializedOutstandingInvoices,
     complianceEventsRaw,
     taskStatusCounts,
     overdueTasksCount,
     upcomingDeadlinesCount,
-  ] = await Promise.all([
-    prisma.client.count({ where: clientFilter }),
-    prisma.client.count({ where: { ...clientFilter, status: "ACTIVE" } }),
-    prisma.invoice.aggregate({
-      where: { client: clientFilter },
-      _sum: { amount: true, paidAmount: true, outstandingAmount: true },
-      _count: true,
-    }),
-    prisma.invoice.aggregate({
-      where: { client: clientFilter, status: "OVERDUE" },
-      _sum: { outstandingAmount: true },
-      _count: true,
-    }),
-    prisma.complianceEvent.count({
-      where: { client: Object.keys(clientFilter).length ? clientFilter : undefined, status: "PENDING" },
-    }),
-    prisma.complianceEvent.count({
-      where: { client: Object.keys(clientFilter).length ? clientFilter : undefined, status: "COMPLETED" },
-    }),
-    // Tasks due today
-    prisma.task.findMany({
-      where: {
-        client: clientFilter,
-        dueDate: { gte: todayStart, lt: todayEnd },
-        status: { not: "FILED_DONE" },
-      },
-      include: { client: true },
-      orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
-      take: 5,
-    }),
-    // Recent activity logs
-    prisma.activityLog.findMany({
-      orderBy: { timestamp: "desc" },
-      take: 6,
-    }),
-    // Outstanding invoices for the payments widget
-    prisma.invoice.findMany({
-      where: {
-        client: clientFilter,
-        status: { in: ["OVERDUE", "SENT", "PARTIALLY_PAID"] },
-        outstandingAmount: { gt: 0 },
-      },
-      include: { client: { select: { name: true } } },
-      orderBy: [{ status: "asc" }, { dueDate: "asc" }],
-      take: 4,
-    }),
-    // Compliance events for overview
-    prisma.complianceEvent.findMany({
-      where: {
-        client: Object.keys(clientFilter).length ? clientFilter : undefined,
-        dueDate: { gte: now },
-        status: { in: ["PENDING", "OVERDUE"] },
-      },
-      orderBy: { dueDate: "asc" },
-      take: 5,
-    }),
-    // Task status breakdown for filing chart
-    prisma.task.groupBy({
-      by: ["status"],
-      where: { client: clientFilter },
-      _count: true,
-    }),
-    // Overdue tasks count
-    prisma.task.count({
-      where: {
-        client: clientFilter,
-        dueDate: { lt: todayStart },
-        status: { not: "FILED_DONE" },
-      },
-    }),
-    // Upcoming deadlines this week
-    prisma.complianceEvent.count({
-      where: {
-        client: Object.keys(clientFilter).length ? clientFilter : undefined,
-        dueDate: { gte: now, lt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) },
-        status: { in: ["PENDING", "OVERDUE"] },
-      },
-    }),
-  ])
+    totalTasks,
+  } = data
 
-  const totalOutstanding = Number(invoiceAgg._sum.outstandingAmount ?? 0)
-  const totalCollected = Number(invoiceAgg._sum.paidAmount ?? 0)
-  const totalOverdue = Number(overdueInvoiceAgg._sum.outstandingAmount ?? 0)
   const totalCompliance = pendingComplianceCount + completedComplianceCount
-  const complianceScore = totalCompliance > 0
-    ? Math.round((completedComplianceCount / totalCompliance) * 100)
-    : 100
-
-  // Serialize Decimal objects to numbers for client components
-  const serializedOutstandingInvoices = outstandingInvoicesRaw.map(invoice => ({
-    ...invoice,
-    amount: Number(invoice.amount),
-    paidAmount: Number(invoice.paidAmount),
-    outstandingAmount: Number(invoice.outstandingAmount),
-  }))
-
-  // Calculate workload (simplified: tasks per active client)
-  const totalTasks = await prisma.task.count({ where: clientFilter })
-  const workload = activeClients > 0 ? Math.round((totalTasks / activeClients) * 10) : 0
+  const complianceScore =
+    totalCompliance > 0
+      ? Math.round((completedComplianceCount / totalCompliance) * 100)
+      : 100
+  const workload =
+    activeClients > 0 ? Math.round((totalTasks / activeClients) * 10) : 0
 
   const kpiData = {
     totalClients,
@@ -154,7 +228,7 @@ export default async function DashboardPage() {
     totalOutstanding,
     totalCollected,
     totalOverdue,
-    overdueCount: overdueInvoiceAgg._count,
+    overdueCount,
     complianceScore,
     pendingComplianceCount,
   }
@@ -171,8 +245,8 @@ export default async function DashboardPage() {
       <ExecutiveSummary
         overdueTasks={overdueTasksCount}
         upcomingDeadlines={upcomingDeadlinesCount}
-        outstandingInvoices={overdueInvoiceAgg._count}
-        pendingDocuments={0} // TODO: Add document count
+        outstandingInvoices={overdueCount}
+        pendingDocuments={0}
         complianceScore={complianceScore}
         workload={Math.min(workload, 100)}
       />
@@ -197,7 +271,11 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <ComplianceOverview events={complianceEventsRaw} total={totalCompliance} completed={completedComplianceCount} />
+        <ComplianceOverview
+          events={complianceEventsRaw}
+          total={totalCompliance}
+          completed={completedComplianceCount}
+        />
         <OutstandingPayments invoices={serializedOutstandingInvoices} />
       </div>
     </PageContainer>
