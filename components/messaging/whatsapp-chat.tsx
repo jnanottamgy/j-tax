@@ -6,7 +6,6 @@ import { Send, Search, MoreVertical, Phone, Video, Paperclip, Smile, Check, Chec
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
@@ -36,7 +35,7 @@ interface WhatsAppChatProps {
   currentUser?: { id: string; name: string }
 }
 
-export function WhatsAppChat({ clients, onSendMessage, onClientSelect, currentUser }: WhatsAppChatProps) {
+export function WhatsAppChat({ clients, onSendMessage, onClientSelect, currentUser: _currentUser }: WhatsAppChatProps) {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState("")

@@ -1,6 +1,6 @@
 import { getSession } from "@/lib/auth/session"
 import { canAccessRoute, hasMinimumRole, ROLE_LEVEL } from "@/lib/auth/roles"
-import { logAccessDenied, logAuditEvent, AuditEventType } from "@/lib/security"
+import { logAccessDenied } from "@/lib/security"
 
 /**
  * Enhanced Authentication & Authorization Guards

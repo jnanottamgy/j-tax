@@ -28,7 +28,6 @@ export function RenameDocumentDialog({
   onOpenChange,
   onSuccess,
 }: RenameDocumentDialogProps) {
-  const [newName, setNewName] = useState(currentFileName)
   const [isPending, startTransition] = useTransition()
 
   // Keep the extension locked — user edits stem only

@@ -2,7 +2,8 @@
 
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { HeartbeatTracker } from "@/components/layout/heartbeat-tracker"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { NotificationsProvider } from "@/components/notifications/notifications-provider"
 
@@ -11,6 +12,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <TooltipProvider>
       <SidebarProvider defaultOpen={true}>
         <NotificationsProvider>
+          <HeartbeatTracker />
           <AppSidebar />
           <SidebarInset className="dashboard-gradient min-h-svh">
             <DashboardHeader />

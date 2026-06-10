@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { format } from "date-fns"
-import { X, MessageSquare, Paperclip, Clock, User, Building2, Save, Trash2, Upload, Loader2, Edit } from "lucide-react"
+import { X, MessageSquare, Paperclip, Clock, User, Building2, Save, Trash2, Upload, Loader2 } from "lucide-react"
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"

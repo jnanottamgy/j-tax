@@ -1,12 +1,11 @@
 "use client"
 
 import { format } from "date-fns"
-import { FileText, Download, MoreHorizontal, Lock, History, Tag } from "lucide-react"
+import { FileText, Download, Lock, History } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
 
 type DocumentCategory = "GST" | "TDS" | "ROC" | "AUDIT" | "INCOME_TAX" | "PAYROLL" | "BANK_STATEMENTS" | "INVOICES" | "AGREEMENTS" | "OTHER"
 
@@ -55,7 +54,7 @@ export function DocumentList({
   documents,
   onDocumentClick,
   onDownload,
-  canModify = false,
+  canModify: _canModify = false,
 }: DocumentListProps) {
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes"

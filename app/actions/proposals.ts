@@ -5,22 +5,20 @@ import { revalidatePath } from "next/cache"
 import { addDays } from "date-fns"
 import { z } from "zod"
 
-import { requireAuth, requirePartner, requirePartnerOrManager } from "@/lib/auth/guards"
+import { requirePartner, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
 import { toUserError } from "@/lib/forms/errors"
 import { notificationService } from "@/lib/messaging/notification-service"
 import {
   quotationEmailHTML,
-  followUpEmailHTML,
   quotationSubject,
-  followUpSubject,
   type QuotationEmailVars,
 } from "@/lib/quotations/email-templates"
 
 const FIRM_NAME = process.env.FIRM_NAME || "TaxWise Consultants"
 const FIRM_EMAIL = process.env.FROM_EMAIL || "noreply@taxwiseconsultants.com"
-const FIRM_PHONE = process.env.FIRM_PHONE || "+91-XXXXXXXXXX"
-const FIRM_ADDRESS = process.env.FIRM_ADDRESS || "India"
+const _FIRM_PHONE = process.env.FIRM_PHONE || "+91-XXXXXXXXXX"
+const _FIRM_ADDRESS = process.env.FIRM_ADDRESS || "India"
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 
 // ─── Lead Actions ─────────────────────────────────────────────────────────────
@@ -504,7 +502,7 @@ export async function getProposalAnalytics() {
     }),
   ])
 
-  const sent = quotationsByStatus.find((s) => ["SENT", "VIEWED"].includes(s.status as string))?._count ?? 0
+  const _sent = quotationsByStatus.find((s) => ["SENT", "VIEWED"].includes(s.status as string))?._count ?? 0
   const accepted = quotationsByStatus.find((s) => s.status === "ACCEPTED")?._count ?? 0
   const rejected = quotationsByStatus.find((s) => s.status === "REJECTED")?._count ?? 0
   const responded = accepted + rejected

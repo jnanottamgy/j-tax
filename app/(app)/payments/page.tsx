@@ -2,7 +2,6 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { ArrowRight, BarChart3, CreditCard, DollarSign, Receipt } from "lucide-react"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { PageContainer } from "@/components/layout/page-container"

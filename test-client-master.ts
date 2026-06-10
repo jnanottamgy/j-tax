@@ -142,7 +142,7 @@ async function runTests() {
       console.error("❌ Update validation failed:", updateParse.error.format());
     } else {
       try {
-        const updated = await updateClient(clientToUpdate.id, updateParse.data);
+        const _updated = await updateClient(clientToUpdate.id, updateParse.data);
         // Verify update persisted
         const persisted = await prisma.client.findUnique({ where: { id: clientToUpdate.id } });
         if (persisted?.name === updateData.name && persisted?.priority === updateData.priority && persisted?.status === updateData.status) {
@@ -238,7 +238,7 @@ async function runTests() {
   // Test 6: Missing required fields (name)
   console.log("\n=== Test 6: Missing required fields ===");
   const missingNameData = generateClientData(997);
-  const { name, ...missingNameDataWithoutName } = missingNameData;
+  const { name: _name, ...missingNameDataWithoutName } = missingNameData;
   const parseResult = createClientSchema.safeParse(missingNameDataWithoutName);
   if (!parseResult.success) {
     console.log("✓ Missing name correctly caught by schema validation.");

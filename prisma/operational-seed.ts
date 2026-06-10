@@ -6,7 +6,7 @@ const firstNames = ['Rajesh', 'Priya', 'Amit', 'Neha', 'Vikram', 'Anita', 'Rahul
 const lastNames = ['Sharma', 'Patel', 'Singh', 'Gupta', 'Kumar', 'Verma', 'Reddy', 'Nair', 'Iyer', 'Menon', 'Shah', 'Mehta', 'Jain', 'Agarwal', 'Bansal', 'Chopra', 'Das', 'Sen', 'Roy', 'Chatterjee']
 const departments = ['Tax', 'Audit', 'Consulting', 'Compliance', 'Advisory']
 const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Kolkata']
-const services = ['GST Filing', 'Income Tax', 'TDS Returns', 'Audit', 'Consulting', 'Compliance', 'Payroll', 'Bookkeeping']
+const _services = ['GST Filing', 'Income Tax', 'TDS Returns', 'Audit', 'Consulting', 'Compliance', 'Payroll', 'Bookkeeping']
 const clientPriorities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 const serviceTypes = ['GST_RETURN', 'INCOME_TAX', 'TDS', 'PAYROLL', 'BOOKKEEPING', 'AUDIT', 'COMPANY_LAW', 'OTHER']
 const taskPriorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']
@@ -235,7 +235,7 @@ async function main() {
         break
     }
     
-    const notification = await prisma.notification.create({
+    const _notification = await prisma.notification.create({
       data: {
         userId: user.id,
         type: type as any,

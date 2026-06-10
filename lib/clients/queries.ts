@@ -223,7 +223,7 @@ export async function updateClient(id: string, data: UpdateClientInput) {
   }
 
   // Remove fields that are not columns on the Client model
-  const { assignedEmployeeId, reminderDaysBefore, notificationPreferences, ...clientData } = data;
+  const { assignedEmployeeId: _assignedEmployeeId, reminderDaysBefore: _reminderDaysBefore, notificationPreferences: _notificationPreferences, ...clientData } = data;
 
   return prisma.client.update({
     where: { id },

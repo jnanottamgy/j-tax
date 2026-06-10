@@ -78,7 +78,7 @@ const STATUS_VARIANT: Record<string, "default" | "destructive" | "secondary" | "
 
 export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) {
   const router = useRouter()
-  const [invoice, setInvoice] = useState(initial)
+  const [invoice, _setInvoice] = useState(initial)
 
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false)

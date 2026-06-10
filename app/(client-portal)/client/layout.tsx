@@ -5,7 +5,7 @@ import { ErrorBoundary } from "@/components/error/error-boundary"
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 import { ClientSidebar } from "@/components/client-portal/client-sidebar"
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ClientHeader } from "@/components/client-portal/client-header"
 

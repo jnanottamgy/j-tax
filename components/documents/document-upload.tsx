@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useTransition } from "react"
+import { useState, useCallback } from "react"
 import { UploadCloud, X, FileText, AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"

@@ -89,11 +89,11 @@ function ProductivityBar({ value }: { value: number }) {
 }
 
 export function ManagerDashboard({
-  managerName,
+  managerName: _managerName,
   teamStats,
   teamWorkload,
   urgentItems,
-  recentActivity,
+  recentActivity: _recentActivity,
 }: ManagerDashboardProps) {
   return (
     <div className="space-y-6">

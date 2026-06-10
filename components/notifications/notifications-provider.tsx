@@ -133,7 +133,7 @@ export function NotificationsProvider({
           // also load archived once so history isn't empty
           await refreshArchived()
         }
-      } catch (e) {
+      } catch (_e) {
         // avoid noisy errors; page components also show toasts
         if (!cancelled) toast.error("Failed to load notifications")
       }
@@ -141,7 +141,6 @@ export function NotificationsProvider({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
   useEffect(() => {

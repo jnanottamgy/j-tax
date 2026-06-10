@@ -27,7 +27,6 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { globalSearch, getQuickCommands } from "@/app/actions/search"
 import { cn } from "@/lib/utils"
 
@@ -213,7 +212,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     return acc
   }, {} as Record<string, any[]>)
 
-  const items = query.length >= 2 ? results : commands
+  const _items = query.length >= 2 ? results : commands
 
   return (
     <AnimatePresence>

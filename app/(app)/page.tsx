@@ -30,7 +30,7 @@ function makePartnerDashboardFetcher(userId: string) {
       const now = new Date()
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const _weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
       const [
         totalClients,
@@ -524,7 +524,7 @@ export default async function DashboardPage() {
     activeClients,
     totalOutstanding,
     totalCollected,
-    totalRevenue,
+    totalRevenue: _totalRevenue,
     totalOverdue,
     overdueCount,
     pendingComplianceCount,
@@ -542,7 +542,7 @@ export default async function DashboardPage() {
     commandCenter,
     pendingApprovalsList,
     highRiskClientsList,
-    collectionRate,
+    collectionRate: _collectionRate,
   } = data
 
   const totalCompliance = pendingComplianceCount + completedComplianceCount

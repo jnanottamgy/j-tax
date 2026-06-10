@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Loader2 } from "lucide-react"
-import { User, Bell, Shield, CreditCard, Building2, Globe } from "lucide-react"
+import { User, Bell, Shield, CreditCard } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"

@@ -92,7 +92,7 @@ export interface FollowUpEmailVars {
 
 export function followUpEmailHTML(v: FollowUpEmailVars): string {
   const isLast = v.dayNumber === 14
-  const subject = isLast
+  const _subject = isLast
     ? `Final reminder: Quotation #${v.quotationNumber} expires soon`
     : `Friendly reminder: Quotation #${v.quotationNumber} awaiting your response`
 

@@ -1,12 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { format } from "date-fns"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   ArrowLeft,
-  Plus,
   FileText,
   CheckSquare,
   DollarSign,
@@ -16,17 +15,14 @@ import {
   MoreVertical,
   Phone,
   Mail,
-  User,
   Building2,
   AlertCircle,
-  Clock,
   TrendingUp,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,8 +42,7 @@ interface Client360ClientProps {
 
 export function Client360Client({ initialData, clientId }: Client360ClientProps) {
   const [activeTab, setActiveTab] = useState<TabType>("overview")
-  const [data, setData] = useState(initialData)
-  const [loading, setLoading] = useState(false)
+  const [data, _setData] = useState(initialData)
 
   const canManage = data.user.role === "PARTNER" || data.user.role === "MANAGER"
 

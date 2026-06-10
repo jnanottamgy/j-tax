@@ -39,7 +39,7 @@ export function QuotationDetailClient({
   const [sendError, setSendError] = useState<string | null>(null)
   const [copiedLink, setCopiedLink] = useState(false)
 
-  const APP_URL = process.env.NEXT_PUBLIC_APP_URL || ""
+  const _APP_URL = process.env.NEXT_PUBLIC_APP_URL || ""
   const publicUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/q/${quotation.token}`
 
   const isExpired = new Date(quotation.validUntil) < new Date() && !["ACCEPTED", "REJECTED"].includes(quotation.status)

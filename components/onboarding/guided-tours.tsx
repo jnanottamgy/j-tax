@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { useState, useEffect } from "react"
+import { motion } from "framer-motion"
 import {
   X,
   ChevronRight,
@@ -139,7 +139,7 @@ interface GuidedToursProps {
   onComplete?: () => void
 }
 
-export function GuidedTours({ available = true, onComplete }: GuidedToursProps) {
+export function GuidedTours({ available: _available = true, onComplete }: GuidedToursProps) {
   const [activeTour, setActiveTour] = useState<TourType | null>(null)
   const [currentStep, setCurrentStep] = useState(0)
   const [isMinimized, setIsMinimized] = useState(false)

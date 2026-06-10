@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache"
 import type { FormActionState } from "@/lib/forms/types"
 import { parseEmployeeFormData } from "@/lib/validations/employee"
 
-import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
+import { requirePartnerOrManager } from "@/lib/auth/guards"
 
 export async function getEmployeesData() {
   // C-01 fix: use real session instead of hardcoded mock user

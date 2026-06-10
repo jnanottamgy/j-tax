@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { format } from "date-fns"
 import {
-  X, Calendar, Clock, AlertTriangle, CheckCircle2,
+  X, Calendar, Clock, CheckCircle2,
   Link as LinkIcon, Pencil, Loader2,
 } from "lucide-react"
 

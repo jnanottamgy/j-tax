@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { format } from "date-fns"
-import { Clock, MessageSquare, FileText, CheckCircle2, XCircle, RefreshCw, Inbox } from "lucide-react"
+import { Clock, MessageSquare, CheckCircle2, XCircle, RefreshCw, Inbox } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { cn } from "@/lib/utils"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 interface CommunicationHistoryProps {
   clientId: string

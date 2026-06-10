@@ -20,7 +20,7 @@ export function UpdatePasswordForm() {
   const router = useRouter()
   const [formData, setFormData] = useState(emptyForm)
 
-  const { submit, getError, isPending, formError, clearErrors } = useValidatedForm({
+  const { submit, getError, isPending, formError, clearErrors: _clearErrors } = useValidatedForm({
     schema: newPasswordSchema,
     successMessage: "Password updated successfully!",
     validationErrorMessage: "Please correct the highlighted fields.",

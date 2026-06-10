@@ -38,7 +38,7 @@ async function main() {
   await prisma.invoice.deleteMany({})
   console.log("Cleared existing invoices")
 
-  const statuses: Array<"DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE"> = [
+  const _statuses: Array<"DRAFT" | "SENT" | "PAID" | "PARTIALLY_PAID" | "OVERDUE"> = [
     "DRAFT",
     "SENT",
     "PAID",
@@ -56,7 +56,7 @@ async function main() {
     const invoiceNumber = `INV-${2024}-${String(i).padStart(4, "0")}`
     
     // Calculate dates for different scenarios
-    const daysOffset = Math.floor(Math.random() * 60) - 30 // -30 to +30 days
+    const _daysOffset = Math.floor(Math.random() * 60) - 30 // -30 to +30 days
     const issueDate = new Date(now)
     issueDate.setDate(issueDate.getDate() - Math.floor(Math.random() * 30))
     

@@ -127,7 +127,7 @@ export function ReportingCenterClient() {
       try {
         const opts = await getReportFilterOptions()
         if (!cancelled) setOptions(opts)
-      } catch (e) {
+      } catch (_e) {
         toast.error("Failed to load report filters")
       }
     })()

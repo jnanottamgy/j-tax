@@ -50,11 +50,11 @@ export function getSecurityHeaders(config: SecurityHeadersConfig): Record<string
 
   // Remove empty headers
   return Object.fromEntries(
-    Object.entries(headers).filter(([_, value]) => value !== '')
+    Object.entries(headers).filter(([_key, value]) => value !== '')
   )
 }
 
-function getContentSecurityPolicy(isDev: boolean, domain: string): string {
+function getContentSecurityPolicy(isDev: boolean, _domain: string): string {
   const directives = {
     'default-src': ["'self'"],
     'script-src': isDev
@@ -78,7 +78,7 @@ function getContentSecurityPolicy(isDev: boolean, domain: string): string {
   }
 
   return Object.entries(directives)
-    .filter(([_, values]) => values.length > 0)
+    .filter(([_key, values]) => values.length > 0)
     .map(([directive, values]) => `${directive} ${values.filter(Boolean).join(' ')}`)
     .join('; ')
 }

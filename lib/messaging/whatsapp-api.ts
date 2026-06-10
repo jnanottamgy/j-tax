@@ -21,8 +21,8 @@ export interface SendTextMessageResult {
  * @returns Result with success status, message ID, or error
  */
 export async function sendTextMessage(
-  phoneNumber: string,
-  content: string
+  _phoneNumber: string,
+  _content: string
 ): Promise<SendTextMessageResult> {
   try {
     // Mock implementation for testing
@@ -77,9 +77,9 @@ export async function sendTextMessage(
  * @returns Result with success status, message ID, or error
  */
 export async function sendTemplateMessage(
-  phoneNumber: string,
-  templateName: string,
-  variables: Record<string, string>
+  _phoneNumber: string,
+  _templateName: string,
+  _variables: Record<string, string>
 ): Promise<SendTextMessageResult> {
   try {
     // Mock implementation for testing
@@ -117,7 +117,7 @@ export async function sendTemplateMessage(
  * @param messageId - The WhatsApp message ID
  * @returns Delivery status
  */
-export async function getMessageStatus(messageId: string): Promise<{
+export async function getMessageStatus(_messageId: string): Promise<{
   status: "sent" | "delivered" | "read" | "failed"
   timestamp?: Date
 }> {

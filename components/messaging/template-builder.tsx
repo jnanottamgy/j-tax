@@ -13,7 +13,6 @@ import { FormField } from "@/components/forms/form-field"
 import { useValidatedForm } from "@/hooks/use-validated-form"
 import type { FormActionState } from "@/lib/forms/types"
 import { templateSchema } from "@/lib/validations/message"
-import { cn } from "@/lib/utils"
 
 type TemplateType = "DOCUMENT_REMINDER" | "COMPLIANCE_REMINDER" | "PAYMENT_REMINDER" | "TASK_ASSIGNMENT" | "OVERDUE_NOTIFICATION" | "CUSTOM"
 
@@ -100,7 +99,7 @@ export function TemplateBuilder({
     submit({ name, type, content, variables })
   }
 
-  const selectedType = TEMPLATE_TYPES.find((t) => t.value === type)
+  const _selectedType = TEMPLATE_TYPES.find((t) => t.value === type)
 
   return (
     <Card className="bg-white/[0.02] border-white/[0.08] p-6">

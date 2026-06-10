@@ -55,7 +55,7 @@ export function EmployeesTable({
   }
 
   const allSelected = employees.length > 0 && selectedIds.size === employees.length
-  const someSelected = selectedIds.size > 0 && selectedIds.size < employees.length
+  const _someSelected = selectedIds.size > 0 && selectedIds.size < employees.length
 
   if (employees.length === 0) {
     return (

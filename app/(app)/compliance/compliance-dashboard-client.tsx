@@ -7,10 +7,9 @@ import { format, differenceInDays } from "date-fns"
 import {
   ShieldCheck, AlertTriangle, CheckCircle2, Clock,
   TrendingUp, Plus, RefreshCw, ChevronRight,
-  BarChart3, Calendar, Users, Loader2,
+  BarChart3,
 } from "lucide-react"
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
@@ -22,7 +21,6 @@ import { AddComplianceEventDialog } from "@/components/compliance/add-compliance
 import {
   updateComplianceEventStatus,
   deleteComplianceEvent,
-  generateStatutoryComplianceEvents,
 } from "@/app/actions/compliance"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"

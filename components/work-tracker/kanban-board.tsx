@@ -5,7 +5,6 @@ import { motion } from "framer-motion"
 import { MoreHorizontal, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { TaskStatusBadge } from "./task-status-badge"
 import { TaskPriorityBadge } from "./task-priority-badge"
 import { DueDateBadge } from "./due-date-badge"
 import { cn } from "@/lib/utils"

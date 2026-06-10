@@ -140,7 +140,7 @@ export async function signUp(
     (await headers()).get("origin") ||
     "http://localhost:3000"
 
-  const { data, error } = await supabase.auth.signUp({
+  const { data: _data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {

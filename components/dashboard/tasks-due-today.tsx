@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Circle, CircleCheck, AlertCircle } from "lucide-react"
+import { Circle, CircleCheck } from "lucide-react"
 
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { Badge } from "@/components/ui/badge"

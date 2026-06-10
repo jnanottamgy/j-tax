@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { RenameDocumentDialog } from "@/components/documents/rename-document-dialog"
-import { cn } from "@/lib/utils"
 
 type DocumentCategory =
   | "GST" | "TDS" | "ROC" | "AUDIT" | "INCOME_TAX"

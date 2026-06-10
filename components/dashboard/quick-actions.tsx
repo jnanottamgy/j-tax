@@ -1,7 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { Plus, FileText, Calendar, DollarSign, Users, Search } from "lucide-react"
+import { FileText, Calendar, DollarSign, Users, Search } from "lucide-react"
 import Link from "next/link"
 
 import { GlassCard } from "@/components/dashboard/glass-card"

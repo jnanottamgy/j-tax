@@ -27,7 +27,7 @@ export function InvoicesPageClient({
   clients,
 }: InvoicesPageClientProps) {
   const router = useRouter()
-  const [invoices, setInvoices] = useState(initialInvoices)
+  const [invoices, _setInvoices] = useState(initialInvoices)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
 
   return (

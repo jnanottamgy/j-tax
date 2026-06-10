@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react"
 import { format, formatDistanceToNow } from "date-fns"
 import {
-  Clock, Wifi, WifiOff, Coffee, Plane, Activity,
+  Wifi, WifiOff, Coffee, Plane, Activity,
   CheckCircle2, FileText, Shield, Mail, Search, Settings2, LogIn, LogOut,
-  Plus, Edit3, Upload, CreditCard, ChevronDown, ChevronUp,
+  Plus, Edit3, Upload, CreditCard, ChevronDown,
 } from "lucide-react"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

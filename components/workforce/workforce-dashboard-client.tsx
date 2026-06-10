@@ -10,10 +10,8 @@ import { Button } from "@/components/ui/button"
 import {
   getWorkforceDashboard,
   getPerformanceMetrics,
-  getWorkloadAlerts,
   getTeamComparisonData,
   getAttendanceReport,
-  type EmployeeStatusCard,
   type PerformanceMetrics,
   type WorkloadAlert,
 } from "@/app/actions/workforce"
@@ -44,7 +42,7 @@ export function WorkforceDashboardClient({
   const [, startTransition] = useTransition()
   const [dashboard, setDashboard] = useState(initialDashboard)
   const [performance, setPerformance] = useState(initialPerformance)
-  const [alerts, setAlerts] = useState(initialAlerts)
+  const [alerts, _setAlerts] = useState(initialAlerts)
   const [comparison, setComparison] = useState(initialComparison)
   const [attendance, setAttendance] = useState<AttendanceData | null>(null)
   const [perfPeriod, setPerfPeriod] = useState<"day" | "week" | "month" | "quarter">("month")

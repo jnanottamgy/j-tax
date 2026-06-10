@@ -6,7 +6,6 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ComplianceTypeBadge } from "./compliance-type-badge"
 import { cn } from "@/lib/utils"
 
 type ComplianceType = "GSTR_1" | "GSTR_3B" | "TDS" | "ROC" | "ITR" | "PF_ESIC" | "CUSTOM"

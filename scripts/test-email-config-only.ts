@@ -53,7 +53,7 @@ async function phase1_ConfigurationAudit() {
   try {
     const { Resend } = await import('resend')
     if (resendApiKey) {
-      const resend = new Resend(resendApiKey)
+      const _resend = new Resend(resendApiKey)
       console.log('  Resend client initialized')
       console.log('  Status: PASS\n')
     } else {
@@ -208,7 +208,7 @@ async function phase4_RetryLogicTesting() {
 
   // Test retry implementation
   console.log('Test 1: Retry Implementation')
-  const { notificationService } = await import('../lib/messaging/notification-service')
+  const { notificationService: _notificationService } = await import('../lib/messaging/notification-service')
   console.log(`  Retry Mechanism: IMPLEMENTED`)
   console.log(`  Max Retries: 3 (configurable)`)
   console.log(`  Backoff Strategy: Exponential (1s, 2s, 4s)`)
@@ -233,7 +233,7 @@ async function phase4_RetryLogicTesting() {
   return tests
 }
 
-async function generateReport(results: any) {
+async function generateReport(_results: any) {
   console.log('\n═══════════════════════════════════════')
   console.log('PRODUCTION VERIFICATION REPORT')
   console.log('═══════════════════════════════════════\n')

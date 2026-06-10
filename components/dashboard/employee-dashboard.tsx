@@ -3,11 +3,9 @@
 import Link from "next/link"
 import {
   AlertTriangle,
-  CalendarDays,
   CheckCircle2,
   ClipboardList,
   Clock,
-  FileText,
   ShieldCheck,
   TrendingUp,
   Users,
@@ -85,7 +83,7 @@ function formatDate(dateStr: string | null) {
 }
 
 export function EmployeeDashboard({
-  employeeName,
+  employeeName: _employeeName,
   stats,
   todayTasks,
   myTasks,

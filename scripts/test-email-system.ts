@@ -191,11 +191,11 @@ async function phase3_DatabasePersistence() {
     console.log('✓ Audit Log Created: PASS')
 
     // Verify records exist
-    const retrievedMessage = await prisma.message.findUnique({
+    const _retrievedMessage = await prisma.message.findUnique({
       where: { id: message.id }
     })
 
-    const retrievedLog = await prisma.messageLog.findUnique({
+    const _retrievedLog = await prisma.messageLog.findUnique({
       where: { id: log.id }
     })
 
@@ -292,7 +292,7 @@ async function phase5_FailureTesting() {
     console.log(`  Error Message: ${result.error || 'None'}`)
     console.log(`  Status: ${!result.success ? 'PASS' : 'FAIL'}\n`)
     tests.push({ name: 'Invalid Email', passed: !result.success })
-  } catch (error) {
+  } catch (_e) {
     console.log(`  Error Caught: YES`)
     console.log(`  Status: PASS\n`)
     tests.push({ name: 'Invalid Email', passed: true })
@@ -412,7 +412,7 @@ async function phase7_UserExperienceTesting() {
   // Test email history
   console.log('Test 3: Email History')
   try {
-    const messages = await prisma.message.findMany({
+    const _messages = await prisma.message.findMany({
       take: 1,
       orderBy: { createdAt: 'desc' }
     })
@@ -556,7 +556,7 @@ async function phase10_CommercialReadiness() {
   return assessment
 }
 
-async function generateFinalReport(results: any) {
+async function generateFinalReport(_results: any) {
   console.log('\n═══════════════════════════════════════')
   console.log('FINAL PRODUCTION VERIFICATION REPORT')
   console.log('═══════════════════════════════════════\n')

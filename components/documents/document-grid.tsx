@@ -1,6 +1,6 @@
 "use client"
 
-import { FileText, Download, MoreHorizontal, Lock, History, Tag } from "lucide-react"
+import { FileText, Download, Lock, History } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -54,7 +54,7 @@ export function DocumentGrid({
   documents,
   onDocumentClick,
   onDownload,
-  canModify = false,
+  canModify: _canModify = false,
 }: DocumentGridProps) {
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes"

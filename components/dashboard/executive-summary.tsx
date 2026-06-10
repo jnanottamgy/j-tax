@@ -1,7 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { AlertTriangle, Clock, TrendingUp, CheckCircle2, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { AlertTriangle, Clock, TrendingUp, CheckCircle2 } from "lucide-react"
 
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { cn } from "@/lib/utils"

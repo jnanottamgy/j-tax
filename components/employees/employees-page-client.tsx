@@ -27,7 +27,7 @@ export function EmployeesPageClient({
   initialEmployees,
   canManage,
 }: EmployeesPageClientProps) {
-  const router = useRouter()
+  const _router = useRouter()
 
   const [employees, setEmployees] = useState(initialEmployees)
   const [searchQuery, setSearchQuery] = useState("")

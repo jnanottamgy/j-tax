@@ -15,10 +15,9 @@ import {
   Calendar,
   DollarSign,
   FileText,
-  User,
   X,
 } from "lucide-react"
-import { format, formatDistanceToNow } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,11 +25,9 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  archiveNotification,
   archiveAllNotifications,
   deleteNotification,
   markNotificationRead,
-  markAllNotificationsRead,
   type NotificationDTO,
 } from "@/app/actions/notifications"
 import { useNotifications } from "@/components/notifications/notifications-provider"
@@ -93,14 +90,14 @@ type NotificationsClientProps = {
 }
 
 export function NotificationsClient({
-  initialNotifications,
+  initialNotifications: _initialNotifications,
 }: NotificationsClientProps) {
   const router = useRouter()
   const {
     notifications,
     archived,
     unreadCount,
-    markRead,
+    markRead: _markRead,
     markAllRead,
     archive,
     unarchive,

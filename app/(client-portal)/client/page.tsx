@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { format } from "date-fns"
-import { Calendar as CalendarIcon, FileText, Receipt, Clock, CheckCircle2, AlertCircle, Upload, MessageSquare } from "lucide-react"
+import { Calendar as CalendarIcon, FileText, Receipt, CheckCircle2, AlertCircle, Upload, MessageSquare } from "lucide-react"
 
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"

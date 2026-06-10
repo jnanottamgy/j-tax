@@ -1,8 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
-import { LayoutGrid, Table, Plus, Bell, CheckSquare } from "lucide-react"
+import { LayoutGrid, Table, CheckSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/dashboard/glass-card"
@@ -153,7 +152,7 @@ export function WorkTrackerClient() {
     setFilters(newFilters)
   }
 
-  const handleAddTask = (status: TaskStatus) => {
+  const handleAddTask = (_status: TaskStatus) => {
     setAddTaskDialogOpen(true)
   }
 

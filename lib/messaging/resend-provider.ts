@@ -187,7 +187,7 @@ export class ResendProvider implements NotificationProvider {
       } else {
         throw new Error(data.message || "Failed to get message status")
       }
-    } catch (error) {
+    } catch (_e) {
       // Return default status on error
       return {
         status: "sent",

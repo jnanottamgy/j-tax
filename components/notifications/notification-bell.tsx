@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import Link from "next/link"
 import { Bell, Check, CheckCheck, Archive, X, Settings } from "lucide-react"
-import { format, formatDistanceToNow } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"

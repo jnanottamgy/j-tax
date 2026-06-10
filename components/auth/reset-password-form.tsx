@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 
 import { resetPassword } from "@/app/actions/auth"
 import { FormAlert } from "@/components/forms/form-alert"
@@ -18,7 +17,7 @@ const emptyForm = {
 export function ResetPasswordForm() {
   const [formData, setFormData] = useState(emptyForm)
 
-  const { submit, getError, isPending, formError, clearErrors } = useValidatedForm({
+  const { submit, getError, isPending, formError, clearErrors: _clearErrors } = useValidatedForm({
     schema: resetPasswordSchema,
     successMessage: "Password reset link sent to your email!",
     validationErrorMessage: "Please correct the highlighted fields.",

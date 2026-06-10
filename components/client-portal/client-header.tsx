@@ -1,8 +1,7 @@
 "use client"
 
-import { Bell, Menu } from "lucide-react"
+import { Menu } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { NotificationBell } from "@/components/notifications/notification-bell"
 

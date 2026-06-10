@@ -47,7 +47,7 @@ if (fromEmail) {
 console.log('✓ Check 5: Email provider initializes correctly')
 try {
   if (resendApiKey) {
-    const resend = new Resend(resendApiKey)
+    const _resend = new Resend(resendApiKey)
     console.log('  Resend client initialized')
     console.log('  Status: PASS\n')
   } else {

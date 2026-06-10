@@ -186,7 +186,7 @@ export async function saveServiceConfiguration(data: {
   return { success: true }
 }
 
-export async function saveClientImport(data: {
+export async function saveClientImport(_data: {
   importMethod: "manual" | "csv"
   clientCount?: number
 }) {

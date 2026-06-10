@@ -51,15 +51,15 @@ const VALID_XLSX = Buffer.concat([Buffer.from([0x50,0x4b,0x03,0x04]), Buffer.all
 // Evil file disguised as PDF (exe header)
 const EVIL_BYTES = Buffer.from("MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff") // PE header
 // Macro DOCX (contains vbaProject.bin marker)
-const MACRO_DOCX = Buffer.concat([Buffer.from([0x50,0x4b,0x03,0x04]), Buffer.from("vbaProject.bin"), Buffer.alloc(200)])
+const _MACRO_DOCX = Buffer.concat([Buffer.from([0x50,0x4b,0x03,0x04]), Buffer.from("vbaProject.bin"), Buffer.alloc(200)])
 // Oversized: 26 MB (simulate reference, actual upload would be blocked)
-const OVERSIZED_SIZE = 26 * 1024 * 1024
+const _OVERSIZED_SIZE = 26 * 1024 * 1024
 
 const ts = Date.now()
 const TEST_CLIENT_ID = "test-client-verify"
 const BASE = `documents/${TEST_CLIENT_ID}`
 
-async function cleanup(paths) {
+async function _cleanup(paths) {
   await sb.storage.from(BUCKET).remove(paths)
 }
 

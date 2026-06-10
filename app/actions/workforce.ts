@@ -2,7 +2,7 @@
 
 import { requirePartner } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
-import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, subDays, format } from "date-fns"
+import { startOfDay, endOfDay, startOfWeek, startOfMonth, startOfQuarter, subDays, format } from "date-fns"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -718,7 +718,7 @@ export async function getTeamComparisonData(period: "week" | "month" = "month") 
     select: { id: true, name: true, department: true },
   })
 
-  const empMap = new Map(employees.map((e) => [e.id, e]))
+  const _empMap = new Map(employees.map((e) => [e.id, e]))
   const countMap = new Map(activityCounts.map((a) => [a.employeeId, a._count]))
 
   return employees

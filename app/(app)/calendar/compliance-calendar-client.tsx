@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Calendar as CalendarIcon, LayoutGrid, List, Plus, Bell } from "lucide-react"
+import { Calendar as CalendarIcon, List, Plus, Bell } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { MonthlyCalendar } from "@/components/compliance/monthly-calendar"
@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils"
 type ViewMode = "monthly" | "weekly"
 
 export function ComplianceCalendarClient() {
-  const router = useRouter()
+  const _router = useRouter()
   const [viewMode, setViewMode] = useState<ViewMode>("monthly")
   const [currentDate, setCurrentDate] = useState(new Date())
   const [events, setEvents] = useState<any[]>([])

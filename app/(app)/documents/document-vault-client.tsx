@@ -10,7 +10,6 @@ import { DocumentList } from "@/components/documents/document-list"
 import { DocumentUpload } from "@/components/documents/document-upload"
 import { DocumentFilters } from "@/components/documents/document-filters"
 import { DocumentModal } from "@/components/documents/document-modal"
-import { PageHeader } from "@/components/layout/page-header"
 import {
   getDocuments,
   createDocumentUploadUrl,
@@ -35,7 +34,7 @@ export function DocumentVaultClient() {
   const [modalOpen, setModalOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [_uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState<{
     clientId?: string
@@ -193,7 +192,7 @@ export function DocumentVaultClient() {
     }
   }
 
-  const handleRenameFile = async (documentId: string, newFileName: string) => {
+  const _handleRenameFile = async (documentId: string, newFileName: string) => {
     const result = await renameDocumentFile(documentId, newFileName)
     if (result.success) {
       toast.success("File renamed")

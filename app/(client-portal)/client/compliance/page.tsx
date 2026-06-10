@@ -6,7 +6,6 @@ import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export default async function ClientCompliancePage() {
@@ -23,7 +22,6 @@ export default async function ClientCompliancePage() {
     redirect("/unauthorized")
   }
 
-  const now = new Date()
 
   // Fetch compliance data for this client
   const [complianceEvents, complianceStats] = await Promise.all([
