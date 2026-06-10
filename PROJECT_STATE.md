@@ -1,8 +1,8 @@
 # J-TAX — Complete Project State Document
 
-**Last updated:** 2026-06-10 (Session 9 — Production Stabilization, Mock Data Elimination, Auth Hardening)
+**Last updated:** 2026-06-10 (Session 11 — 90-Day Operational Simulation + Workflow Bug Fixes)
 **Branch:** `main`
-**Last commit:** `2771159` — chore: remove stale lint output files
+**Last commit:** `679acce` — sim(ops): 90-day simulation — seed + 5 workflow bug fixes
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
 **Test credentials:** `admin@jtax.test` / `JTax@Admin2026!` (PARTNER role)
 
@@ -47,7 +47,7 @@ J-TAX is an enterprise tax operations management platform for Indian CA/tax firm
 
 ---
 
-## 3. ROLE STRUCTURE (as of Session 8)
+## 3. ROLE STRUCTURE
 
 | Role | Level | Represents | Key restrictions |
 |------|-------|------------|-----------------|
@@ -82,7 +82,7 @@ J-TAX is an enterprise tax operations management platform for Indian CA/tax firm
 | `/workforce` | ✅ | 🔒 | 🔒 | 🔒→`/client` |
 | `/client/*` | 🔒 | 🔒 | 🔒 | ✅ |
 
-CLIENT routing is enforced at 4 layers: `signIn` action, `proxy.ts` (auth redirect + access-denied), `(app)/layout.tsx`, `(app)/page.tsx`.
+CLIENT routing enforced at 4 layers: `signIn` action, `proxy.ts`, `(app)/layout.tsx`, `(app)/page.tsx`.
 
 ---
 
@@ -92,8 +92,8 @@ CLIENT routing is enforced at 4 layers: `signIn` action, `proxy.ts` (auth redire
 j-tax/
 ├── app/
 │   ├── (app)/
-│   │   ├── page.tsx                  # UPDATED S8/S9 — role dashboards + CLIENT guard
-│   │   ├── layout.tsx                # UPDATED S9 — CLIENT role redirect to /client
+│   │   ├── page.tsx                  # Role dashboards + CLIENT guard
+│   │   ├── layout.tsx                # CLIENT role redirect to /client
 │   │   ├── clients/page.tsx
 │   │   ├── employees/page.tsx
 │   │   ├── proposals/page.tsx
@@ -112,17 +112,20 @@ j-tax/
 │   ├── (auth)/login, signup, reset-password
 │   ├── (client-portal)/client/
 │   ├── auth/
-│   │   ├── callback/route.ts         # OAuth / email confirm code exchange
-│   │   └── reset-password/confirm/page.tsx  # UPDATED S9 — PKCE code exchange + styled
+│   │   ├── callback/route.ts
+│   │   └── reset-password/confirm/page.tsx  # PKCE code exchange + styled
 │   ├── actions/
-│   │   ├── auth.ts                   # UPDATED S9 — CLIENT role routing on login
-│   │   ├── clients.ts, employees.ts
-│   │   ├── tasks.ts, compliance.ts, documents.ts, messages.ts
+│   │   ├── auth.ts                   # CLIENT role routing on login
+│   │   ├── clients.ts                # Full CRUD — deleteClient verified
+│   │   ├── employees.ts              # Full CRUD — deleteEmployee guards active assignments
+│   │   ├── tasks.ts                  # Full CRUD — deleteTask existence check added
+│   │   ├── compliance.ts, documents.ts, messages.ts
+│   │   ├── invoices.ts               # Full CRUD — deleteInvoice added S10
 │   │   ├── search.ts, activity.ts
-│   │   ├── invoices.ts, reports.ts, onboarding.ts
-│   │   ├── workforce.ts, proposals.ts, settings.ts
-│   │   └── client-360.ts, client-portal-documents.ts
-│   ├── (quotation-portal)/q/[token]/  # UPDATED S9 — contact email uses env var
+│   │   ├── reports.ts, onboarding.ts
+│   │   ├── workforce.ts, proposals.ts
+│   │   └── settings.ts, notifications.ts
+│   ├── (quotation-portal)/q/[token]/
 │   ├── api/
 │   ├── unauthorized/page.tsx
 │   ├── error.tsx
@@ -137,36 +140,45 @@ j-tax/
 │   │   └── kpi-cards.tsx, revenue-chart.tsx, filing-chart.tsx, etc.
 │   ├── layout/
 │   │   ├── app-sidebar.tsx
-│   │   ├── app-shell.tsx             # UPDATED S9 — mounts HeartbeatTracker
-│   │   └── heartbeat-tracker.tsx    # NEW S9 — recordHeartbeat() every 5 min
-│   ├── work-tracker/
+│   │   ├── app-shell.tsx
+│   │   └── heartbeat-tracker.tsx
+│   ├── onboarding/
+│   │   └── onboarding-wizard.tsx     # REWRITTEN S10 — 6-step guided setup
 │   ├── clients/
+│   │   └── client-onboarding-wizard.tsx  # UPDATED S10 — step-jump guard
+│   ├── compliance/
+│   │   └── add-compliance-event-dialog.tsx  # UPDATED S10 — canSubmit guard
+│   ├── payments/
+│   │   └── add-invoice-dialog.tsx    # UPDATED S10 — amount>0 + date canSubmit
+│   ├── proposals/
+│   │   └── add-lead-dialog.tsx       # REWRITTEN S10 — useEffect close, canSubmit
 │   ├── messaging/
+│   │   └── template-builder.tsx      # UPDATED S10 — variable trim guard
+│   ├── work-tracker/
 │   └── settings/
+├── hooks/
+│   └── use-validated-form.ts         # Client-side Zod + duplicate-submit guard
 ├── lib/
-│   ├── auth/
-│   │   ├── types.ts
-│   │   ├── roles.ts                  # UPDATED S9 — STAFF_ROLES; CLIENT removed from staff routes; /client added
-│   │   ├── scope.ts
-│   │   ├── guards.ts
-│   │   └── session.ts
+│   ├── auth/types.ts, roles.ts, scope.ts, guards.ts, session.ts
 │   ├── messaging/
-│   │   ├── whatsapp-api.ts           # UPDATED S9 — real Meta Cloud API, no mock
-│   │   ├── resend-provider.ts        # UPDATED S9 — all branding uses env vars
+│   │   ├── whatsapp-api.ts           # Real Meta Cloud API v19.0
+│   │   ├── resend-provider.ts        # Env-var driven branding
 │   │   ├── notification-service.ts
 │   │   └── provider-interface.ts
-│   ├── stores/
-│   │   └── sidebar-store.ts
+│   ├── validations/
+│   │   ├── auth.ts, client.ts, employee.ts
+│   │   ├── invoice.ts, task.ts, message.ts
+│   │   └── settings.ts               # UPDATED S10 — password complexity added
+│   ├── stores/sidebar-store.ts
 │   ├── navigation.ts
-│   ├── clients/
-│   │   └── queries.ts
-│   └── validations/, workforce/, quotations/, etc.
+│   ├── clients/queries.ts
+│   └── workforce/, quotations/, etc.
 ├── prisma/
 │   ├── schema.prisma
 │   └── migrations-manual/
 │       └── 001_rename_executive_to_employee.sql
-├── proxy.ts                           # UPDATED S9 — CLIENT routing, 4-layer defence
-├── eslint.config.mjs                  # UPDATED S9 — _-prefix ignore pattern
+├── proxy.ts
+├── eslint.config.mjs
 ├── .github/workflows/ci.yml
 └── vercel.json
 ```
@@ -198,7 +210,7 @@ All required vars set in `.env`:
 |------|--------|-------|
 | Production build | ✅ Passes | 42 routes, 0 errors |
 | TypeScript strict mode | ✅ Passes | 0 errors |
-| ESLint | ✅ Passes | 0 errors, 261 warnings (all `warn`, not `error`) |
+| ESLint | ✅ Passes | 0 errors, 260 warnings (all `warn`, not `error`) |
 | Login/auth flow | ✅ Manual | |
 | All major pages | ✅ Manual | |
 | Setup checklist | ✅ Done | Live DB counts |
@@ -207,9 +219,9 @@ All required vars set in `.env`:
 | Dashboard caching | ✅ Done | 60s unstable_cache per role |
 | CI/CD | ✅ Done | GitHub Actions |
 | Notification prefs | ✅ Done | Saved to user_metadata |
-| Onboarding data | ✅ Done | All steps save to user_metadata |
+| Onboarding data | ✅ Done | All steps save to user_metadata / DB |
 | Mock data eliminated | ✅ Done | lib/dashboard-data.ts, lib/clients-data.ts deleted; WhatsApp mock replaced; email templates use env vars |
-| Invoice validation | ✅ Done | dueDate >= issueDate |
+| Invoice validation | ✅ Done | dueDate >= issueDate; amount > 0 |
 | Phone validation | ✅ Done | Format regex |
 | Dead buttons/links | ✅ Done | All 14 found + fixed |
 | Workforce Intelligence | ✅ Done | PARTNER-only, 3 new DB tables |
@@ -223,8 +235,17 @@ All required vars set in `.env`:
 | Workforce heartbeat | ✅ Done | HeartbeatTracker in AppShell, fires every 5 min |
 | CLIENT routing | ✅ Done | 4-layer defence; CLIENT always goes to /client |
 | Password reset (PKCE) | ✅ Done | /auth/reset-password/confirm exchanges code before form |
-| Firm branding in emails | ✅ Done | All env-var driven; no hardcoded "TaxWise Consultants" |
+| Firm branding in emails | ✅ Done | All env-var driven; proposals.ts hardcoded fallback also fixed S10 |
 | Dead code removed | ✅ Done | 65+ files cleaned; ESLint _-prefix pattern configured |
+| **Onboarding wizard** | ✅ Done S10 | 6-step guided setup; employees + client created in DB; progress tracking; contextual guidance |
+| **CRUD completeness** | ✅ Done S10 | All 9 modules verified; 7 bugs fixed including missing deleteInvoice |
+| **Form validation** | ✅ Done S10 | 14 forms audited; 7 issues fixed; canSubmit guards, complexity policy, render-body bug |
+| **90-day simulation** | ✅ Done S11 | Seed: 10 emp / 100 clients / 500 tasks / 200 invoices / 1000 notifs; 5 workflow bugs fixed |
+| **Task assignment notifications** | ✅ Done S11 | createTask now inserts TASK_ASSIGNED notification for assigned employee |
+| **Payment received notifications** | ✅ Done S11 | recordPayment now inserts PAYMENT_RECEIVED notifications for PARTNER/MANAGER |
+| **EMPLOYEE compliance workflow** | ✅ Done S11 | Employees can now update workflow status for their assigned clients |
+| **Notification RBAC** | ✅ Done S11 | createNotification RBAC fixed; PARTNER/MANAGER can notify any user |
+| **Client code race condition** | ✅ Done S11 | generateClientCode runs inside transaction to prevent duplicate codes |
 | Automated tests | ❌ None | No Jest/Vitest/Playwright |
 | RLS policies | ❌ None | Application-layer auth only |
 
@@ -238,14 +259,14 @@ All required vars set in `.env`:
 
 ### HIGH — Security
 3. **Supabase RLS policies** — No row-level security. Direct Supabase API calls bypass all application guards. Risk: authenticated users can query any table directly.
-4. **Upstash Redis rate limiter** — In-memory rate limiter resets on serverless cold starts.
+4. **Upstash Redis rate limiter** — In-memory rate limiter resets on serverless cold starts. Migration path documented in `lib/security/rate-limiter.ts`.
 
 ### MEDIUM — Testing
-5. **Playwright E2E test suite** — No automated tests. Priority scenarios: CLIENT cannot access `/`, EMPLOYEE cannot access `/payments`, EMPLOYEE sees only assigned clients, PARTNER sees all data.
+5. **Playwright E2E test suite** — No automated tests. Priority scenarios: CLIENT cannot access `/`, EMPLOYEE cannot access `/payments`, EMPLOYEE sees only assigned clients, PARTNER sees all data, password reset end-to-end.
 
 ### LOW — Quality
 6. **Settings page firm-level guard** — `/settings` accessible to all staff, but firm name/GSTIN/address fields should be PARTNER-only within the page.
-7. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` in `.env` to enable real WhatsApp messaging. Banner in `whatsapp-chat.tsx` already handles the unconfigured state.
+7. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` in `.env` to enable real WhatsApp messaging.
 8. **Supabase `documents` bucket** — Verify in dashboard; `assertDocumentBucketExists()` creates on first upload.
 
 ---
@@ -253,6 +274,7 @@ All required vars set in `.env`:
 ## 9. GIT LOG (last 10 commits)
 
 ```
+24cae80  docs: update all three state documents for session 9 stabilization + auth hardening
 2771159  chore: remove stale lint output files
 fee4c6f  fix(auth): harden authentication flows — CLIENT isolation + password reset
 38e028b  fix(mock-data): eliminate all mock/fake data from production code
@@ -262,5 +284,6 @@ c8799dc  docs: update all three state documents for session 8 RBAC restructuring
 3ef1efa  feat(rbac): enterprise RBAC restructuring — EXECUTIVE→EMPLOYEE, route hardening, role dashboards
 6e99e3a  feat(nav): enterprise sidebar with grouped categories, favorites, recent items & quick actions
 ac951d0  docs: fix stale commit hash, git log, env vars, and repo structure in PROJECT_STATE
-cc208bc  docs: update session 6 state documents for proposals system
 ```
+
+> Session 10 changes are uncommitted (onboarding overhaul, CRUD fixes, form validation). Commit with: `git add -A && git commit -m "feat(ux): onboarding overhaul + CRUD verification + form validation hardening"`

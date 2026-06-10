@@ -1,6 +1,6 @@
 # J-TAX Fix Log
 
-**Last updated:** 2026-06-10 (Session 8 — Enterprise RBAC Restructuring & Hardening)
+**Last updated:** 2026-06-10 (Session 11 — 90-Day Operational Simulation + Workflow Bug Fixes)
 **Branch:** `main`
 
 ---
@@ -654,3 +654,177 @@ Replaced all 12 hardcoded instances across payment reminder, compliance reminder
 ### BUILD STATUS (Session 9)
 - 42 routes, 0 TypeScript errors, 0 build errors ✅
 - ESLint: 0 errors, 261 warnings (all `warn`-level: `no-explicit-any` + `set-state-in-effect`) ✅
+
+---
+
+## SESSION 10 — ONBOARDING OVERHAUL, CRUD VERIFICATION, FORM VALIDATION HARDENING
+
+---
+
+### FEAT-010 — First-Time Customer Experience: 6-Step Guided Onboarding
+
+**Motivation:** Existing 5-step wizard collected data but never created real DB records for employees or clients (steps were informational only). New users landed on an empty dashboard with no guidance after completing it.
+
+**Files changed:**
+- `components/onboarding/onboarding-wizard.tsx` — **complete rewrite** (5-step → 6-step)
+- `app/actions/onboarding.ts` — added `createEmployeeFromOnboarding`, `createClientFromOnboarding`, `saveEmailConfiguration`; `completeOnboarding` / `skipOnboarding` updated to step 6
+
+**New 6-step flow:**
+
+| Step | What it does |
+|------|-------------|
+| 1 — Firm Information | Firm name (required), GSTIN, address, phone, email → saved to `user_metadata` |
+| 2 — Add Employees | Inline multi-row form; employees actually created in DB via `createEmployeeFromOnboarding`; skippable |
+| 3 — Add Services | 8 service checkboxes + reminder days selector |
+| 4 — Add First Client | Name/email/phone/GSTIN; client created in DB via `createClientFromOnboarding`; skippable |
+| 5 — Configure Email | Email/WhatsApp toggles, reminder frequency, Resend setup guidance |
+| 6 — Ready to Launch | Setup summary (counts) + 4 quick-start links + "Go to Dashboard" CTA |
+
+**UX improvements:**
+- Two-panel layout: sticky step list sidebar (lg+) + animated content area
+- Animated progress bar at top tracking completion percentage
+- Contextual guidance callouts on every step explaining what the data is used for
+- Success banners when employees are created; client added confirmation card
+- Skippable steps (employees, first client) with "Skip for now" links
+- Resume support: wizard resumes from last DB-persisted step if browser closed mid-flow
+- Saving spinners on buttons during server actions; double-submit guard
+
+---
+
+### CRUD-001 — `deleteInvoice` Missing Entirely
+- **Severity:** Critical — no way to remove a draft or erroneous invoice from the system
+- **File:** `app/actions/invoices.ts`
+- **Fix:** Added `deleteInvoice(invoiceId)` — guards against deleting invoices with payments recorded (`paidAmount > 0`) or fully `PAID` status; returns clear error messages; relies on DB-level cascades for `PaymentReceipt` and `FollowUp`
+
+### CRUD-002 — `createInvoice` Accepted Zero/Negative Amounts
+- **Severity:** High — ₹0 or ₹-100 invoices could be created
+- **File:** `app/actions/invoices.ts`
+- **Fix:** Added `if (isNaN(amountValue) || amountValue <= 0)` guard before DB write; returns `fieldErrors.amount`
+
+### CRUD-003 — `updateInvoice` Accepted Arbitrary Status Strings
+- **Severity:** Medium — `status: data.status as any` wrote any string to the DB enum column
+- **File:** `app/actions/invoices.ts`
+- **Fix:** Added `VALID_INVOICE_STATUSES` constant; runtime check rejects unknown values before DB write; also added `paidAmount > invoiceTotal` overflow guard
+
+### CRUD-004 — `sendBulkReminders` Queried Wrong Phone Field
+- **Severity:** High — bulk SMS silently skipped all clients who only had `phone` set
+- **Root cause:** Client model has both `phone` (form-populated) and `phoneNumber` (legacy, always null for new clients). The action filtered on `{ phoneNumber: { not: null } }` and read `client.phoneNumber` for the recipient — both wrong
+- **File:** `app/actions/messages.ts`
+- **Fix:** Changed both the `WHERE` clause and recipient lookup to use `client.phone`
+
+### CRUD-005 — `deleteEmployee` Allowed Deleting Active Employees With Assignments
+- **Severity:** High — deleting an employee with 20 assigned clients and 50 open tasks would orphan all of them
+- **File:** `app/actions/employees.ts`
+- **Fix:** Added pre-delete checks for `assignedClients > 0` and `openTasks > 0`; returns descriptive error instructing user to reassign first. `disableEmployee` (soft-removal) remains available.
+
+### CRUD-006 — `deleteTask` Threw Generic DB Error for Non-Existent Tasks
+- **Severity:** Low — Prisma P2025 caught as "Failed to delete task" with no useful feedback
+- **File:** `app/actions/tasks.ts`
+- **Fix:** Added `findUnique` before delete; returns `{ error: "Task not found." }` cleanly
+
+### CRUD-007 — `proposals.ts` Still Had Hardcoded "TaxWise Consultants" Branding
+- **Severity:** Medium — quotation emails sent to real clients would show fake firm name/email
+- **Root cause:** `resend-provider.ts` was fixed in Session 9 but `proposals.ts` was missed
+- **File:** `app/actions/proposals.ts`
+- **Fix:** `FIRM_NAME` fallback changed to `"Your Tax Firm"`; `FIRM_EMAIL` fallback changed to `""` (empty)
+
+---
+
+### VAL-001 — `AddInvoiceDialog` `canSubmit` Allowed Amount ≤ 0
+- **Severity:** Medium — amount="0" or "-500" enabled the submit button; user clicked and got a server error instead of instant feedback
+- **File:** `components/payments/add-invoice-dialog.tsx`
+- **Fix:** Added `parseFloat(formData.amount) > 0` and `new Date(formData.dueDate) >= new Date(formData.issueDate)` to `canSubmit`. Button stays disabled until data is valid.
+
+### VAL-002 — `AddLeadDialog` `setTimeout` Called in Render Body
+- **Severity:** High — `if (state.success && open) { setTimeout(onClose, 100) }` in the function body registered a new timeout on every re-render while both conditions were true; `onClose` could fire many times; timers leaked
+- **File:** `components/proposals/add-lead-dialog.tsx`
+- **Fix:** Complete rewrite — moved to `useEffect` with `closedRef` guard (fires exactly once per success); added controlled state for `name`/`email` so fields reset cleanly on re-open
+
+### VAL-003 — `AddLeadDialog` Had No `canSubmit` Guard
+- **Severity:** Medium — submit button always enabled; blank form triggered unnecessary server round-trip
+- **File:** `components/proposals/add-lead-dialog.tsx`
+- **Fix:** `canSubmit = name.trim().length >= 1 && email.trim().length > 0 && !isPending`
+
+### VAL-004 — `AddComplianceEventDialog` Had No `canSubmit` Guard
+- **Severity:** Medium — user could submit blank title and no due date
+- **File:** `components/compliance/add-compliance-event-dialog.tsx`
+- **Fix:** Added controlled `title` and `dueDate` state; `canSubmit = title.trim().length >= 1 && dueDate.length > 0 && !isPending`; also tightened `reminderDays` input `min="0"` → `min="1"`
+
+### VAL-005 — `TemplateBuilder` Allowed Whitespace-Only Variables
+- **Severity:** Low — `if (newVariable && ...)` passed `"   "` (truthy) as a variable name
+- **File:** `components/messaging/template-builder.tsx`
+- **Fix:** `const trimmed = newVariable.trim()` — checks trimmed value, stores trimmed value
+
+### VAL-006 — `passwordSchema` in Settings Lacked Complexity Requirements
+- **Severity:** High — changing password from Settings only required `min(8)`; signup/reset enforced uppercase + lowercase + number + special; two different security policies in the same app
+- **File:** `lib/validations/settings.ts`
+- **Fix:** Added the same four regex rules to `newPassword` in `passwordSchema`. Policy is now consistent: all password-change paths enforce the same complexity.
+
+### VAL-007 — `ClientOnboardingWizard` Sidebar Allowed Jumping to Inaccessible Steps
+- **Severity:** Medium — clicking "Step 4 — Compliance Setup" in the sidebar before completing Step 1 bypassed all required-field checks; user could reach the submit step with no client name or services
+- **File:** `components/clients/client-onboarding-wizard.tsx`
+- **Fix:** Added `isStepAccessible(index)` — computes per-step prerequisites using existing `stepChecks` object; inaccessible steps: `disabled`, dimmed, tooltip "Complete previous steps first"
+
+---
+
+### BUILD STATUS (Session 10)
+- 42 routes, 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 260 warnings (all `warn`-level) ✅
+
+---
+
+## SESSION 11 — 90-DAY OPERATIONAL SIMULATION
+
+**Simulation scope:** 10 employees, 100 clients, 500 tasks, 200 invoices, 1000 notifications seeded via `npm run db:seed`. All workflows traced end-to-end. 5 bugs found and fixed.
+
+---
+
+### SIM-001 — `createNotification` RBAC Blocked Cross-User Notifications
+
+- **Severity:** Critical — all system-generated notifications for employees were silently suppressed
+- **Root cause:** `app/actions/notifications.ts` `createNotification()` contained `if (data.userId !== session.user.id) return { success: false, error: "..." }`. A PARTNER assigning a task has a different `session.user.id` than the target EMPLOYEE — so every cross-user notification failed silently.
+- **Fix:** Changed guard: EMPLOYEE can only self-notify; PARTNER/MANAGER can create notifications for any user.
+- **File:** `app/actions/notifications.ts`
+
+---
+
+### SIM-002 — No In-App Notification on Task Assignment
+
+- **Severity:** Critical — assigned employees never received in-app or bell notification when tasks were assigned to them
+- **Root cause:** `createTask` in `app/actions/tasks.ts` called workforce tracking but never created a `Notification` record for the assigned employee.
+- **Fix:** After task creation, if `assignedEmployeeId` is present, look up `employee.userId` and insert a `TASK_ASSIGNED` notification.
+- **File:** `app/actions/tasks.ts`
+
+---
+
+### SIM-003 — No In-App Notification on Payment Recorded
+
+- **Severity:** High — PARTNER/MANAGER had no real-time alert when a payment was recorded on an invoice
+- **Root cause:** `recordPayment` in `app/actions/invoices.ts` committed the payment transaction but created no notifications.
+- **Fix:** After the payment transaction, `createMany` PAYMENT_RECEIVED notifications for all PARTNER/MANAGER users. Also added `client: { select: { name: true } }` include to the invoice fetch so the notification message includes the client name.
+- **File:** `app/actions/invoices.ts`
+
+---
+
+### SIM-004 — EMPLOYEE Role Blocked from Compliance Workflow Updates
+
+- **Severity:** High — broken UX: EMPLOYEE users can see `/compliance` (per route access matrix) but both `updateComplianceWorkflowStatus` and `updateComplianceEventStatus` returned a blanket "no permission" error for EMPLOYEE role, making the entire compliance workflow unusable for employees
+- **Root cause:** Overly broad role check: `if (session.user.role === "EMPLOYEE") return { error: "..." }` with no path for assigned-client scoping.
+- **Fix:** Replaced blanket block with scoped check: EMPLOYEE can update workflow status only for compliance events belonging to their assigned clients. Unassigned or cross-employee events still return a 403-style error.
+- **Files:** `app/actions/compliance.ts` (`updateComplianceWorkflowStatus` and `updateComplianceEventStatus`)
+
+---
+
+### SIM-005 — `generateClientCode` Race Condition
+
+- **Severity:** Medium — concurrent client creation would both call `prisma.client.count()` before either `CREATE` ran, get the same count, generate the same `CLI-NNNN` code, and one write would fail with a Prisma P2002 unique-constraint error
+- **Root cause:** `generateClientCode()` in `lib/clients/queries.ts` ran `count()` outside the `$transaction` scope in `createClientWithOnboarding`.
+- **Fix:** `generateClientCode` now accepts an optional Prisma transaction client. `createClientWithOnboarding` passes `tx` so the count and create are atomic within the same transaction.
+- **File:** `lib/clients/queries.ts`
+
+---
+
+### BUILD STATUS (Session 11)
+- 42 routes, 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 260 warnings (all `warn`-level) ✅
+- Seed: 10 employees, 100 clients, 500 tasks, 200 invoices, 1000 notifications ✅

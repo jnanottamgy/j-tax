@@ -1,7 +1,7 @@
 # J-TAX Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-10 (Session 9 — Production Stabilization, Mock Data Elimination, Auth Hardening)
+**Date of prior session:** 2026-06-10 (Session 11 — 90-Day Operational Simulation + Workflow Bug Fixes)
 **Branch:** `main`
 **Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
 
@@ -12,10 +12,12 @@
 ```
 Build:      42 routes ✅  (npm run build)
 TypeScript: 0 errors  ✅  (npx tsc --noEmit)
-Lint:       0 errors  ✅  (npm run lint) — 261 warnings, all warn-level
+Lint:       0 errors  ✅  (npm run lint) — 260 warnings, all warn-level
+Seed:       10 employees / 100 clients / 500 tasks / 200 invoices / 1000 notifications ✅
 ```
 
-Three full passes completed this session: stabilization → mock data → auth hardening. The codebase is in a shippable state modulo the two critical pre-production items below.
+Session 11 ran a full 90-day operational simulation. The seed is live in the DB. 5 workflow
+bugs were found and fixed. All changes committed to `679acce`.
 
 ```bash
 npm run dev    # → http://localhost:3000
@@ -44,98 +46,90 @@ Email footers and subjects currently default to "Your Tax Firm". Set this in Ver
 
 ---
 
-## WHAT WAS DONE IN SESSION 9
+## WHAT WAS DONE IN SESSION 10
 
-### Phase 1 — ESLint Error Elimination (12 errors → 0)
+### Phase 1 — Onboarding Overhaul (FEAT-010)
 
-All 12 lint errors fixed across 9 files. Key fixes:
-- `<a>` → `<Link>` in employees detail page
-- Unescaped entities (`'`, `"`) in 5 files
-- `DeadlineSection` component moved from inside render to module scope (client/deadlines page)
-- `INLINE_ICON_MAP` static lookup replaces `getIcon()` call in render (empty-states)
-- `Date.now()` in render moved to `useState` lazy initializer (quotation-builder)
+Completely rewrote `components/onboarding/onboarding-wizard.tsx` (5 steps → 6 steps). The old wizard collected data but never created real DB records. The new wizard actually creates employees and clients in the DB.
 
-`eslint.config.mjs` updated: `_`-prefixed names now ignored for `no-unused-vars` (covers `_clearErrors`, `_setData`, etc.).
+**New 6-step flow:**
 
-### Phase 2 — Dead Code Sweep (65+ files)
+| Step | Changes from before |
+|------|-------------------|
+| 1 — Firm Information | Same content; improved UI with contextual guidance |
+| 2 — Add Employees | **New** — inline multi-row form; calls `createEmployeeFromOnboarding`; skippable |
+| 3 — Add Services | Same content; 8 services (added Payroll, Advisory); better UI |
+| 4 — Add First Client | **New** — calls `createClientFromOnboarding`; shows success card; skippable |
+| 5 — Configure Email | Replaces Notification Preferences step; adds Resend setup guidance |
+| 6 — Ready to Launch | **New** — setup summary (employee/service/client counts) + quick-start links |
 
-Unused imports, dead state variables, orphaned assignments removed from 65+ files across `app/`, `components/`, `lib/`, `prisma/`, and `scripts/`.
+**New server actions added to `app/actions/onboarding.ts`:**
+- `createEmployeeFromOnboarding(data)` — creates `Employee` record; duplicate email check
+- `createClientFromOnboarding(data)` — creates `Client` with auto-generated `CLI-NNNN` code
+- `saveEmailConfiguration(data)` — saves email/WhatsApp prefs to `user_metadata`
+- `completeOnboarding` / `skipOnboarding` — updated from step 5 → step 6
 
-### Phase 3 — Workforce Heartbeat Wired
-
-`components/layout/heartbeat-tracker.tsx` — new client component. Calls `recordHeartbeat()` on mount, then every 5 minutes. Mounted in `AppShell`. Workforce session `lastActive` timestamp now updates while users are in the app.
-
-### Phase 4 — Mock Data Elimination
-
-| Item | Fix |
-|------|-----|
-| `lib/dashboard-data.ts` | **Deleted** — orphaned fake KPI/chart/activity data |
-| `lib/clients-data.ts` | **Deleted** — orphaned 18 fake clients |
-| `lib/messaging/whatsapp-api.ts` | **Replaced** — real Meta WhatsApp Cloud API v19.0; graceful "not configured" when env vars absent |
-| `lib/messaging/resend-provider.ts` | **Fixed** — all 12 hardcoded "TaxWise Consultants" instances replaced with `FIRM_NAME`/`FROM_EMAIL`/`FIRM_PHONE` env vars |
-| `app/actions/messages.ts` | **Fixed** — email subjects use `process.env.FIRM_NAME` |
-| `app/(quotation-portal)/q/[token]/page.tsx` | **Fixed** — contact link hidden when `FROM_EMAIL` unset; no fake email shown to clients |
-
-### Phase 5 — Auth Hardening
-
-**AUTH-001 — CLIENT role isolation (P0):**
-
-Before: CLIENT users could log in, land on the Partner Command Center, and access all firm data.
-
-After: 4-layer defence:
-1. `app/actions/auth.ts` — `signIn` detects CLIENT role, forces `redirect("/client")`
-2. `proxy.ts` — auth-route redirect sends CLIENT to `/client` not `/`
-3. `proxy.ts` — access-denied for CLIENT redirects to `/client` not `/unauthorized`
-4. `app/(app)/layout.tsx` — belt-and-suspenders CLIENT guard before layout renders
-5. `app/(app)/page.tsx` — CLIENT guard before any DB fetcher runs
-
-`lib/auth/roles.ts` — new `STAFF_ROLES` constant; CLIENT removed from all staff routes; `/client` added as CLIENT-only.
-
-**AUTH-002 — Password reset PKCE fix (P1):**
-
-Before: `/auth/reset-password/confirm` was a static form. `exchangeCodeForSession(code)` was never called. `updateUser()` always failed silently with "Not authenticated".
-
-After: Dynamic server component that:
-1. Reads `?code=` from searchParams — missing → redirect to reset request with error
-2. Calls `supabase.auth.exchangeCodeForSession(code)` — expired → redirect with message
-3. On success renders `UpdatePasswordForm` with active recovery session
-4. Full auth-layout styling (was previously an unstyled bare page)
-
-`app/(auth)/reset-password/page.tsx` now displays `?error=` query param for failure messages.
+**Layout:** Two-panel (sidebar step list + content area), animated progress bar, contextual guidance on every step, skippable optional steps, resume-on-reload support.
 
 ---
 
-## WHAT WAS DONE IN SESSION 8 (for reference)
+### Phase 2 — CRUD Verification (7 bugs fixed)
 
-- EXECUTIVE → EMPLOYEE role migration (20 files)
-- `/activity` restricted to PARTNER only
-- Role-specific dashboards: PartnerCommandCenter, ManagerDashboard, EmployeeDashboard
-- Role-specific navigation: `getNavigationForRole(role)` in sidebar
-- EMPLOYEE data scoping verified across all actions
+Full audit of all 9 modules. Every Create/Read/Update/Delete path reviewed.
+
+| Fix | File | Problem | Fix |
+|-----|------|---------|-----|
+| CRUD-001 | `app/actions/invoices.ts` | `deleteInvoice` missing entirely | Added with paid-amount guard |
+| CRUD-002 | `app/actions/invoices.ts` | `createInvoice` accepted ₹0/negative | Added amount > 0 guard |
+| CRUD-003 | `app/actions/invoices.ts` | `updateInvoice` accepted arbitrary status strings via `as any` | Added `VALID_INVOICE_STATUSES` check |
+| CRUD-004 | `app/actions/messages.ts` | `sendBulkReminders` used `client.phoneNumber` (legacy null field) instead of `client.phone` | Changed to `client.phone` in filter + recipient |
+| CRUD-005 | `app/actions/employees.ts` | `deleteEmployee` let you delete employees with active client/task assignments | Added pre-delete count checks |
+| CRUD-006 | `app/actions/tasks.ts` | `deleteTask` threw generic DB error for non-existent task | Added `findUnique` existence check |
+| CRUD-007 | `app/actions/proposals.ts` | `FIRM_NAME` still defaulted to `"TaxWise Consultants"` | Changed to `"Your Tax Firm"` |
+
+All 9 modules now pass full CRUD audit. Invalid-operation tests (delete paid invoice, overpay invoice, delete employee with clients, etc.) all return correct errors.
+
+---
+
+### Phase 3 — Form Validation Hardening (7 issues fixed)
+
+Full audit of 14 forms. Checked: required fields, format validation, duplicate prevention, inline errors, loading states, success states, `canSubmit` guards.
+
+| Fix | File | Problem | Fix |
+|-----|------|---------|-----|
+| VAL-001 | `components/payments/add-invoice-dialog.tsx` | `canSubmit` allowed amount ≤ 0 and dueDate < issueDate | Added numeric + date guards to `canSubmit` |
+| VAL-002 | `components/proposals/add-lead-dialog.tsx` | `setTimeout(onClose, 100)` in render body — fired on every re-render | Moved to `useEffect` with `closedRef` guard |
+| VAL-003 | `components/proposals/add-lead-dialog.tsx` | No `canSubmit` guard | Added name + email non-empty check |
+| VAL-004 | `components/compliance/add-compliance-event-dialog.tsx` | No `canSubmit` guard | Added controlled title + dueDate state; guard on both |
+| VAL-005 | `components/messaging/template-builder.tsx` | Variable input accepted whitespace-only strings | Added `.trim()` before guard check |
+| VAL-006 | `lib/validations/settings.ts` | `passwordSchema` only `min(8)`; signup/reset required uppercase/lowercase/number/special | Added all 4 regex rules to match firm-wide policy |
+| VAL-007 | `components/clients/client-onboarding-wizard.tsx` | Sidebar buttons let user jump to any step, bypassing all step validity checks | Added `isStepAccessible(index)` — inaccessible steps disabled + dimmed |
 
 ---
 
 ## REMAINING WORK (priority order)
 
 ### 0. CRITICAL (before first production user)
-1. **DB migration** — `ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE'` in Supabase
-2. **Set `FIRM_NAME` env var** — currently defaults to "Your Tax Firm" in all emails
+1. **DB migration** — `ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE'` in Supabase SQL editor
+2. **Set `FIRM_NAME` env var** — defaults to "Your Tax Firm" in all emails
 
 ### 1. HIGH — Security
-3. **Supabase RLS policies** — No row-level security. Authenticated users can query tables directly via Supabase API, bypassing all application guards. Minimum: add RLS to `clients`, `tasks`, `documents`, `invoices`.
+3. **Supabase RLS policies** — No row-level security. Authenticated users can query any table directly via the Supabase API, bypassing all application guards. Minimum needed: `clients`, `tasks`, `documents`, `invoices`.
 4. **Upstash Redis rate limiter** — In-memory rate limiter resets on cold starts. Migration path documented in `lib/security/rate-limiter.ts`.
 
 ### 2. MEDIUM — Testing
 5. **Playwright E2E tests** — Priority scenarios:
    - CLIENT cannot access `/`, `/clients`, `/work-tracker`
    - EMPLOYEE cannot access `/payments`, `/employees`, `/reports`, `/activity`
-   - EMPLOYEE sees only assigned clients/tasks
-   - PASSWORD RESET flow end-to-end (email → confirm page → new password → login)
+   - EMPLOYEE sees only assigned clients/tasks (not other employees' data)
+   - Password reset end-to-end (email → confirm page → new password → login)
+   - Invoice delete blocked when paid
+   - Employee delete blocked when clients assigned
 
 ### 3. LOW — Polish
-6. **Settings firm-level guard** — `/settings` accessible to all staff; firm name/GSTIN fields should be PARTNER-only within the page (can read, not edit for others).
-7. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`. Banner in `whatsapp-chat.tsx` already handles unconfigured state correctly.
-8. **Supabase `documents` bucket** — Verify exists in Supabase dashboard; `assertDocumentBucketExists()` creates on first upload.
+6. **Settings firm-level guard** — `/settings` accessible to all staff; firm name/GSTIN/address fields should be read-only for non-PARTNER roles within the page.
+7. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`. Banner in `whatsapp-chat.tsx` already handles unconfigured state.
+8. **Supabase `documents` bucket** — Verify exists in Supabase dashboard; `assertDocumentBucketExists()` creates on first upload automatically.
 
 ---
 
@@ -160,35 +154,58 @@ Request
   → data query (getEmployeeScopeId for EMPLOYEE row-level filtering)
 ```
 
-### Password Reset Flow (fixed)
+### Onboarding Flow (new)
 
 ```
-User → /reset-password (request form)
-     → email sent with ?code= link to /auth/reset-password/confirm
-     → confirm page: exchangeCodeForSession(code) → recovery session established
-     → UpdatePasswordForm → updatePassword() server action → supabase.auth.updateUser()
-     → redirect /login?password=updated
+New PARTNER/MANAGER logs in
+  → app/(app)/layout.tsx: onboardingStatus.completed === false
+  → <OnboardingWizard /> rendered over full screen
+  → Step 1: firm info → saveFirmInformation() → user_metadata
+  → Step 2: employees → createEmployeeFromOnboarding() × N → DB
+  → Step 3: services → saveServiceConfiguration() → user_metadata
+  → Step 4: first client → createClientFromOnboarding() → DB
+  → Step 5: email config → saveEmailConfiguration() → user_metadata
+  → Step 6: launch → completeOnboarding() → onboardingCompleted = true → redirect /
 ```
+
+### CRUD Invariants (enforced)
+
+```
+deleteEmployee  → blocked if assignedClients > 0 or openTasks > 0
+deleteInvoice   → blocked if paidAmount > 0 or status = PAID
+updateInvoice   → status must be in VALID_INVOICE_STATUSES
+createInvoice   → amount must be > 0 and ≤ 10,00,00,000
+recordPayment   → amount must be ≤ outstandingAmount; blocked on PAID/WAIVED/DISPUTED
+deleteTask      → explicit existence check before delete (returns "Task not found." if missing)
+sendBulkReminders → uses client.phone (not the legacy client.phoneNumber field)
+```
+
+### Form Validation Architecture
+
+All forms use one of two patterns:
+1. **`useValidatedForm` hook** — client-side Zod parse → inline field errors → server action → toast success/error. Has duplicate-submit guard via `inFlightRef`. Used by: Employee, Invoice, Task, Auth, Settings, Template Builder.
+2. **`useActionState`** — native React form actions, server-side validation, `state.fieldErrors` displayed inline. Used by: Client Onboarding Wizard, Compliance Event, Lead, Quotation.
+
+Both patterns show inline field errors next to inputs and a form-level banner for top-level errors. Both have loading states that disable the submit button. All submit buttons now have `canSubmit` guards that prevent submission before required fields are filled (no empty form round-trips).
+
+### Password Policy (all paths now consistent)
+
+```
+Minimum 8 characters
+At least one uppercase letter [A-Z]
+At least one lowercase letter [a-z]
+At least one number [0-9]
+At least one special character [^A-Za-z0-9]
+Maximum 128 characters
+```
+
+Enforced by: `signupSchema` (auth.ts), `newPasswordSchema` (auth.ts), `passwordSchema` (settings.ts — fixed in S10).
 
 ### Firm Branding in Emails
 
-All firm-identifying text in outbound emails is now env-var driven:
-- `FIRM_NAME` → email headers, subjects, footers
+All firm-identifying text in outbound emails is env-var driven:
+- `FIRM_NAME` → email headers, subjects, footers, quotation PDFs
 - `FROM_EMAIL` → sender address, footer contact email
 - `FIRM_PHONE` → footer phone (omitted if blank)
 
-Set all three in production. "Your Tax Firm" is the safe default — not a fake name.
-
-### WhatsApp Integration
-
-`lib/messaging/whatsapp-api.ts` is a real Meta Cloud API v19.0 implementation. It is NOT imported by any production action — the messaging system uses `notificationService` (email via Resend). Wire it to the notification service when ready to enable WhatsApp.
-
-### Role Check Pattern
-
-```typescript
-// STAFF_ROLES = ["PARTNER", "MANAGER", "EMPLOYEE"] — no CLIENT
-// In lib/auth/roles.ts:
-const STAFF_ROLES = ["PARTNER", "MANAGER", "EMPLOYEE"] as const satisfies readonly AppRole[]
-
-// CLIENT users always belong in /client portal, never the staff app
-```
+Safe defaults: `"Your Tax Firm"` / `""` / `""`. No hardcoded firm names remain anywhere in the codebase.
