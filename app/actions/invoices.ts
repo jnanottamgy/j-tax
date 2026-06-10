@@ -21,7 +21,7 @@ export async function getInvoicesData() {
   // C-09 fix: require authentication
   const session = await requireAuth()
 
-  // PARTNER and MANAGER see all invoices; EXECUTIVE is blocked at the route level
+  // PARTNER and MANAGER see all invoices; EMPLOYEE is blocked at the route level
   const invoices = await prisma.invoice.findMany({
     include: { client: true },
     orderBy: { createdAt: "desc" },

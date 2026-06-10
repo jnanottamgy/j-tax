@@ -4,14 +4,12 @@ import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import {
   createClientWithOnboarding,
   listClients,
-  seedEmployeesIfEmpty,
 } from "@/lib/clients/queries"
 import { createClientSchema } from "@/lib/validations/client"
 
 export async function GET() {
   try {
     const session = await requireAuth()
-    await seedEmployeesIfEmpty()
     const clients = await listClients({
       role: session.user.role,
       userId: session.user.id,

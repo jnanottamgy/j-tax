@@ -6,6 +6,24 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─── Firm Settings ────────────────────────────────────────────────────────────
+
+model FirmSettings {
+  id           String   @id @default("singleton")
+  firmName     String   @default("Your Tax Firm")
+  fromEmail    String   @default("")
+  replyToEmail String?
+  firmPhone    String?
+  firmAddress  String?
+  gstin        String?
+  pan          String?
+  website      String?
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+
+  @@map("firm_settings")
+}
+
 // ─── Staff & auth sync ───────────────────────────────────────────────────────
 
 enum Role {

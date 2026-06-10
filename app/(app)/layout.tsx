@@ -23,12 +23,16 @@ export default async function AppLayout({
     redirect("/client")
   }
 
-  const onboardingStatus = await getOnboardingStatus()
+  // Onboarding wizard is only relevant for PARTNER and MANAGER (firm setup).
+  // EMPLOYEE users have no firm to configure and should go straight to their dashboard.
+  const needsOnboarding =
+    (session.user.role === "PARTNER" || session.user.role === "MANAGER") &&
+    !(await getOnboardingStatus()).completed
 
   return (
     <AuthProvider user={session.user}>
       <ErrorBoundary>
-        {!onboardingStatus.completed && <OnboardingWizard />}
+        {needsOnboarding && <OnboardingWizard />}
         <AppShell>{children}</AppShell>
       </ErrorBoundary>
     </AuthProvider>

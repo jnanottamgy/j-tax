@@ -1,12 +1,14 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { z } from "zod"
 import { toUserError } from "@/lib/forms/errors"
-import { requireAuth } from "@/lib/auth/guards"
+import { requireAuth, requirePartner } from "@/lib/auth/guards"
 import type { FormActionState } from "@/lib/forms/types"
 import { prisma } from "@/lib/prisma"
 import { createClient } from "@/lib/supabase/server"
 import { passwordSchema, profileSchema } from "@/lib/validations/settings"
+import { getFirmSettings, upsertFirmSettings, type FirmConfig } from "@/lib/firm-settings"
 
 export type NotificationPrefs = {
   email: boolean
@@ -172,5 +174,82 @@ export async function getNotificationPreferences(): Promise<NotificationPrefs> {
     email: user?.user_metadata?.notification_email ?? true,
     sms: user?.user_metadata?.notification_sms ?? false,
     push: user?.user_metadata?.notification_push ?? true,
+  }
+}
+
+// ─── Firm Settings (PARTNER only) ────────────────────────────────────────────
+
+const firmSettingsSchema = z.object({
+  firmName: z.string().min(1, "Firm name is required").max(200),
+  fromEmail: z.string().email("Valid sender email is required"),
+  replyToEmail: z.string().email("Valid reply-to email required").optional().or(z.literal("")),
+  firmPhone: z.string().max(30).optional().or(z.literal("")),
+  firmAddress: z.string().max(500).optional().or(z.literal("")),
+  gstin: z.string().max(15).optional().or(z.literal("")),
+  pan: z.string().max(10).optional().or(z.literal("")),
+  website: z.string().url("Enter a valid URL (https://...)").optional().or(z.literal("")),
+})
+
+export type FirmSettingsActionState = FormActionState
+
+/**
+ * Load firm settings — available to all authenticated staff so the settings
+ * page can show current values to managers as read-only.
+ */
+export async function loadFirmSettings(): Promise<FirmConfig> {
+  await requireAuth()
+  return getFirmSettings()
+}
+
+/**
+ * Save firm settings — PARTNER only.
+ */
+export async function saveFirmSettings(
+  _prevState: FirmSettingsActionState,
+  formData: FormData
+): Promise<FirmSettingsActionState> {
+  try {
+    const session = await requirePartner()
+
+    const raw = {
+      firmName: formData.get("firmName"),
+      fromEmail: formData.get("fromEmail"),
+      replyToEmail: formData.get("replyToEmail") || undefined,
+      firmPhone: formData.get("firmPhone") || undefined,
+      firmAddress: formData.get("firmAddress") || undefined,
+      gstin: formData.get("gstin") || undefined,
+      pan: formData.get("pan") || undefined,
+      website: formData.get("website") || undefined,
+    }
+
+    const parsed = firmSettingsSchema.safeParse(raw)
+    if (!parsed.success) {
+      return { fieldErrors: parsed.error.flatten().fieldErrors }
+    }
+
+    await upsertFirmSettings(
+      {
+        firmName: parsed.data.firmName,
+        fromEmail: parsed.data.fromEmail,
+        replyToEmail: parsed.data.replyToEmail || null,
+        firmPhone: parsed.data.firmPhone || null,
+        firmAddress: parsed.data.firmAddress || null,
+        gstin: parsed.data.gstin || null,
+        pan: parsed.data.pan || null,
+        website: parsed.data.website || null,
+      },
+      session.user.id
+    )
+
+    revalidatePath("/settings")
+    return { success: true }
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes("Forbidden")) {
+        return { error: "Only Partners can modify firm settings." }
+      }
+      return { error: toUserError(error) }
+    }
+    return { error: "Failed to save firm settings. Please try again." }
   }
 }

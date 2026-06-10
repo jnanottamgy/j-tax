@@ -210,7 +210,7 @@ export async function getUpcomingDeadlines(days: number = 30) {
 export async function getClientComplianceData(clientId: string) {
   const session = await requireAuth()
 
-  // EXECUTIVE permission check
+  // EMPLOYEE permission check — scoped to assigned clients only
   if (session.user.role === "EMPLOYEE") {
     const assignedEmployee = await prisma.employee.findUnique({
       where: { userId: session.user.id },

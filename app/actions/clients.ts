@@ -12,7 +12,6 @@ import {
   getClientDetail,
   listClients,
   listEmployees,
-  seedEmployeesIfEmpty,
   updateClient as updateClientRecord,
 } from "@/lib/clients/queries"
 import {
@@ -30,7 +29,6 @@ export type ClientActionState = {
 
 export async function getClientsData() {
   const session = await requireAuth()
-  await seedEmployeesIfEmpty()
   const [clients, employees] = await Promise.all([
     listClients({
       role: session.user.role,

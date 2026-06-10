@@ -255,32 +255,3 @@ export async function deleteClient(clientId: string): Promise<{ success: boolean
   }
 }
 
-export async function seedEmployeesIfEmpty(): Promise<void> {
-  const count = await prisma.employee.count()
-  if (count > 0) return
-
-  await prisma.employee.createMany({
-    data: [
-      {
-        name: "Sarah Johnson",
-        email: "sarah@jtax.io",
-        department: "Partnership",
-      },
-      {
-        name: "Michael Chen",
-        email: "michael@jtax.io",
-        department: "Tax Advisory",
-      },
-      {
-        name: "Emily Rodriguez",
-        email: "emily@jtax.io",
-        department: "Compliance",
-      },
-      {
-        name: "James Wilson",
-        email: "james@jtax.io",
-        department: "Operations",
-      },
-    ],
-  })
-}

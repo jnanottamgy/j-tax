@@ -72,7 +72,7 @@ export async function globalSearch(query: string) {
 
   const results: SearchResult[] = []
 
-  // CRIT-03: resolve the employee ID once, used for all EXECUTIVE filters below
+  // Resolve the employee ID once, used for all EMPLOYEE scope filters below
   const executiveEmployeeId = await getExecutiveEmployeeId(session)
 
   // Log search analytics (LOW-02: truncate before storing)
@@ -97,7 +97,7 @@ export async function globalSearch(query: string) {
 
   if (query.length < 2) return { results, user }
 
-  // Search Clients — CRIT-03: correct EXECUTIVE scope via object spread (not array spread)
+  // Search Clients — scope by assignedEmployeeId for EMPLOYEE role
   {
     const clientWhere: Record<string, unknown> = {
       OR: [
@@ -111,7 +111,7 @@ export async function globalSearch(query: string) {
     }
     if (role === "EMPLOYEE") {
       if (!executiveEmployeeId) {
-        // EXECUTIVE with no linked employee sees nothing
+        // EMPLOYEE with no linked employee record sees nothing
       } else {
         clientWhere.assignedEmployeeId = executiveEmployeeId
         const clients = await prisma.client.findMany({ where: clientWhere as any, take: 5 })
@@ -153,7 +153,7 @@ export async function globalSearch(query: string) {
     }
   }
 
-  // Search Tasks — CRIT-03: correct EXECUTIVE scope
+  // Search Tasks — scope by assignedEmployeeId for EMPLOYEE role
   {
     const taskWhere: Record<string, unknown> = {
       OR: [
@@ -191,7 +191,7 @@ export async function globalSearch(query: string) {
     })
   }
 
-  // Search Invoices (no role-based scoping — PARTNER/MANAGER/EXECUTIVE all see their clients' invoices)
+  // Search Invoices — PARTNER/MANAGER/EMPLOYEE all see invoices scoped by their client visibility
   {
     const invoiceWhere: Record<string, unknown> = {
       OR: [
