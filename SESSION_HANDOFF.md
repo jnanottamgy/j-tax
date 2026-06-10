@@ -1,7 +1,7 @@
 # J-TAX Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-10 (Session 7 — Enterprise Navigation Sidebar)
+**Date of prior session:** 2026-06-10 (Session 8 — Enterprise RBAC Restructuring & Hardening)
 **Branch:** `main`
 **Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
 
@@ -10,186 +10,197 @@
 ## QUICK STATUS
 
 Build is clean: 42 routes, 0 TypeScript errors, 0 build errors.
-Enterprise sidebar fully implemented. Groups, favorites, recent items, quick actions, and persistent state all live.
+
+Three roles — PARTNER, MANAGER, EMPLOYEE — now have completely separate dashboards, navigation trees, data scopes, and route access. The old EXECUTIVE role has been fully replaced by EMPLOYEE in all code. **One manual DB step is still pending — see Critical below.**
 
 ```bash
 npm run dev    # → http://localhost:3000
 # Login: admin@jtax.test / JTax@Admin2026!  (PARTNER role)
-# Proposals: http://localhost:3000/proposals
-# New Quotation: http://localhost:3000/proposals/quotations/new
-# Client portal: http://localhost:3000/q/[token]  (no auth required)
 ```
+
+---
+
+## ⚠️ CRITICAL — ONE STEP BEFORE PRODUCTION / NEW USER TESTING
+
+Run this **once** in the Supabase SQL editor (or psql) before creating any EMPLOYEE-role user accounts:
+
+```sql
+-- File: prisma/migrations-manual/001_rename_executive_to_employee.sql
+ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE';
+```
+
+The Prisma schema and all application code already use `EMPLOYEE`. The DB enum still has `EXECUTIVE` until this runs. If you create a user with role `EMPLOYEE` before running this, Prisma will throw a DB error.
+
+---
+
+## WHAT WAS DONE IN SESSION 8
+
+### Phase 0 — EXECUTIVE → EMPLOYEE migration (20 files)
+
+All code references to the `EXECUTIVE` role have been replaced with `EMPLOYEE`:
+
+- `prisma/schema.prisma` — `Role` enum: `EXECUTIVE` → `EMPLOYEE`
+- `lib/auth/types.ts` — `APP_ROLES` updated
+- `lib/auth/roles.ts` — `ROLE_LEVEL`, `ROLE_LABELS`, `ROUTE_ACCESS` updated
+- `lib/auth/scope.ts` — `getExecutiveEmployeeId` renamed to `getEmployeeScopeId`; `isExecutive` renamed to `isEmployee`; **legacy aliases kept** so any callers still using the old names compile without errors
+- Server actions updated: `tasks.ts`, `compliance.ts`, `documents.ts`, `messages.ts`, `search.ts`, `activity.ts`, `client-360.ts`
+- `lib/clients/queries.ts` — `getVisibleClientWhere` updated
+- `app/(app)/page.tsx` — local variable renamed
+- `components/work-tracker/task-detail-drawer.tsx` — `canEdit` check updated
+
+### Phase 2 — Route hardening
+
+**New restriction:**
+- `/activity` (Audit Logs) — changed from all-staff to **PARTNER only**
+  - Managers and Employees must not see the firm-wide security audit trail
+  - Enforced at edge by `proxy.ts` via `canAccessRoute()`
+
+**Confirmed existing restrictions:**
+- `/workforce` — PARTNER only ✅
+- `/payments`, `/employees`, `/reports`, `/proposals` — PARTNER + MANAGER only ✅
+
+### Phase 3 — Role-specific dashboards (3 new components)
+
+Each role sees a completely different dashboard on `/`:
+
+**PARTNER** — `PartnerCommandCenter` widget + full KPI grid:
+- Revenue forecast, collection rate, outstanding, overdue amounts
+- Pending quotation approvals list with direct links
+- High-risk clients (≥2 overdue tasks) list
+- Active employee count, quick-links to Workforce/Reports/Audit Logs/Proposals
+- Full existing dashboard below (KPIs, charts, activity, tasks-due-today)
+
+**MANAGER** — `ManagerDashboard`:
+- Team KPIs: team size, active tasks, overdue, collection rate
+- Team workload per employee with productivity % bar
+- Urgent items: overdue tasks + compliance merged list
+- SLA tracking: on-time ratio + alert if overdue count is high
+
+**EMPLOYEE** — `EmployeeDashboard`:
+- Personal KPIs: my tasks, overdue, due today, my clients
+- Today's work list (tasks due today assigned to me)
+- My active tasks list
+- My assigned clients list
+- My compliance queue (upcoming filings for my clients)
+- Personal performance: completion rate, completed count, compliance pending
+
+**Data fetchers in `app/(app)/page.tsx`:**
+- `makePartnerDashboardFetcher` — full-firm scope, ~24 parallel Prisma queries
+- `makeManagerDashboardFetcher` — all employees + task groupBy queries
+- `makeEmployeeDashboardFetcher` — scoped to `Employee.id` linked to current user; returns empty data if no linked employee record
+- All use `unstable_cache` with 60s TTL and per-user cache keys
+
+### Phase 4 — Role-specific navigation
+
+`lib/navigation.ts` — new `getNavigationForRole(role)` function:
+
+| Role | Nav experience |
+|------|----------------|
+| PARTNER | Full 5-group tree: Operations, Finance, People, Communication, Management |
+| MANAGER | Streamlined: Operations, Team, Finance, Resources — no Audit Logs, no Workforce |
+| EMPLOYEE | Personal: "My Work" (My Tasks, My Clients, Compliance Work, Calendar), Resources, Personal |
+
+`app-sidebar.tsx` — uses `getNavigationForRole(user.role)` instead of `filterGroupsByRole`.
 
 ---
 
 ## WHAT WAS DONE IN SESSION 7
 
-### New Feature: Enterprise Navigation Sidebar
+### Enterprise Navigation Sidebar
 
-**Files changed:**
-- `lib/navigation.ts` — restructured with 5 `NavGroup` categories; added `filterGroupsByRole`; kept all legacy flat exports for backward compat
-- `lib/stores/sidebar-store.ts` — new Zustand 5 + `persist` store: favorites (href|title keys), recent items (last 5), per-group collapse state, all persisted to `localStorage` under key `"j-tax-sidebar-state"`
-- `components/layout/app-sidebar.tsx` — complete rewrite; see breakdown below
-- `components/layout/app-shell.tsx` — `defaultOpen={false}` → `defaultOpen={true}`
-
-**Sidebar breakdown:**
-- `NavItemRow` — renders a single nav link with active highlight; hover-to-reveal ⭐ star button (expanded mode only) writes to favorites store; uses `tooltip` prop on `SidebarMenuButton` for compact-mode tooltips
-- `NavGroupSection` — collapsible group with chevron header (hidden in icon mode); group collapse state persisted per session
-- `FavoritesSection` — shows only when ≥1 favorites; amber ⭐ header label; hover-to-remove star; fully reactive to store
-- `RecentItemsSection` — shows last 3 distinct pages visited; auto-populated via `useEffect` on pathname change; most-specific href wins (e.g., `/payments/invoices` beats `/payments`)
-- `QuickActionsSection` — 2×2 grid of bordered buttons (expanded) or tooltipped icon buttons (compact): New Client, New Task, New Invoice, New Quote
-- Footer user menu — unchanged from previous session
-
-**Navigation groups (role-filtered):**
-| Group | Items |
-|-------|-------|
-| Operations | Dashboard, Client Master, Client Onboarding, Work Tracker, Compliance, Calendar |
-| Finance | Payments, Invoices, Quotations *(PARTNER+MANAGER)* |
-| People | Employees *(PARTNER+MANAGER)*, Performance *(PARTNER only)* |
-| Communication | Messaging, Email Automation |
-| Management | Reports *(PARTNER+MANAGER)*, Audit Logs, Documents, Approvals, Settings |
-
-**Sidebar width:** `--sidebar-width: 16rem` expanded · `--sidebar-width-icon: 3.5rem` compact
+- `lib/stores/sidebar-store.ts` — Zustand 5 + `persist` store: favorites, recent items (last 5), collapsed groups; key `j-tax-sidebar-state` in localStorage
+- `components/layout/app-sidebar.tsx` — complete rewrite with 5 sub-components: `NavItemRow` (hover ⭐ favorites), `NavGroupSection` (collapsible with chevron), `FavoritesSection`, `RecentItemsSection`, `QuickActionsSection`
+- `components/layout/app-shell.tsx` — `defaultOpen` changed to `true`
+- Quick Actions: 2×2 grid (expanded) / icon buttons (compact): New Client, New Task, New Invoice, New Quote
+- Sidebar widths: 16rem expanded, 3.5rem compact
 
 ---
 
 ## WHAT WAS DONE IN SESSION 6
 
-### New Feature: Proposals & Quotation Automation System
+### Proposals & Quotation Automation System
 
-**Database** — 5 new models pushed via `prisma db push`:
-- `Lead` — CRM entity (name/email/phone/company/service/source/status/estimatedValue)
-- `Quotation` — full quotation with token, status, approval/sent/viewed timestamps
-- `QuotationItem` — line items (description/serviceType/qty/unitPrice/taxRate/totals)
-- `QuotationEmailLog` — every email sent (type/status/resendId/timestamps)
-- `QuotationFollowUp` — Day 3/7/14 scheduled follow-ups
-
-**Core libs:**
-- `lib/quotations/pdf-generator.ts` — pdfkit A4 PDF with branded header, items table, totals
-- `lib/quotations/email-templates.ts` — quotation + follow-up HTML email templates
-
-**Server actions** (`app/actions/proposals.ts`):
-- Lead CRUD: `createLead`, `updateLead`, `updateLeadStatus`, `deleteLead`, `getLeads`
-- Quotation: `createQuotation`, `approveAndSendQuotation`, `getQuotations`, `getQuotationById`, `deleteQuotation`
-- Public: `respondToQuotation`, `markQuotationViewed`
-- Analytics: `getProposalAnalytics`
-
-**API routes:**
-- `GET /api/quotations/[id]/pdf` — authenticated PDF download
-- `GET /api/cron/quotation-followups` — daily cron, processes pending Day 3/7/14 follow-ups
-
-**Pages:**
-- `/proposals` — dashboard (KPI cards + Leads CRM / Quotations / Analytics tabs)
-- `/proposals/quotations/new` — dynamic builder, live total computation, pre-fill from lead
-- `/proposals/quotations/[id]` — detail with approve-and-send, email log, follow-up schedule
-- `/q/[token]` — public client portal (no auth), accept/reject with reason, marks VIEWED on load
-
-**Approval flow:** Manager → DRAFT → PENDING_APPROVAL (Partner notified) → Partner clicks "Approve & Send" → email sent, follow-ups scheduled → client responds → lead status updated → Partners notified.
-
-**Follow-up engine:** On send, creates 3 `QuotationFollowUp` records (Day 3, 7, 14). Daily cron at 09:00 UTC processes pending ones. Skips if quotation already accepted/rejected.
-
-**Navigation:** "Proposals" added to sidebar (PARTNER + MANAGER).
-
----
-
-## WHAT WAS DONE IN SESSION 5
-
-### New Feature: Enterprise Workforce Intelligence (PARTNER-only)
-
-**Database** — 3 new models pushed via `prisma db push`:
-- `EmployeeSession` — login/logout/lastActiveAt/durationMinutes
-- `EmployeeActivity` — immutable audit log of every significant action (21 types)
-- `AttendanceRecord` — daily attendance (PRESENT/ABSENT/LATE_LOGIN/HALF_DAY/ON_LEAVE)
-- `Employee` model updated with 3 new relations
-
-**Core Tracker** — `lib/workforce/tracker.ts`:
-- `startEmployeeSession` / `endEmployeeSession` — called on login/logout
-- `trackEmployeeActivity` — called by all mutation actions
-- `updateSessionLastActive` — heartbeat
-- `upsertAttendanceOnLogin` — auto PRESENT or LATE_LOGIN based on 09:30 IST
-
-**Activity hooks wired into:**
-- `app/actions/auth.ts` → LOGIN, LOGOUT
-- `app/actions/clients.ts` → CLIENT_CREATED, CLIENT_UPDATED
-- `app/actions/tasks.ts` → TASK_CREATED, TASK_COMPLETED
-- `app/actions/documents.ts` → DOCUMENT_UPLOADED
-- `app/actions/compliance.ts` → COMPLIANCE_COMPLETED
-
-**Server actions** — `app/actions/workforce.ts`:
-- `getWorkforceDashboard()` — live status + team summary
-- `getPerformanceMetrics(period)` — ranked scorecard with 0–100 score
-- `getEmployeeTimeline(employeeId, filter, ...)` — paginated activity log
-- `getEmployeeDetail(employeeId)` — full context for employee detail page
-- `getAttendanceReport(year, month)` — monthly summary with CSV export
-- `getWorkloadAlerts()` — overloaded/underutilized/no-activity/excessive-overdue
-- `getProductivityChartData(employeeId, period)` — area chart series
-- `getTeamComparisonData(period)` — bar chart comparison
-- `recordHeartbeat()` — server action for client-side heartbeat (NOT yet wired to UI)
-
-**UI pages:**
-- `/workforce` — main dashboard (KPI cards, Live Status grid, Performance, Attendance, Alerts tabs)
-- `/workforce/[employeeId]` — employee detail (status, tasks, timeline, activity chart)
-
-**Sidebar:** "Workforce" nav item added — only visible to PARTNER role
+- 5 new DB models: `Lead`, `Quotation`, `QuotationItem`, `QuotationEmailLog`, `QuotationFollowUp`
+- Approval workflow: DRAFT → PENDING_APPROVAL → Partner approves → email sent → follow-ups scheduled
+- Public client portal at `/q/[token]` (no auth required) — accept/reject with reason
+- Day 3/7/14 auto follow-up cron at `/api/cron/quotation-followups` (09:00 UTC)
+- PDF generation via pdfkit at `/api/quotations/[id]/pdf`
+- Analytics: acceptance rate, conversion rate, avg deal size, pipeline value
 
 ---
 
 ## REMAINING WORK (priority order)
 
-### 0. Proposals: Configure firm env vars (SETUP)
-Set these in `.env` for correct PDF/email branding:
+### 0. CRITICAL — Run DB migration (BEFORE next deploy or new user creation)
+```sql
+-- In Supabase SQL editor:
+ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE';
 ```
-FIRM_NAME="Your Firm Name"
-FIRM_PHONE="+91-XXXXXXXXXX"
-FIRM_ADDRESS="123 Street, City, State — 400001"
-```
-`FROM_EMAIL` is already set from Session 1.
 
 ### 1. Supabase RLS Policies (HIGH — security)
-No DB-level protection. Application-layer auth only.
+No row-level security. Authenticated users can call Supabase APIs directly and bypass all application guards. Add RLS to at minimum: `clients`, `tasks`, `documents`, `invoices`.
 
 ### 2. Upstash Redis Rate Limiter (HIGH)
-In-memory rate limiter resets on serverless cold starts.
+In-memory rate limiter resets on serverless cold starts. Migration path documented in `lib/security/rate-limiter.ts`.
 
-### 3. Workforce Heartbeat (MEDIUM)
-`recordHeartbeat()` server action exists in `app/actions/workforce.ts` but is not wired to any client component. For accurate IDLE detection, create a client component that calls it every 5 minutes:
-```tsx
-// Add to AppShell or a client wrapper:
-useEffect(() => {
-  const interval = setInterval(() => recordHeartbeat(), 5 * 60 * 1000)
-  return () => clearInterval(interval)
-}, [])
-```
+### 3. Playwright E2E Tests (MEDIUM)
+Priority scenarios:
+- EMPLOYEE cannot access `/payments`, `/employees`, `/reports`, `/proposals`, `/activity`
+- EMPLOYEE sees only assigned clients/tasks (data isolation)
+- PARTNER sees all data
+- MANAGER cannot see `/activity`, `/workforce`
 
-### 4. Playwright E2E Tests (MEDIUM)
-No automated tests at all.
+### 4. Settings Page Firm-Level Guard (LOW)
+The `/settings` page is accessible to all staff. The firm name/GSTIN/address fields within the page should be read-only or hidden for non-PARTNER roles. Currently anyone can see/edit firm branding.
 
-### 5. ESLint (LOW)
-CI lint is permissive (`|| true`).
+### 5. Workforce Heartbeat (LOW)
+`recordHeartbeat()` server action exists in `app/actions/workforce.ts` but is not wired to any client component. Wire in `AppShell` or a client wrapper.
+
+### 6. ESLint (LOW)
+CI lint runs with `|| true` — errors are silently ignored.
+
+### 7. WhatsApp Business API (LOW)
+Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` in `.env` to enable real WhatsApp messaging.
 
 ---
 
-## KEY ARCHITECTURAL NOTES (session 5 additions)
+## KEY ARCHITECTURAL NOTES (session 8 additions)
 
-### Attendance Auto-Detection
-`upsertAttendanceOnLogin` in `lib/workforce/tracker.ts`:
-- Login before 09:30 IST (04:00 UTC) → `PRESENT`
-- Login after 09:30 IST → `LATE_LOGIN`
-- ABSENT must be set externally (no automatic absence detection)
-- Logout time and `workMinutes` updated in `endEmployeeSession`
+### Role Check Pattern (updated)
 
-### Performance Score Algorithm (0–100)
-Weighted formula in `getPerformanceMetrics`:
-- 40% task completion rate
-- 20% active clients (normalized to 10 max)
-- 20% documents processed (5 pts per doc, max 100)
-- 20% overdue task penalty (100 - overdue × 10)
+```typescript
+// In server actions — checking EMPLOYEE scope:
+import { getEmployeeScopeId } from "@/lib/auth/scope"
+const employeeScopeId = await getEmployeeScopeId(session)
+// Returns Employee.id for EMPLOYEE role, null for PARTNER/MANAGER
 
-### Workload Alert Thresholds
-- OVERLOADED: >20 active tasks (HIGH if >30)
-- EXCESSIVE_OVERDUE: >5 overdue (HIGH if >10)
-- UNDERUTILIZED: <2 tasks AND <5 actions in 7 days
-- NO_ACTIVITY: 0 actions in 7 days (always HIGH)
+// In lib/auth/scope.ts — legacy aliases still exported:
+export const getExecutiveEmployeeId = getEmployeeScopeId  // deprecated alias
+export const isExecutive = isEmployee                      // deprecated alias
+```
 
-### Session IDLE Threshold
-15 minutes since `lastActiveAt` → IDLE status (configured in `getWorkforceDashboard`)
+### Dashboard Routing Pattern
+
+```typescript
+// app/(app)/page.tsx
+if (role === "EMPLOYEE") { /* return EmployeeDashboard */ }
+if (role === "MANAGER")  { /* return ManagerDashboard */ }
+// else: PARTNER full dashboard with PartnerCommandCenter
+```
+
+### Navigation Pattern
+
+```typescript
+// In app-sidebar.tsx — DO NOT use filterGroupsByRole directly
+const visibleGroups = getNavigationForRole(user.role)
+// Returns role-tailored NavGroup[] with correct labels and items per role
+```
+
+### Route Guard Chain
+
+```
+Request → proxy.ts (canAccessRoute at edge)
+          → layout.tsx (getSession → redirect if null)
+            → server action (requireAuth / requirePartnerOrManager / requirePartner)
+              → data query (getEmployeeScopeId for row-level filtering)
+```

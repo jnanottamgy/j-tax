@@ -1,6 +1,6 @@
 # J-TAX Fix Log
 
-**Last updated:** 2026-06-10 (Session 7 — Enterprise Navigation Sidebar)
+**Last updated:** 2026-06-10 (Session 8 — Enterprise RBAC Restructuring & Hardening)
 **Branch:** `main`
 
 ---
@@ -387,3 +387,128 @@
 - Quick Actions — 2×2 grid (expanded) or tooltipped icons (compact): New Client, New Task, New Invoice, New Quote
 - Footer user menu unchanged (name, role, email, settings, sign out)
 - Build: 42 routes, 0 TS errors, 0 build errors
+
+---
+
+## SESSION 8 — ENTERPRISE RBAC RESTRUCTURING & HARDENING
+
+### PHASE 0 — RBAC-001: EXECUTIVE → EMPLOYEE Role Migration
+
+**Scope:** 20 files touched across schema, types, auth, server actions, UI
+
+**Files changed:**
+- `prisma/schema.prisma` — `Role` enum: `EXECUTIVE` → `EMPLOYEE`
+- `prisma/migrations-manual/001_rename_executive_to_employee.sql` — **new** — single `ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE'` statement; run once in Supabase SQL editor
+- Prisma client regenerated via `prisma generate` (no DB contact needed for codegen)
+- `lib/auth/types.ts` — `APP_ROLES` updated: `"EXECUTIVE"` → `"EMPLOYEE"`
+- `lib/auth/roles.ts` — `ROLE_LEVEL`, `ROLE_LABELS` updated; new ROUTE_ACCESS (see Phase 2)
+- `lib/auth/scope.ts` — `getExecutiveEmployeeId` → `getEmployeeScopeId`; `isExecutive` → `isEmployee`; legacy aliases kept for zero-breakage rollout
+- `app/actions/tasks.ts` — all `"EXECUTIVE"` string literals replaced
+- `app/actions/compliance.ts` — all `"EXECUTIVE"` literals + local `isExecutive` variables replaced
+- `app/actions/documents.ts` — `"EXECUTIVE"` literals + `isExecutiveRole` import alias replaced
+- `app/actions/messages.ts` — `"EXECUTIVE"` literals replaced
+- `app/actions/search.ts` — `"EXECUTIVE"` literals replaced (5 occurrences)
+- `app/actions/activity.ts` — `"EXECUTIVE"` literal replaced
+- `app/actions/client-360.ts` — import name updated
+- `lib/clients/queries.ts` — `"EXECUTIVE"` in `getVisibleClientWhere` replaced
+- `components/work-tracker/task-detail-drawer.tsx` — `"EXECUTIVE"` in `canEdit` replaced
+
+---
+
+### PHASE 2 — RBAC-002: Route Hardening
+
+**Finding:** `/activity` (Audit Logs) was accessible to all authenticated staff. Managers and Employees must not see the firm-wide security audit trail.
+
+**Fix:** `lib/auth/roles.ts` — `ROUTE_ACCESS["/activity"]` changed from `[...APP_ROLES]` to `["PARTNER"]`
+
+**Result:**
+- PARTNER → `/activity` ✅
+- MANAGER → `/activity` 🔒 redirected to `/unauthorized`
+- EMPLOYEE → `/activity` 🔒 redirected to `/unauthorized`
+- Enforced at edge by `proxy.ts` via `canAccessRoute()`
+
+**Existing correct restrictions confirmed:**
+- `/workforce` — PARTNER only ✅
+- `/payments` — PARTNER + MANAGER only ✅
+- `/employees` — PARTNER + MANAGER only ✅
+- `/reports` — PARTNER + MANAGER only ✅
+- `/proposals` — PARTNER + MANAGER only ✅
+
+---
+
+### PHASE 3 — RBAC-003: Role-Specific Dashboards
+
+Three completely distinct dashboard experiences replacing the single monolithic dashboard:
+
+**PARTNER** — `components/dashboard/partner-command-center.tsx` (new)
+- Revenue forecast: total invoiced, collected, outstanding, overdue amounts
+- Collection rate metric tile
+- Compliance score (portfolio-wide)
+- Pending approvals: quotations with PENDING_APPROVAL status, direct links
+- High-risk clients: clients with ≥2 overdue tasks, with overdue count badge
+- Active employee count, quick-links to Workforce, Reports, Audit Logs, Proposals
+- Full KPI grid, charts, recent activity, tasks-due-today remain below
+
+**MANAGER** — `components/dashboard/manager-dashboard.tsx` (new)
+- Team KPIs: team size, active tasks, overdue count, collection rate
+- Team workload table: per-employee task counts, completion %, overdue count, productivity bar
+- Urgent items: merged list of overdue tasks + overdue compliance events
+- Compliance status panel: pending / overdue counts
+- SLA tracking: on-time vs overdue ratio with progress bar + alert if >5 overdue
+
+**EMPLOYEE** — `components/dashboard/employee-dashboard.tsx` (new)
+- Personal KPIs: my tasks total, overdue, due today, my clients
+- Task completion rate with progress bar
+- Today's Work: tasks due today for me, with priority badge
+- My Active Tasks: top 6 open tasks across all clients
+- My Clients: assigned clients with status badges
+- My Compliance Queue: upcoming compliance events for my clients
+- Personal Performance: completion rate, tasks completed, compliance pending
+
+**Data fetchers** (`app/(app)/page.tsx`):
+- `makePartnerDashboardFetcher` — full firm scope, includes pending approvals query, high-risk clients query
+- `makeManagerDashboardFetcher` — all active employees + task distribution groupBy queries
+- `makeEmployeeDashboardFetcher` — scoped to linked `Employee.id`, zero data if no linked record
+- All three use `unstable_cache` with 60s TTL, per-user cache keys
+
+---
+
+### PHASE 4 — RBAC-004: Role-Specific Navigation
+
+**`lib/navigation.ts`** — `getNavigationForRole(role: AppRole): NavGroup[]`:
+
+| Role | Groups | Key items |
+|------|--------|-----------|
+| PARTNER | Operations, Finance, People, Communication, Management | All 5 groups, full tree |
+| MANAGER | Operations, Team, Finance, Resources | Employees as "Your team members"; no Audit Logs, no Workforce |
+| EMPLOYEE | My Work, Resources, Personal | "My Tasks", "My Clients", "Compliance Work" labels; only accessible routes |
+
+**`components/layout/app-sidebar.tsx`** — updated to call `getNavigationForRole(user.role)` instead of `filterGroupsByRole`.
+
+Result: sidebar items, labels, and groups are completely different per role. An EMPLOYEE never sees Payments, Reports, Employees, Proposals, Audit Logs, or Workforce in their navigation.
+
+---
+
+### PHASE 5 — RBAC-005: Data Access Scoping (verified)
+
+EMPLOYEE data isolation enforced via `getEmployeeScopeId()` in every data-read action:
+
+| Action | EMPLOYEE scope |
+|--------|---------------|
+| `getClientsData` | `assignedEmployeeId = myEmployee.id` |
+| `getTasksData` | `assignedEmployeeId = myEmployee.id` |
+| `getDocuments` | `client.assignedEmployeeId = myEmployee.id` |
+| `getMessages` | `client.assignedEmployeeId = myEmployee.id` |
+| `globalSearch` — clients | `assignedEmployeeId = myEmployee.id` |
+| `globalSearch` — tasks | `assignedEmployeeId = myEmployee.id` |
+| `globalSearch` — invoices | `client.assignedEmployeeId = myEmployee.id` |
+| `globalSearch` — documents | `client.assignedEmployeeId = myEmployee.id` |
+| `globalSearch` — compliance | `client.assignedEmployeeId = myEmployee.id` |
+| `getComplianceDashboard` | `client.assignedEmployeeId = myEmployee.id` |
+| `getClient360Data` | ownership check via `canAccessAssignedClient()` |
+| EMPLOYEE with no linked record | returns empty array / throws access denied |
+
+---
+
+### BUILD STATUS
+- 42 routes, 0 TypeScript errors, 0 build errors ✅
