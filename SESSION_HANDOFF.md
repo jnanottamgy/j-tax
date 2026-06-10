@@ -1,7 +1,7 @@
 # J-TAX Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-09 (Session 6 — Proposals & Quotation System)
+**Date of prior session:** 2026-06-10 (Session 7 — Enterprise Navigation Sidebar)
 **Branch:** `main`
 **Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
 
@@ -10,7 +10,7 @@
 ## QUICK STATUS
 
 Build is clean: 42 routes, 0 TypeScript errors, 0 build errors.
-Proposals & Quotation system fully functional. Public quotation portal at `/q/[token]`.
+Enterprise sidebar fully implemented. Groups, favorites, recent items, quick actions, and persistent state all live.
 
 ```bash
 npm run dev    # → http://localhost:3000
@@ -19,6 +19,37 @@ npm run dev    # → http://localhost:3000
 # New Quotation: http://localhost:3000/proposals/quotations/new
 # Client portal: http://localhost:3000/q/[token]  (no auth required)
 ```
+
+---
+
+## WHAT WAS DONE IN SESSION 7
+
+### New Feature: Enterprise Navigation Sidebar
+
+**Files changed:**
+- `lib/navigation.ts` — restructured with 5 `NavGroup` categories; added `filterGroupsByRole`; kept all legacy flat exports for backward compat
+- `lib/stores/sidebar-store.ts` — new Zustand 5 + `persist` store: favorites (href|title keys), recent items (last 5), per-group collapse state, all persisted to `localStorage` under key `"j-tax-sidebar-state"`
+- `components/layout/app-sidebar.tsx` — complete rewrite; see breakdown below
+- `components/layout/app-shell.tsx` — `defaultOpen={false}` → `defaultOpen={true}`
+
+**Sidebar breakdown:**
+- `NavItemRow` — renders a single nav link with active highlight; hover-to-reveal ⭐ star button (expanded mode only) writes to favorites store; uses `tooltip` prop on `SidebarMenuButton` for compact-mode tooltips
+- `NavGroupSection` — collapsible group with chevron header (hidden in icon mode); group collapse state persisted per session
+- `FavoritesSection` — shows only when ≥1 favorites; amber ⭐ header label; hover-to-remove star; fully reactive to store
+- `RecentItemsSection` — shows last 3 distinct pages visited; auto-populated via `useEffect` on pathname change; most-specific href wins (e.g., `/payments/invoices` beats `/payments`)
+- `QuickActionsSection` — 2×2 grid of bordered buttons (expanded) or tooltipped icon buttons (compact): New Client, New Task, New Invoice, New Quote
+- Footer user menu — unchanged from previous session
+
+**Navigation groups (role-filtered):**
+| Group | Items |
+|-------|-------|
+| Operations | Dashboard, Client Master, Client Onboarding, Work Tracker, Compliance, Calendar |
+| Finance | Payments, Invoices, Quotations *(PARTNER+MANAGER)* |
+| People | Employees *(PARTNER+MANAGER)*, Performance *(PARTNER only)* |
+| Communication | Messaging, Email Automation |
+| Management | Reports *(PARTNER+MANAGER)*, Audit Logs, Documents, Approvals, Settings |
+
+**Sidebar width:** `--sidebar-width: 16rem` expanded · `--sidebar-width-icon: 3.5rem` compact
 
 ---
 

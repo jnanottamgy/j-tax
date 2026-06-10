@@ -9,7 +9,7 @@ import { NotificationsProvider } from "@/components/notifications/notifications-
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider>
-      <SidebarProvider defaultOpen={false}>
+      <SidebarProvider defaultOpen={true}>
         <NotificationsProvider>
           <AppSidebar />
           <SidebarInset className="dashboard-gradient min-h-svh">

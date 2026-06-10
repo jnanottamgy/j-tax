@@ -1,8 +1,8 @@
 # J-TAX — Complete Project State Document
 
-**Last updated:** 2026-06-09 (Session 6 — Proposals & Quotation System)
+**Last updated:** 2026-06-10 (Session 7 — Enterprise Navigation Sidebar)
 **Branch:** `main`
-**Last commit:** `cc208bc` — docs: update session 6 state documents
+**Last commit:** see `git log` — feat(nav): enterprise sidebar with groups, favorites, recent items
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
 **Test credentials:** `admin@jtax.test` / `JTax@Admin2026!` (PARTNER role)
 
@@ -101,6 +101,12 @@ j-tax/
 │   └── settings/settings-page-client.tsx  # Notification prefs now save/load
 ├── .github/workflows/ci.yml
 ├── vercel.json
+├── lib/stores/
+│   └── sidebar-store.ts              # NEW — Zustand persist: favorites, recent items, group collapse
+├── lib/navigation.ts                 # UPDATED — NavGroup type, 5 category groups, filterGroupsByRole
+├── components/layout/
+│   ├── app-sidebar.tsx               # REWRITTEN — enterprise sidebar with all features
+│   └── app-shell.tsx                 # UPDATED — defaultOpen=true
 └── lib/validations/
     ├── client.ts                     # Phone/WhatsApp format validation added
     └── invoice.ts                    # dueDate >= issueDate cross-field validation

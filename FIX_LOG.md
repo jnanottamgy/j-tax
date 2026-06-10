@@ -1,6 +1,6 @@
 # J-TAX Fix Log
 
-**Last updated:** 2026-06-09 (Session 6 — Proposals & Quotation System)
+**Last updated:** 2026-06-10 (Session 7 — Enterprise Navigation Sidebar)
 **Branch:** `main`
 
 ---
@@ -352,3 +352,38 @@
 ### CONFIG-001 — Firm branding env vars
 - Three new optional env vars: `FIRM_NAME`, `FIRM_PHONE`, `FIRM_ADDRESS`
 - Default to TaxWise Consultants placeholders if not set
+
+---
+
+## SESSION 7 — ENTERPRISE NAVIGATION SIDEBAR
+
+### FEAT-008 — Enterprise Sidebar with Groups, Favorites, Recent Items & Quick Actions
+
+**Motivation:** Icon-only navigation was confusing for non-technical business users. Replaced with Linear/Attio-style enterprise sidebar.
+
+**Files changed:**
+- `lib/navigation.ts` — added `NavGroup` type + `navigationGroups` (5 categories, role-filtered); `filterGroupsByRole()` helper; all prior flat exports kept
+- `lib/stores/sidebar-store.ts` — new file; Zustand 5 + `persist`; manages favorites (href|title key), recentItems (max 5), collapsedGroups; localStorage key `j-tax-sidebar-state`
+- `components/layout/app-sidebar.tsx` — complete rewrite; 5 sub-components
+- `components/layout/app-shell.tsx` — `defaultOpen` changed `false` → `true`
+
+**Navigation groups:**
+- **Operations:** Dashboard, Client Master, Client Onboarding, Work Tracker, Compliance, Calendar
+- **Finance:** Payments, Invoices, Quotations (PARTNER+MANAGER)
+- **People:** Employees (PARTNER+MANAGER), Performance (PARTNER only)
+- **Communication:** Messaging, Email Automation
+- **Management:** Reports (PARTNER+MANAGER), Audit Logs, Documents, Approvals, Settings
+
+**Features implemented:**
+- Expand (16rem) / Collapse (3.5rem icon-only) toggle via existing sidebar rail + header button
+- Icons + labels in expanded mode; icons only in compact mode
+- Tooltips (item title + description) in compact mode — via Shadcn `SidebarMenuButton tooltip` prop
+- Persistent sidebar open/closed state — Shadcn cookie-based persistence
+- Persistent favorites / recent / group-collapse — Zustand localStorage persistence
+- Per-group collapse with animated chevron — stored in sidebar store
+- Hover-to-reveal ⭐ star button on each nav item; click to add/remove favorite
+- Favorites section auto-shows above nav groups when at least one item is starred
+- Recent Items — last 3 distinct pages, auto-populated on route change, most-specific href wins
+- Quick Actions — 2×2 grid (expanded) or tooltipped icons (compact): New Client, New Task, New Invoice, New Quote
+- Footer user menu unchanged (name, role, email, settings, sign out)
+- Build: 42 routes, 0 TS errors, 0 build errors
