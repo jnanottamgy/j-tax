@@ -510,5 +510,147 @@ EMPLOYEE data isolation enforced via `getEmployeeScopeId()` in every data-read a
 
 ---
 
-### BUILD STATUS
+### BUILD STATUS (Session 8)
 - 42 routes, 0 TypeScript errors, 0 build errors ✅
+
+---
+
+## SESSION 9 — PRODUCTION STABILIZATION, MOCK DATA ELIMINATION, AUTH HARDENING
+
+---
+
+### PHASE 1 — LINT-001 through LINT-012: 12 ESLint Errors Eliminated
+
+**Severity:** P1 — `npm run lint` was exiting non-zero
+
+| # | File | Error | Fix |
+|---|------|-------|-----|
+| 1 | `app/(app)/employees/[id]/page.tsx` | `<a>` for internal nav (`no-html-link-for-pages`) | Replaced with `<Link>` |
+| 2 | `app/(auth)/login/page.tsx` | Unescaped `'` in JSX | `&apos;` entity |
+| 3 | `app/(auth)/reset-password/page.tsx` | Unescaped `'` in JSX | `&apos;` entity |
+| 4–8 | `app/(client-portal)/client/deadlines/page.tsx` | `DeadlineSection` component defined inside render | Moved to module scope; helper fns extracted; `now` passed as prop; unused imports removed |
+| 9–11 | `app/(quotation-portal)/q/[token]/quotation-response-client.tsx` | 3× unescaped `'` | `&apos;` entities |
+| 12 | `components/empty-states/empty-states.tsx` | `getIcon()` called in render treated as component creation | Replaced with static `INLINE_ICON_MAP` constant lookup |
+| 13–15 | `components/help-center/help-center.tsx` | Unescaped `"` and `'` in search empty state | `&quot;` / `&apos;` entities |
+| 16 | `components/notifications/notification-bell.tsx` | Unescaped `'` | `&apos;` entity |
+| 17 | `components/proposals/quotation-builder-client.tsx` | `Date.now()` (impure fn) called during render | Moved to `useState(() => ...)` lazy initializer |
+
+`eslint.config.mjs` updated: added `varsIgnorePattern`, `argsIgnorePattern`, `caughtErrorsIgnorePattern`, `destructuredArrayIgnorePattern: "^_"` so `_`-prefixed names are recognised as intentional.
+
+---
+
+### PHASE 2 — DEAD-001: Dead Code Sweep (65+ files)
+
+**Severity:** P2 — Unused imports, dead state variables, orphaned assignments across the codebase
+
+- Unused imports removed: ~60 items (React hooks, lucide icons, shadcn components, date-fns functions, server action imports)
+- Unused destructured vars prefixed with `_`: ~25 items (`_clearErrors`, `_setInvoice`, `_setData`, etc.)
+- Unused catch-block errors renamed: 4 items (`catch (error)` → `catch (_e)`)
+- Unused function parameters prefixed: ~10 items
+- Unused `const` assignments prefixed: ~15 items
+- Whole `useState` line removed (both value and setter unused): 1 item
+
+---
+
+### FEAT-009 — Workforce Heartbeat Wired
+
+**File created:** `components/layout/heartbeat-tracker.tsx`
+- Client component; calls `recordHeartbeat()` on mount then every 5 minutes via `setInterval`
+- Renders `null` — no visible UI
+
+**File modified:** `components/layout/app-shell.tsx`
+- `<HeartbeatTracker />` mounted inside `NotificationsProvider`
+- Removed unused `SidebarTrigger` import
+
+---
+
+### MOCK-001 — `lib/dashboard-data.ts` Deleted
+
+**Severity:** P0 — Fake KPI metrics ($2.84M, 96.2% compliance), 12-month hardcoded revenue chart, fake "Acme Holdings" activity log, fake tasks-due-today, fake outstanding payments
+
+File was fully orphaned (zero production imports). Deleted.
+
+---
+
+### MOCK-002 — `lib/clients-data.ts` Deleted
+
+**Severity:** P0 — 18 hardcoded fake clients (Acme Holdings LLC, Northwind Partners, Vertex Global Inc, etc.) with fabricated GSTINs and fake employee names
+
+File was fully orphaned (zero production imports). Deleted.
+
+---
+
+### MOCK-003 — `lib/messaging/whatsapp-api.ts` Replaced
+
+**Severity:** P0 — Mock implementation with `Math.random() > 0.05` for simulated success rate, fake message IDs, random error selection, random delivery status
+
+Replaced with real Meta WhatsApp Cloud API v19.0 implementation:
+- `sendTextMessage` and `sendTemplateMessage` make real HTTP calls to `graph.facebook.com/v19.0`
+- When `WHATSAPP_API_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` env vars absent → returns `{ success: false, error: "WhatsApp Business API not configured" }`
+- `getMessageStatus` returns `"sent"` (Cloud API uses webhooks, not polling)
+- No `Math.random()` anywhere
+
+---
+
+### MOCK-004 — `lib/messaging/resend-provider.ts` Firm Branding
+
+**Severity:** P0 — Hardcoded "TaxWise Consultants" branding in all 4 email templates sent to real clients; hardcoded `contact@taxwiseconsultants.com` and `+91-XXX-XXX-XXXX`
+
+Added module-level constants:
+- `FIRM_NAME = process.env.FIRM_NAME || "Your Tax Firm"`
+- `FROM_EMAIL = process.env.FROM_EMAIL || ""`
+- `FIRM_PHONE = process.env.FIRM_PHONE || ""`
+
+Replaced all 12 hardcoded instances across payment reminder, compliance reminder, document request, and task notification templates.
+
+---
+
+### MOCK-005 — Email Subjects + Quotation Portal
+
+**Files:** `app/actions/messages.ts`, `app/(quotation-portal)/q/[token]/page.tsx`
+- Email subjects now use `process.env.FIRM_NAME` instead of "TaxWise Consultants"
+- Quotation portal contact link hidden entirely when `FROM_EMAIL` is unset (was showing fake email address to real clients)
+
+---
+
+### AUTH-001 — CLIENT Role Isolation (P0 Security Fix)
+
+**Severity:** P0 — CLIENT users could reach the staff application after login and access all firm data including the Partner Command Center with full DB queries
+
+4-layer defence implemented:
+
+1. **`app/actions/auth.ts`** — `signIn` detects CLIENT role via `parseAppRole(data.user?.app_metadata?.role)` and forces `redirect("/client")` before honouring `redirectTo` param
+2. **`proxy.ts`** — auth-route redirect sends CLIENT users to `/client` instead of `/` or whatever `redirectTo` says
+3. **`proxy.ts`** — `canAccessRoute` failure for CLIENT role redirects to `/client` (not `/unauthorized`)
+4. **`app/(app)/layout.tsx`** — staff layout adds `if (session.user.role === "CLIENT") redirect("/client")` as belt-and-suspenders
+5. **`app/(app)/page.tsx`** — dashboard page adds `if (role === "CLIENT") redirect("/client")` before any data fetching
+
+**`lib/auth/roles.ts`** — ROUTE_ACCESS restructured:
+- New `STAFF_ROLES = ["PARTNER", "MANAGER", "EMPLOYEE"]` constant
+- All staff routes changed from `[...APP_ROLES]` to `[...STAFF_ROLES]` (removes CLIENT)
+- `/client` added as `["CLIENT"]`-only route
+
+---
+
+### AUTH-002 — Password Reset PKCE Code Exchange (P1 Fix)
+
+**Severity:** P1 — Password reset was silently broken. `/auth/reset-password/confirm` never called `exchangeCodeForSession(code)`. Users who clicked the email link would see the form, submit a new password, and get "Not authenticated" from `supabase.auth.updateUser()`.
+
+**`app/auth/reset-password/confirm/page.tsx`** rewritten as dynamic server component:
+- Reads `?code=` from `searchParams`
+- Missing code → `redirect("/reset-password?error=invalid_link")`
+- Supabase error in URL params → `redirect("/reset-password?error=<description>")`
+- Calls `supabase.auth.exchangeCodeForSession(code)` — establishes recovery session
+- Exchange failure (expired link) → `redirect("/reset-password?error=Reset link has expired...")`
+- On success → renders `UpdatePasswordForm` with active session; `updateUser()` now works
+- Page now includes full auth-layout styling (was a bare unstyled page outside the `(auth)` group)
+
+**`app/(auth)/reset-password/page.tsx`** updated:
+- Now accepts `?error=` query param
+- Displays decoded error message so users understand why they're back at the request form
+
+---
+
+### BUILD STATUS (Session 9)
+- 42 routes, 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 261 warnings (all `warn`-level: `no-explicit-any` + `set-state-in-effect`) ✅

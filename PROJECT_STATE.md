@@ -1,8 +1,8 @@
 # J-TAX — Complete Project State Document
 
-**Last updated:** 2026-06-10 (Session 8 — Enterprise RBAC Restructuring & Hardening)
+**Last updated:** 2026-06-10 (Session 9 — Production Stabilization, Mock Data Elimination, Auth Hardening)
 **Branch:** `main`
-**Last commit:** `3ef1efa` — feat(rbac): enterprise RBAC restructuring
+**Last commit:** `2771159` — chore: remove stale lint output files
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
 **Test credentials:** `admin@jtax.test` / `JTax@Admin2026!` (PARTNER role)
 
@@ -17,7 +17,7 @@ J-TAX is an enterprise tax operations management platform for Indian CA/tax firm
 - Payments & invoicing (with overdue tracking)
 - Document vault (Supabase Storage with signed URLs)
 - Employee/team management with role-based access
-- WhatsApp + email messaging (via Resend)
+- WhatsApp + email messaging (via Resend; WhatsApp uses real Meta Cloud API when configured)
 - Client-facing portal (separate UI for CLIENT-role users)
 - Reporting center (CSV/XLSX/PDF export)
 - **Workforce Intelligence** (session tracking, attendance, performance, alerts — PARTNER-only)
@@ -54,9 +54,9 @@ J-TAX is an enterprise tax operations management platform for Indian CA/tax firm
 | `PARTNER` | 3 | Firm owner, Managing Partner, Senior CA | Full access |
 | `MANAGER` | 2 | Team Lead, Department Head, Senior CA | No audit logs, no workforce, no firm revenue analytics |
 | `EMPLOYEE` | 1 | Accountant, Tax Associate, Article | Assigned data only; no payments, employees, reports, proposals, audit logs |
-| `CLIENT` | 0 | End client | Client portal only |
+| `CLIENT` | 0 | End client | Client portal only (`/client/*`); blocked from all staff routes |
 
-> **⚠️ DB Migration Required:** Run `prisma/migrations-manual/001_rename_executive_to_employee.sql` once in Supabase SQL editor before using the app with real data. This renames the `EXECUTIVE` enum value to `EMPLOYEE`.
+> **⚠️ DB Migration Required:** Run `prisma/migrations-manual/001_rename_executive_to_employee.sql` once in Supabase SQL editor before using the app with real data.
 
 ---
 
@@ -64,22 +64,25 @@ J-TAX is an enterprise tax operations management platform for Indian CA/tax firm
 
 | Route | PARTNER | MANAGER | EMPLOYEE | CLIENT |
 |-------|---------|---------|----------|--------|
-| `/` | ✅ | ✅ | ✅ | ❌ |
-| `/clients` | ✅ All | ✅ All | ✅ Assigned only | ❌ |
-| `/work-tracker` | ✅ All | ✅ All | ✅ Assigned only | ❌ |
-| `/compliance` | ✅ All | ✅ All | ✅ Assigned only | ❌ |
-| `/calendar` | ✅ | ✅ | ✅ | ❌ |
-| `/documents` | ✅ | ✅ | ✅ | ❌ |
-| `/messaging` | ✅ | ✅ | ✅ | ❌ |
-| `/notifications` | ✅ | ✅ | ✅ | ❌ |
-| `/settings` | ✅ | ✅ | ✅ | ❌ |
-| `/payments` | ✅ | ✅ | 🔒 | ❌ |
-| `/payments/invoices` | ✅ | ✅ | 🔒 | ❌ |
-| `/employees` | ✅ | ✅ | 🔒 | ❌ |
-| `/reports` | ✅ | ✅ | 🔒 | ❌ |
-| `/proposals` | ✅ | ✅ | 🔒 | ❌ |
-| `/activity` (audit) | ✅ | 🔒 | 🔒 | ❌ |
-| `/workforce` | ✅ | 🔒 | 🔒 | ❌ |
+| `/` | ✅ | ✅ | ✅ | 🔒→`/client` |
+| `/clients` | ✅ All | ✅ All | ✅ Assigned only | 🔒→`/client` |
+| `/work-tracker` | ✅ All | ✅ All | ✅ Assigned only | 🔒→`/client` |
+| `/compliance` | ✅ All | ✅ All | ✅ Assigned only | 🔒→`/client` |
+| `/calendar` | ✅ | ✅ | ✅ | 🔒→`/client` |
+| `/documents` | ✅ | ✅ | ✅ | 🔒→`/client` |
+| `/messaging` | ✅ | ✅ | ✅ | 🔒→`/client` |
+| `/notifications` | ✅ | ✅ | ✅ | 🔒→`/client` |
+| `/settings` | ✅ | ✅ | ✅ | 🔒→`/client` |
+| `/payments` | ✅ | ✅ | 🔒 | 🔒→`/client` |
+| `/payments/invoices` | ✅ | ✅ | 🔒 | 🔒→`/client` |
+| `/employees` | ✅ | ✅ | 🔒 | 🔒→`/client` |
+| `/reports` | ✅ | ✅ | 🔒 | 🔒→`/client` |
+| `/proposals` | ✅ | ✅ | 🔒 | 🔒→`/client` |
+| `/activity` (audit) | ✅ | 🔒 | 🔒 | 🔒→`/client` |
+| `/workforce` | ✅ | 🔒 | 🔒 | 🔒→`/client` |
+| `/client/*` | 🔒 | 🔒 | 🔒 | ✅ |
+
+CLIENT routing is enforced at 4 layers: `signIn` action, `proxy.ts` (auth redirect + access-denied), `(app)/layout.tsx`, `(app)/page.tsx`.
 
 ---
 
@@ -89,7 +92,8 @@ J-TAX is an enterprise tax operations management platform for Indian CA/tax firm
 j-tax/
 ├── app/
 │   ├── (app)/
-│   │   ├── page.tsx                  # UPDATED S8 — role-specific dashboard routing
+│   │   ├── page.tsx                  # UPDATED S8/S9 — role dashboards + CLIENT guard
+│   │   ├── layout.tsx                # UPDATED S9 — CLIENT role redirect to /client
 │   │   ├── clients/page.tsx
 │   │   ├── employees/page.tsx
 │   │   ├── proposals/page.tsx
@@ -104,63 +108,65 @@ j-tax/
 │   │   ├── messaging/
 │   │   ├── reports/
 │   │   ├── notifications/
-│   │   ├── settings/page.tsx
-│   │   └── layout.tsx
+│   │   └── settings/page.tsx
 │   ├── (auth)/login, signup, reset-password
 │   ├── (client-portal)/client/
+│   ├── auth/
+│   │   ├── callback/route.ts         # OAuth / email confirm code exchange
+│   │   └── reset-password/confirm/page.tsx  # UPDATED S9 — PKCE code exchange + styled
 │   ├── actions/
-│   │   ├── auth.ts, clients.ts, employees.ts
-│   │   ├── tasks.ts                  # UPDATED S8 — EXECUTIVE→EMPLOYEE
-│   │   ├── compliance.ts             # UPDATED S8 — EXECUTIVE→EMPLOYEE
-│   │   ├── documents.ts              # UPDATED S8 — EXECUTIVE→EMPLOYEE
-│   │   ├── messages.ts               # UPDATED S8 — EXECUTIVE→EMPLOYEE
-│   │   ├── search.ts                 # UPDATED S8 — EXECUTIVE→EMPLOYEE
-│   │   ├── activity.ts               # UPDATED S8 — EXECUTIVE→EMPLOYEE
+│   │   ├── auth.ts                   # UPDATED S9 — CLIENT role routing on login
+│   │   ├── clients.ts, employees.ts
+│   │   ├── tasks.ts, compliance.ts, documents.ts, messages.ts
+│   │   ├── search.ts, activity.ts
 │   │   ├── invoices.ts, reports.ts, onboarding.ts
-│   │   ├── workforce.ts
-│   │   ├── proposals.ts
-│   │   ├── settings.ts
-│   │   ├── client-360.ts             # UPDATED S8 — EXECUTIVE→EMPLOYEE
-│   │   └── client-portal-documents.ts
-│   ├── (quotation-portal)/q/[token]/
+│   │   ├── workforce.ts, proposals.ts, settings.ts
+│   │   └── client-360.ts, client-portal-documents.ts
+│   ├── (quotation-portal)/q/[token]/  # UPDATED S9 — contact email uses env var
 │   ├── api/
 │   ├── unauthorized/page.tsx
 │   ├── error.tsx
 │   └── not-found.tsx
 ├── components/
 │   ├── dashboard/
-│   │   ├── partner-command-center.tsx  # NEW S8 — revenue, approvals, high-risk
-│   │   ├── manager-dashboard.tsx       # NEW S8 — team workload, SLA, urgent items
-│   │   ├── employee-dashboard.tsx      # NEW S8 — personal tasks, clients, compliance
-│   │   ├── executive-summary.tsx       # "Executive Summary" widget (business term)
+│   │   ├── partner-command-center.tsx
+│   │   ├── manager-dashboard.tsx
+│   │   ├── employee-dashboard.tsx
+│   │   ├── executive-summary.tsx
 │   │   ├── setup-checklist.tsx
 │   │   └── kpi-cards.tsx, revenue-chart.tsx, filing-chart.tsx, etc.
 │   ├── layout/
-│   │   ├── app-sidebar.tsx             # UPDATED S7/S8 — enterprise sidebar
-│   │   └── app-shell.tsx              # defaultOpen=true
+│   │   ├── app-sidebar.tsx
+│   │   ├── app-shell.tsx             # UPDATED S9 — mounts HeartbeatTracker
+│   │   └── heartbeat-tracker.tsx    # NEW S9 — recordHeartbeat() every 5 min
 │   ├── work-tracker/
-│   │   └── task-detail-drawer.tsx     # UPDATED S8 — EXECUTIVE→EMPLOYEE
 │   ├── clients/
 │   ├── messaging/
 │   └── settings/
 ├── lib/
 │   ├── auth/
-│   │   ├── types.ts                   # UPDATED S8 — EMPLOYEE replaces EXECUTIVE
-│   │   ├── roles.ts                   # UPDATED S8 — RBAC matrix, /activity PARTNER-only
-│   │   ├── scope.ts                   # UPDATED S8 — getEmployeeScopeId, isEmployee
-│   │   ├── guards.ts                  # requireAuth, requirePartner, requirePartnerOrManager
+│   │   ├── types.ts
+│   │   ├── roles.ts                  # UPDATED S9 — STAFF_ROLES; CLIENT removed from staff routes; /client added
+│   │   ├── scope.ts
+│   │   ├── guards.ts
 │   │   └── session.ts
+│   ├── messaging/
+│   │   ├── whatsapp-api.ts           # UPDATED S9 — real Meta Cloud API, no mock
+│   │   ├── resend-provider.ts        # UPDATED S9 — all branding uses env vars
+│   │   ├── notification-service.ts
+│   │   └── provider-interface.ts
 │   ├── stores/
-│   │   └── sidebar-store.ts           # NEW S7 — Zustand persist: favorites, recent, groups
-│   ├── navigation.ts                  # UPDATED S7/S8 — getNavigationForRole(role)
+│   │   └── sidebar-store.ts
+│   ├── navigation.ts
 │   ├── clients/
-│   │   └── queries.ts                 # UPDATED S8 — EXECUTIVE→EMPLOYEE
+│   │   └── queries.ts
 │   └── validations/, workforce/, quotations/, etc.
 ├── prisma/
-│   ├── schema.prisma                  # UPDATED S8 — Role enum EMPLOYEE (was EXECUTIVE)
+│   ├── schema.prisma
 │   └── migrations-manual/
-│       └── 001_rename_executive_to_employee.sql  # NEW S8 — run once in Supabase
-├── proxy.ts                           # Middleware: enforces canAccessRoute at edge
+│       └── 001_rename_executive_to_employee.sql
+├── proxy.ts                           # UPDATED S9 — CLIENT routing, 4-layer defence
+├── eslint.config.mjs                  # UPDATED S9 — _-prefix ignore pattern
 ├── .github/workflows/ci.yml
 └── vercel.json
 ```
@@ -175,12 +181,14 @@ All required vars set in `.env`:
 - `DATABASE_URL` ✅
 - `SUPABASE_SERVICE_ROLE_KEY` ✅
 - `RESEND_API_KEY` ✅
-- `FROM_EMAIL` ✅
+- `FROM_EMAIL` ✅ — used as firm contact email in all outbound emails
 - `NEXT_PUBLIC_APP_URL` ✅ (http://localhost:3000)
 - `CRON_SECRET` ✅ (random hex)
-- `FIRM_NAME` ⚠️ Optional — defaults to "TaxWise Consultants" in PDF/emails
-- `FIRM_PHONE` ⚠️ Optional — defaults to "+91-XXXXXXXXXX"
-- `FIRM_ADDRESS` ⚠️ Optional — defaults to "India"
+- `FIRM_NAME` ⚠️ Optional — defaults to "Your Tax Firm" in emails/PDFs (set before launch)
+- `FIRM_PHONE` ⚠️ Optional — shown in email footers if set; omitted if blank
+- `FIRM_ADDRESS` ⚠️ Optional — used in quotation PDFs
+- `WHATSAPP_API_TOKEN` ⚠️ Optional — required for WhatsApp messaging; returns "not configured" if absent
+- `WHATSAPP_PHONE_NUMBER_ID` ⚠️ Optional — required with `WHATSAPP_API_TOKEN`
 
 ---
 
@@ -190,6 +198,7 @@ All required vars set in `.env`:
 |------|--------|-------|
 | Production build | ✅ Passes | 42 routes, 0 errors |
 | TypeScript strict mode | ✅ Passes | 0 errors |
+| ESLint | ✅ Passes | 0 errors, 261 warnings (all `warn`, not `error`) |
 | Login/auth flow | ✅ Manual | |
 | All major pages | ✅ Manual | |
 | Setup checklist | ✅ Done | Live DB counts |
@@ -199,18 +208,23 @@ All required vars set in `.env`:
 | CI/CD | ✅ Done | GitHub Actions |
 | Notification prefs | ✅ Done | Saved to user_metadata |
 | Onboarding data | ✅ Done | All steps save to user_metadata |
-| Mock data eliminated | ✅ Done | WhatsApp chat + comm history |
+| Mock data eliminated | ✅ Done | lib/dashboard-data.ts, lib/clients-data.ts deleted; WhatsApp mock replaced; email templates use env vars |
 | Invoice validation | ✅ Done | dueDate >= issueDate |
 | Phone validation | ✅ Done | Format regex |
 | Dead buttons/links | ✅ Done | All 14 found + fixed |
 | Workforce Intelligence | ✅ Done | PARTNER-only, 3 new DB tables |
 | Proposals & Quotations | ✅ Done | Lead CRM, PDF, email, client portal |
-| Enterprise sidebar | ✅ Done | S7 — groups, favorites, recent, quick actions |
-| EXECUTIVE→EMPLOYEE rename | ✅ Done | S8 — code complete; DB SQL ready to run |
-| Role-specific dashboards | ✅ Done | S8 — Partner/Manager/Employee each distinct |
-| Role-specific navigation | ✅ Done | S8 — getNavigationForRole per role |
-| Route hardening | ✅ Done | S8 — /activity PARTNER only |
-| Data scoping (EMPLOYEE) | ✅ Done | S8 — assigned-only via getEmployeeScopeId |
+| Enterprise sidebar | ✅ Done | Groups, favorites, recent, quick actions |
+| EXECUTIVE→EMPLOYEE rename | ✅ Done | Code complete; DB SQL ready to run |
+| Role-specific dashboards | ✅ Done | Partner/Manager/Employee each distinct |
+| Role-specific navigation | ✅ Done | getNavigationForRole per role |
+| Route hardening | ✅ Done | /activity PARTNER only; CLIENT blocked from all staff routes |
+| Data scoping (EMPLOYEE) | ✅ Done | Assigned-only via getEmployeeScopeId |
+| Workforce heartbeat | ✅ Done | HeartbeatTracker in AppShell, fires every 5 min |
+| CLIENT routing | ✅ Done | 4-layer defence; CLIENT always goes to /client |
+| Password reset (PKCE) | ✅ Done | /auth/reset-password/confirm exchanges code before form |
+| Firm branding in emails | ✅ Done | All env-var driven; no hardcoded "TaxWise Consultants" |
+| Dead code removed | ✅ Done | 65+ files cleaned; ESLint _-prefix pattern configured |
 | Automated tests | ❌ None | No Jest/Vitest/Playwright |
 | RLS policies | ❌ None | Application-layer auth only |
 
@@ -219,34 +233,34 @@ All required vars set in `.env`:
 ## 8. REMAINING WORK (priority order)
 
 ### CRITICAL — Before Production
-1. **Run DB migration** — `prisma/migrations-manual/001_rename_executive_to_employee.sql` in Supabase SQL editor. One `ALTER TYPE` statement. Required before any EMPLOYEE-role user logs in.
+1. **Run DB migration** — `prisma/migrations-manual/001_rename_executive_to_employee.sql` in Supabase SQL editor. Required before any EMPLOYEE-role user logs in.
+2. **Set `FIRM_NAME` env var** — Currently defaults to "Your Tax Firm" in all outbound emails and PDFs. Set to actual firm name in Vercel/prod env.
 
 ### HIGH — Security
-2. **Supabase RLS policies** — No row-level security. Direct Supabase API calls bypass all application guards. Risk: authenticated users can query any table directly.
-3. **Upstash Redis rate limiter** — In-memory rate limiter resets on serverless cold starts.
+3. **Supabase RLS policies** — No row-level security. Direct Supabase API calls bypass all application guards. Risk: authenticated users can query any table directly.
+4. **Upstash Redis rate limiter** — In-memory rate limiter resets on serverless cold starts.
 
 ### MEDIUM — Testing
-4. **Playwright E2E test suite** — No automated tests. Priority scenarios: EMPLOYEE cannot access /payments, EMPLOYEE sees only assigned clients, PARTNER sees all data.
+5. **Playwright E2E test suite** — No automated tests. Priority scenarios: CLIENT cannot access `/`, EMPLOYEE cannot access `/payments`, EMPLOYEE sees only assigned clients, PARTNER sees all data.
 
 ### LOW — Quality
-5. **ESLint configuration** — CI lint is permissive (`|| true`)
-6. **`any` types in Prisma where clauses** — `where: any` in listEmployeesData and others
-7. **Supabase `documents` bucket** — Verify in dashboard; `assertDocumentBucketExists()` creates on first upload
-8. **WhatsApp Business API** — Configure WHATSAPP_API_TOKEN + WHATSAPP_PHONE_NUMBER_ID
-9. **Settings page firm-level guard** — Settings route is accessible to all staff but firm name/GSTIN/address fields should be PARTNER-only within the page
-10. **Workforce heartbeat** — `recordHeartbeat()` action exists, not wired to client component for IDLE detection
+6. **Settings page firm-level guard** — `/settings` accessible to all staff, but firm name/GSTIN/address fields should be PARTNER-only within the page.
+7. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` in `.env` to enable real WhatsApp messaging. Banner in `whatsapp-chat.tsx` already handles the unconfigured state.
+8. **Supabase `documents` bucket** — Verify in dashboard; `assertDocumentBucketExists()` creates on first upload.
 
 ---
 
-## 9. GIT LOG (last 8 commits)
+## 9. GIT LOG (last 10 commits)
 
 ```
+2771159  chore: remove stale lint output files
+fee4c6f  fix(auth): harden authentication flows — CLIENT isolation + password reset
+38e028b  fix(mock-data): eliminate all mock/fake data from production code
+dd509e9  fix(stabilize): dead code sweep + workforce heartbeat + lint hygiene
+c20489c  fix(lint): resolve all 12 ESLint errors for production launch
+c8799dc  docs: update all three state documents for session 8 RBAC restructuring
 3ef1efa  feat(rbac): enterprise RBAC restructuring — EXECUTIVE→EMPLOYEE, route hardening, role dashboards
 6e99e3a  feat(nav): enterprise sidebar with grouped categories, favorites, recent items & quick actions
 ac951d0  docs: fix stale commit hash, git log, env vars, and repo structure in PROJECT_STATE
 cc208bc  docs: update session 6 state documents for proposals system
-222c43e  feat(proposals): quotation & proposal automation system
-ae17532  feat(workforce): enterprise employee performance & work tracking system
-4f5cef7  docs: add session 4 fixes to FIX_LOG.md
-abccd21  docs: update state documents after session 4 customer audit
 ```

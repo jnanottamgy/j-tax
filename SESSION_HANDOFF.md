@@ -1,7 +1,7 @@
 # J-TAX Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-10 (Session 8 — Enterprise RBAC Restructuring & Hardening)
+**Date of prior session:** 2026-06-10 (Session 9 — Production Stabilization, Mock Data Elimination, Auth Hardening)
 **Branch:** `main`
 **Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
 
@@ -9,9 +9,13 @@
 
 ## QUICK STATUS
 
-Build is clean: 42 routes, 0 TypeScript errors, 0 build errors.
+```
+Build:      42 routes ✅  (npm run build)
+TypeScript: 0 errors  ✅  (npx tsc --noEmit)
+Lint:       0 errors  ✅  (npm run lint) — 261 warnings, all warn-level
+```
 
-Three roles — PARTNER, MANAGER, EMPLOYEE — now have completely separate dashboards, navigation trees, data scopes, and route access. The old EXECUTIVE role has been fully replaced by EMPLOYEE in all code. **One manual DB step is still pending — see Critical below.**
+Three full passes completed this session: stabilization → mock data → auth hardening. The codebase is in a shippable state modulo the two critical pre-production items below.
 
 ```bash
 npm run dev    # → http://localhost:3000
@@ -20,187 +24,171 @@ npm run dev    # → http://localhost:3000
 
 ---
 
-## ⚠️ CRITICAL — ONE STEP BEFORE PRODUCTION / NEW USER TESTING
+## ⚠️ TWO STEPS REQUIRED BEFORE FIRST PRODUCTION USER
 
-Run this **once** in the Supabase SQL editor (or psql) before creating any EMPLOYEE-role user accounts:
+### 1. DB Migration (BLOCKING — run before any EMPLOYEE-role user logs in)
 
 ```sql
 -- File: prisma/migrations-manual/001_rename_executive_to_employee.sql
+-- Run once in Supabase SQL editor:
 ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE';
 ```
 
-The Prisma schema and all application code already use `EMPLOYEE`. The DB enum still has `EXECUTIVE` until this runs. If you create a user with role `EMPLOYEE` before running this, Prisma will throw a DB error.
+### 2. Set FIRM_NAME in production env (IMPORTANT — affects all outgoing emails)
+
+```
+FIRM_NAME=Your Actual Firm Name
+```
+
+Email footers and subjects currently default to "Your Tax Firm". Set this in Vercel/prod before sending any emails to clients.
 
 ---
 
-## WHAT WAS DONE IN SESSION 8
+## WHAT WAS DONE IN SESSION 9
 
-### Phase 0 — EXECUTIVE → EMPLOYEE migration (20 files)
+### Phase 1 — ESLint Error Elimination (12 errors → 0)
 
-All code references to the `EXECUTIVE` role have been replaced with `EMPLOYEE`:
+All 12 lint errors fixed across 9 files. Key fixes:
+- `<a>` → `<Link>` in employees detail page
+- Unescaped entities (`'`, `"`) in 5 files
+- `DeadlineSection` component moved from inside render to module scope (client/deadlines page)
+- `INLINE_ICON_MAP` static lookup replaces `getIcon()` call in render (empty-states)
+- `Date.now()` in render moved to `useState` lazy initializer (quotation-builder)
 
-- `prisma/schema.prisma` — `Role` enum: `EXECUTIVE` → `EMPLOYEE`
-- `lib/auth/types.ts` — `APP_ROLES` updated
-- `lib/auth/roles.ts` — `ROLE_LEVEL`, `ROLE_LABELS`, `ROUTE_ACCESS` updated
-- `lib/auth/scope.ts` — `getExecutiveEmployeeId` renamed to `getEmployeeScopeId`; `isExecutive` renamed to `isEmployee`; **legacy aliases kept** so any callers still using the old names compile without errors
-- Server actions updated: `tasks.ts`, `compliance.ts`, `documents.ts`, `messages.ts`, `search.ts`, `activity.ts`, `client-360.ts`
-- `lib/clients/queries.ts` — `getVisibleClientWhere` updated
-- `app/(app)/page.tsx` — local variable renamed
-- `components/work-tracker/task-detail-drawer.tsx` — `canEdit` check updated
+`eslint.config.mjs` updated: `_`-prefixed names now ignored for `no-unused-vars` (covers `_clearErrors`, `_setData`, etc.).
 
-### Phase 2 — Route hardening
+### Phase 2 — Dead Code Sweep (65+ files)
 
-**New restriction:**
-- `/activity` (Audit Logs) — changed from all-staff to **PARTNER only**
-  - Managers and Employees must not see the firm-wide security audit trail
-  - Enforced at edge by `proxy.ts` via `canAccessRoute()`
+Unused imports, dead state variables, orphaned assignments removed from 65+ files across `app/`, `components/`, `lib/`, `prisma/`, and `scripts/`.
 
-**Confirmed existing restrictions:**
-- `/workforce` — PARTNER only ✅
-- `/payments`, `/employees`, `/reports`, `/proposals` — PARTNER + MANAGER only ✅
+### Phase 3 — Workforce Heartbeat Wired
 
-### Phase 3 — Role-specific dashboards (3 new components)
+`components/layout/heartbeat-tracker.tsx` — new client component. Calls `recordHeartbeat()` on mount, then every 5 minutes. Mounted in `AppShell`. Workforce session `lastActive` timestamp now updates while users are in the app.
 
-Each role sees a completely different dashboard on `/`:
+### Phase 4 — Mock Data Elimination
 
-**PARTNER** — `PartnerCommandCenter` widget + full KPI grid:
-- Revenue forecast, collection rate, outstanding, overdue amounts
-- Pending quotation approvals list with direct links
-- High-risk clients (≥2 overdue tasks) list
-- Active employee count, quick-links to Workforce/Reports/Audit Logs/Proposals
-- Full existing dashboard below (KPIs, charts, activity, tasks-due-today)
+| Item | Fix |
+|------|-----|
+| `lib/dashboard-data.ts` | **Deleted** — orphaned fake KPI/chart/activity data |
+| `lib/clients-data.ts` | **Deleted** — orphaned 18 fake clients |
+| `lib/messaging/whatsapp-api.ts` | **Replaced** — real Meta WhatsApp Cloud API v19.0; graceful "not configured" when env vars absent |
+| `lib/messaging/resend-provider.ts` | **Fixed** — all 12 hardcoded "TaxWise Consultants" instances replaced with `FIRM_NAME`/`FROM_EMAIL`/`FIRM_PHONE` env vars |
+| `app/actions/messages.ts` | **Fixed** — email subjects use `process.env.FIRM_NAME` |
+| `app/(quotation-portal)/q/[token]/page.tsx` | **Fixed** — contact link hidden when `FROM_EMAIL` unset; no fake email shown to clients |
 
-**MANAGER** — `ManagerDashboard`:
-- Team KPIs: team size, active tasks, overdue, collection rate
-- Team workload per employee with productivity % bar
-- Urgent items: overdue tasks + compliance merged list
-- SLA tracking: on-time ratio + alert if overdue count is high
+### Phase 5 — Auth Hardening
 
-**EMPLOYEE** — `EmployeeDashboard`:
-- Personal KPIs: my tasks, overdue, due today, my clients
-- Today's work list (tasks due today assigned to me)
-- My active tasks list
-- My assigned clients list
-- My compliance queue (upcoming filings for my clients)
-- Personal performance: completion rate, completed count, compliance pending
+**AUTH-001 — CLIENT role isolation (P0):**
 
-**Data fetchers in `app/(app)/page.tsx`:**
-- `makePartnerDashboardFetcher` — full-firm scope, ~24 parallel Prisma queries
-- `makeManagerDashboardFetcher` — all employees + task groupBy queries
-- `makeEmployeeDashboardFetcher` — scoped to `Employee.id` linked to current user; returns empty data if no linked employee record
-- All use `unstable_cache` with 60s TTL and per-user cache keys
+Before: CLIENT users could log in, land on the Partner Command Center, and access all firm data.
 
-### Phase 4 — Role-specific navigation
+After: 4-layer defence:
+1. `app/actions/auth.ts` — `signIn` detects CLIENT role, forces `redirect("/client")`
+2. `proxy.ts` — auth-route redirect sends CLIENT to `/client` not `/`
+3. `proxy.ts` — access-denied for CLIENT redirects to `/client` not `/unauthorized`
+4. `app/(app)/layout.tsx` — belt-and-suspenders CLIENT guard before layout renders
+5. `app/(app)/page.tsx` — CLIENT guard before any DB fetcher runs
 
-`lib/navigation.ts` — new `getNavigationForRole(role)` function:
+`lib/auth/roles.ts` — new `STAFF_ROLES` constant; CLIENT removed from all staff routes; `/client` added as CLIENT-only.
 
-| Role | Nav experience |
-|------|----------------|
-| PARTNER | Full 5-group tree: Operations, Finance, People, Communication, Management |
-| MANAGER | Streamlined: Operations, Team, Finance, Resources — no Audit Logs, no Workforce |
-| EMPLOYEE | Personal: "My Work" (My Tasks, My Clients, Compliance Work, Calendar), Resources, Personal |
+**AUTH-002 — Password reset PKCE fix (P1):**
 
-`app-sidebar.tsx` — uses `getNavigationForRole(user.role)` instead of `filterGroupsByRole`.
+Before: `/auth/reset-password/confirm` was a static form. `exchangeCodeForSession(code)` was never called. `updateUser()` always failed silently with "Not authenticated".
+
+After: Dynamic server component that:
+1. Reads `?code=` from searchParams — missing → redirect to reset request with error
+2. Calls `supabase.auth.exchangeCodeForSession(code)` — expired → redirect with message
+3. On success renders `UpdatePasswordForm` with active recovery session
+4. Full auth-layout styling (was previously an unstyled bare page)
+
+`app/(auth)/reset-password/page.tsx` now displays `?error=` query param for failure messages.
 
 ---
 
-## WHAT WAS DONE IN SESSION 7
+## WHAT WAS DONE IN SESSION 8 (for reference)
 
-### Enterprise Navigation Sidebar
-
-- `lib/stores/sidebar-store.ts` — Zustand 5 + `persist` store: favorites, recent items (last 5), collapsed groups; key `j-tax-sidebar-state` in localStorage
-- `components/layout/app-sidebar.tsx` — complete rewrite with 5 sub-components: `NavItemRow` (hover ⭐ favorites), `NavGroupSection` (collapsible with chevron), `FavoritesSection`, `RecentItemsSection`, `QuickActionsSection`
-- `components/layout/app-shell.tsx` — `defaultOpen` changed to `true`
-- Quick Actions: 2×2 grid (expanded) / icon buttons (compact): New Client, New Task, New Invoice, New Quote
-- Sidebar widths: 16rem expanded, 3.5rem compact
-
----
-
-## WHAT WAS DONE IN SESSION 6
-
-### Proposals & Quotation Automation System
-
-- 5 new DB models: `Lead`, `Quotation`, `QuotationItem`, `QuotationEmailLog`, `QuotationFollowUp`
-- Approval workflow: DRAFT → PENDING_APPROVAL → Partner approves → email sent → follow-ups scheduled
-- Public client portal at `/q/[token]` (no auth required) — accept/reject with reason
-- Day 3/7/14 auto follow-up cron at `/api/cron/quotation-followups` (09:00 UTC)
-- PDF generation via pdfkit at `/api/quotations/[id]/pdf`
-- Analytics: acceptance rate, conversion rate, avg deal size, pipeline value
+- EXECUTIVE → EMPLOYEE role migration (20 files)
+- `/activity` restricted to PARTNER only
+- Role-specific dashboards: PartnerCommandCenter, ManagerDashboard, EmployeeDashboard
+- Role-specific navigation: `getNavigationForRole(role)` in sidebar
+- EMPLOYEE data scoping verified across all actions
 
 ---
 
 ## REMAINING WORK (priority order)
 
-### 0. CRITICAL — Run DB migration (BEFORE next deploy or new user creation)
-```sql
--- In Supabase SQL editor:
-ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE';
-```
+### 0. CRITICAL (before first production user)
+1. **DB migration** — `ALTER TYPE "Role" RENAME VALUE 'EXECUTIVE' TO 'EMPLOYEE'` in Supabase
+2. **Set `FIRM_NAME` env var** — currently defaults to "Your Tax Firm" in all emails
 
-### 1. Supabase RLS Policies (HIGH — security)
-No row-level security. Authenticated users can call Supabase APIs directly and bypass all application guards. Add RLS to at minimum: `clients`, `tasks`, `documents`, `invoices`.
+### 1. HIGH — Security
+3. **Supabase RLS policies** — No row-level security. Authenticated users can query tables directly via Supabase API, bypassing all application guards. Minimum: add RLS to `clients`, `tasks`, `documents`, `invoices`.
+4. **Upstash Redis rate limiter** — In-memory rate limiter resets on cold starts. Migration path documented in `lib/security/rate-limiter.ts`.
 
-### 2. Upstash Redis Rate Limiter (HIGH)
-In-memory rate limiter resets on serverless cold starts. Migration path documented in `lib/security/rate-limiter.ts`.
+### 2. MEDIUM — Testing
+5. **Playwright E2E tests** — Priority scenarios:
+   - CLIENT cannot access `/`, `/clients`, `/work-tracker`
+   - EMPLOYEE cannot access `/payments`, `/employees`, `/reports`, `/activity`
+   - EMPLOYEE sees only assigned clients/tasks
+   - PASSWORD RESET flow end-to-end (email → confirm page → new password → login)
 
-### 3. Playwright E2E Tests (MEDIUM)
-Priority scenarios:
-- EMPLOYEE cannot access `/payments`, `/employees`, `/reports`, `/proposals`, `/activity`
-- EMPLOYEE sees only assigned clients/tasks (data isolation)
-- PARTNER sees all data
-- MANAGER cannot see `/activity`, `/workforce`
-
-### 4. Settings Page Firm-Level Guard (LOW)
-The `/settings` page is accessible to all staff. The firm name/GSTIN/address fields within the page should be read-only or hidden for non-PARTNER roles. Currently anyone can see/edit firm branding.
-
-### 5. Workforce Heartbeat (LOW)
-`recordHeartbeat()` server action exists in `app/actions/workforce.ts` but is not wired to any client component. Wire in `AppShell` or a client wrapper.
-
-### 6. ESLint (LOW)
-CI lint runs with `|| true` — errors are silently ignored.
-
-### 7. WhatsApp Business API (LOW)
-Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` in `.env` to enable real WhatsApp messaging.
+### 3. LOW — Polish
+6. **Settings firm-level guard** — `/settings` accessible to all staff; firm name/GSTIN fields should be PARTNER-only within the page (can read, not edit for others).
+7. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`. Banner in `whatsapp-chat.tsx` already handles unconfigured state correctly.
+8. **Supabase `documents` bucket** — Verify exists in Supabase dashboard; `assertDocumentBucketExists()` creates on first upload.
 
 ---
 
-## KEY ARCHITECTURAL NOTES (session 8 additions)
+## KEY ARCHITECTURAL NOTES
 
-### Role Check Pattern (updated)
+### Auth Layer Chain
+
+```
+Request
+  → proxy.ts middleware (updateSession → JWT refresh via cookie rotation)
+      → unauthenticated     → /login?redirectTo=<path>
+      → missing role        → /unauthorized?reason=missing_role
+      → CLIENT on auth page → /client
+      → CLIENT on any path  → /client (via canAccessRoute failure)
+      → staff RBAC check    → /unauthorized?from=<path>  (or /client for CLIENT role)
+  → app/(app)/layout.tsx
+      → no session          → /login
+      → CLIENT role         → /client
+  → app/(app)/page.tsx
+      → CLIENT role         → /client  (before any DB query)
+  → server action (requireAuth / requirePartner / requirePartnerOrManager)
+  → data query (getEmployeeScopeId for EMPLOYEE row-level filtering)
+```
+
+### Password Reset Flow (fixed)
+
+```
+User → /reset-password (request form)
+     → email sent with ?code= link to /auth/reset-password/confirm
+     → confirm page: exchangeCodeForSession(code) → recovery session established
+     → UpdatePasswordForm → updatePassword() server action → supabase.auth.updateUser()
+     → redirect /login?password=updated
+```
+
+### Firm Branding in Emails
+
+All firm-identifying text in outbound emails is now env-var driven:
+- `FIRM_NAME` → email headers, subjects, footers
+- `FROM_EMAIL` → sender address, footer contact email
+- `FIRM_PHONE` → footer phone (omitted if blank)
+
+Set all three in production. "Your Tax Firm" is the safe default — not a fake name.
+
+### WhatsApp Integration
+
+`lib/messaging/whatsapp-api.ts` is a real Meta Cloud API v19.0 implementation. It is NOT imported by any production action — the messaging system uses `notificationService` (email via Resend). Wire it to the notification service when ready to enable WhatsApp.
+
+### Role Check Pattern
 
 ```typescript
-// In server actions — checking EMPLOYEE scope:
-import { getEmployeeScopeId } from "@/lib/auth/scope"
-const employeeScopeId = await getEmployeeScopeId(session)
-// Returns Employee.id for EMPLOYEE role, null for PARTNER/MANAGER
+// STAFF_ROLES = ["PARTNER", "MANAGER", "EMPLOYEE"] — no CLIENT
+// In lib/auth/roles.ts:
+const STAFF_ROLES = ["PARTNER", "MANAGER", "EMPLOYEE"] as const satisfies readonly AppRole[]
 
-// In lib/auth/scope.ts — legacy aliases still exported:
-export const getExecutiveEmployeeId = getEmployeeScopeId  // deprecated alias
-export const isExecutive = isEmployee                      // deprecated alias
-```
-
-### Dashboard Routing Pattern
-
-```typescript
-// app/(app)/page.tsx
-if (role === "EMPLOYEE") { /* return EmployeeDashboard */ }
-if (role === "MANAGER")  { /* return ManagerDashboard */ }
-// else: PARTNER full dashboard with PartnerCommandCenter
-```
-
-### Navigation Pattern
-
-```typescript
-// In app-sidebar.tsx — DO NOT use filterGroupsByRole directly
-const visibleGroups = getNavigationForRole(user.role)
-// Returns role-tailored NavGroup[] with correct labels and items per role
-```
-
-### Route Guard Chain
-
-```
-Request → proxy.ts (canAccessRoute at edge)
-          → layout.tsx (getSession → redirect if null)
-            → server action (requireAuth / requirePartnerOrManager / requirePartner)
-              → data query (getEmployeeScopeId for row-level filtering)
+// CLIENT users always belong in /client portal, never the staff app
 ```
