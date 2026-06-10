@@ -65,7 +65,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <Link href="/reset-password">Forgot password?</Link>
         </Button>
         <Button variant="ghost" asChild className="text-sm">
-          <Link href="/signup">Don't have an account? Sign up</Link>
+          <Link href="/signup">Don&apos;t have an account? Sign up</Link>
         </Button>
         <p className="text-[13px] leading-relaxed text-muted-foreground/80">
           Access is restricted to authorized firm personnel. Contact your

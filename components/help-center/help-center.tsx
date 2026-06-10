@@ -270,7 +270,7 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
               >
                 {filteredGuides.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No guides found for "{searchQuery}"
+                    No guides found for &quot;{searchQuery}&quot;
                   </div>
                 ) : (
                   filteredGuides.map((guide) => (
@@ -306,7 +306,7 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
               >
                 {filteredFaqs.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No FAQs found for "{searchQuery}"
+                    No FAQs found for &quot;{searchQuery}&quot;
                   </div>
                 ) : (
                   filteredFaqs.map((faq, idx) => (
@@ -380,7 +380,7 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
         {/* Footer */}
         <div className="p-4 border-t flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
-            Can't find what you're looking for?
+            Can&apos;t find what you&apos;re looking for?
           </p>
           <Button variant="outline" size="sm">
             <MessageCircle className="size-3.5 mr-1.5" />

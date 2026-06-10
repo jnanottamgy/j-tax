@@ -198,6 +198,13 @@ export function EmptyState({ type, className, onAction }: EmptyStateProps) {
   }
 }
 
+const INLINE_ICON_MAP = {
+  clients: Users,
+  tasks: CheckSquare,
+  documents: FileText,
+  payments: Receipt,
+} as const
+
 // Inline empty state for smaller spaces
 export function EmptyStateInline({
   type,
@@ -212,22 +219,7 @@ export function EmptyStateInline({
   action?: { label: string; href?: string; onClick?: () => void; icon?: React.ElementType }
   className?: string
 }) {
-  const getIcon = () => {
-    switch (type) {
-      case "clients":
-        return Users
-      case "tasks":
-        return CheckSquare
-      case "documents":
-        return FileText
-      case "payments":
-        return Receipt
-      default:
-        return Sparkles
-    }
-  }
-
-  const Icon = getIcon()
+  const Icon = (type ? INLINE_ICON_MAP[type] : undefined) ?? Sparkles
 
   return (
     <div className={cn("flex flex-col items-center justify-center py-8 text-center", className)}>

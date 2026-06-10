@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 
 import { prisma } from "@/lib/prisma"
@@ -67,7 +68,7 @@ export default async function EmployeeDetailPage({ params }: PageProps) {
       {/* Keep edit UX accessible via the existing dialog from the list module.
           For now, show a disabled dialog shell; full edit wiring can be added later. */}
       <div className="surface-elevated rounded-xl border border-white/[0.08] p-6 text-sm text-muted-foreground">
-        Employee management UI (edit/disable/enable/delete) is available from <a href="/employees" className="underline">Employees</a>.
+        Employee management UI (edit/disable/enable/delete) is available from <Link href="/employees" className="underline">Employees</Link>.
       </div>
     </div>
   )

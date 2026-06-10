@@ -63,6 +63,9 @@ export function QuotationBuilderClient({ leads }: { leads: Lead[] }) {
   const [error, setError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [defaultValidUntil] = useState<string>(() =>
+    new Date(Date.now() + 30 * 86400 * 1000).toISOString().slice(0, 10)
+  )
 
   // Pre-fill from selected lead
   const selectedLead = defaultLeadId ? leads.find((l) => l.id === defaultLeadId) : null
@@ -159,7 +162,7 @@ export function QuotationBuilderClient({ leads }: { leads: Lead[] }) {
                   name="validUntil"
                   type="date"
                   required
-                  defaultValue={new Date(Date.now() + 30 * 86400 * 1000).toISOString().slice(0, 10)}
+                  defaultValue={defaultValidUntil}
                 />
               </div>
               {leads.length > 0 && !defaultLeadId && (

@@ -1,13 +1,115 @@
+import React from "react"
 import { redirect } from "next/navigation"
 import { format, addDays } from "date-fns"
 import { Calendar, AlertCircle, CheckCircle2, Clock, Calendar as CalendarIcon } from "lucide-react"
 
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+
+function getDaysUntil(dueDate: Date, now: Date): number {
+  const due = new Date(dueDate)
+  const diff = due.getTime() - now.getTime()
+  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+}
+
+function getUrgencyColor(days: number): string {
+  if (days < 0) return "text-red-500 bg-red-500/10"
+  if (days <= 3) return "text-orange-500 bg-orange-500/10"
+  if (days <= 7) return "text-yellow-500 bg-yellow-500/10"
+  return "text-green-500 bg-green-500/10"
+}
+
+function getUrgencyLabel(days: number): string {
+  if (days < 0) return `${Math.abs(days)} days overdue`
+  if (days === 0) return "Due today"
+  if (days === 1) return "Due tomorrow"
+  return `Due in ${days} days`
+}
+
+function DeadlineSection({
+  title,
+  icon: Icon,
+  items,
+  emptyMessage,
+  now,
+}: {
+  title: string
+  icon: React.ElementType
+  items: Array<{ id: string; dueDate: Date; title: string; type?: string | null; filingPeriod?: string | null }>
+  emptyMessage: string
+  now: Date
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Icon className="size-5 text-muted-foreground" />
+          <CardTitle className="text-lg">{title}</CardTitle>
+          <Badge variant="secondary" className="ml-auto">
+            {items.length}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {items.length === 0 ? (
+          <div className="flex items-center gap-3 text-muted-foreground py-4">
+            <CheckCircle2 className="size-5 text-green-500" />
+            <span className="text-sm">{emptyMessage}</span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {items.map((item) => {
+              const days = getDaysUntil(new Date(item.dueDate), now)
+              return (
+                <div
+                  key={item.id}
+                  className={cn(
+                    "flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors",
+                    days < 0 && "bg-red-500/5 border border-red-500/20"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        "flex size-8 items-center justify-center rounded-full",
+                        getUrgencyColor(days)
+                      )}
+                    >
+                      <CalendarIcon className="size-4" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{item.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.type ? item.type.replace(/_/g, " ") : "Compliance"}
+                        {item.filingPeriod && ` • ${item.filingPeriod}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={cn(
+                        "text-xs font-medium px-2 py-1 rounded",
+                        getUrgencyColor(days)
+                      )}
+                    >
+                      {getUrgencyLabel(days)}
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {format(new Date(item.dueDate), "MMM d, yyyy")}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 export default async function ClientDeadlinesPage() {
   const session = await getSession()
@@ -75,111 +177,16 @@ export default async function ClientDeadlinesPage() {
 
   const overdue = [
     ...complianceEvents.filter((e) => e.status === "OVERDUE"),
-    ...tasks.map((t) => ({
-      ...t,
-      title: t.title,
-      type: "TASK" as const,
-      isTask: true,
-    })),
+    ...tasks
+      .filter((t) => t.dueDate !== null)
+      .map((t) => ({
+        ...t,
+        dueDate: t.dueDate as Date,
+        title: t.title,
+        type: "TASK" as const,
+        isTask: true,
+      })),
   ]
-
-  function getDaysUntil(dueDate: Date): number {
-    const due = new Date(dueDate)
-    const diff = due.getTime() - now.getTime()
-    return Math.ceil(diff / (1000 * 60 * 60 * 24))
-  }
-
-  function getUrgencyColor(days: number): string {
-    if (days < 0) return "text-red-500 bg-red-500/10"
-    if (days <= 3) return "text-orange-500 bg-orange-500/10"
-    if (days <= 7) return "text-yellow-500 bg-yellow-500/10"
-    return "text-green-500 bg-green-500/10"
-  }
-
-  function getUrgencyLabel(days: number): string {
-    if (days < 0) return `${Math.abs(days)} days overdue`
-    if (days === 0) return "Due today"
-    if (days === 1) return "Due tomorrow"
-    return `Due in ${days} days`
-  }
-
-  const DeadlineSection = ({
-    title,
-    icon: Icon,
-    items,
-    emptyMessage,
-  }: {
-    title: string
-    icon: any
-    items: any[]
-    emptyMessage: string
-  }) => (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Icon className="size-5 text-muted-foreground" />
-          <CardTitle className="text-lg">{title}</CardTitle>
-          <Badge variant="secondary" className="ml-auto">
-            {items.length}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {items.length === 0 ? (
-          <div className="flex items-center gap-3 text-muted-foreground py-4">
-            <CheckCircle2 className="size-5 text-green-500" />
-            <span className="text-sm">{emptyMessage}</span>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {items.map((item) => {
-              const days = getDaysUntil(new Date(item.dueDate))
-              return (
-                <div
-                  key={item.id}
-                  className={cn(
-                    "flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors",
-                    days < 0 && "bg-red-500/5 border border-red-500/20"
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        "flex size-8 items-center justify-center rounded-full",
-                        getUrgencyColor(days)
-                      )}
-                    >
-                      <CalendarIcon className="size-4" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.type ? item.type.replace(/_/g, " ") : "Compliance"}
-                        {item.filingPeriod && ` • ${item.filingPeriod}`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className={cn(
-                        "text-xs font-medium px-2 py-1 rounded",
-                        getUrgencyColor(days)
-                      )}
-                    >
-                      {getUrgencyLabel(days)}
-                    </span>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {format(new Date(item.dueDate), "MMM d, yyyy")}
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
 
   return (
     <div className="space-y-6">
@@ -265,6 +272,7 @@ export default async function ClientDeadlinesPage() {
           icon={AlertCircle}
           items={overdue}
           emptyMessage="No overdue items - great job!"
+          now={now}
         />
       )}
 
@@ -273,6 +281,7 @@ export default async function ClientDeadlinesPage() {
         icon={Clock}
         items={today}
         emptyMessage="Nothing due today"
+        now={now}
       />
 
       <DeadlineSection
@@ -280,6 +289,7 @@ export default async function ClientDeadlinesPage() {
         icon={Calendar}
         items={tomorrow}
         emptyMessage="Nothing due tomorrow"
+        now={now}
       />
 
       <DeadlineSection
@@ -287,6 +297,7 @@ export default async function ClientDeadlinesPage() {
         icon={Calendar}
         items={thisWeek}
         emptyMessage="No deadlines this week"
+        now={now}
       />
 
       <DeadlineSection
@@ -294,6 +305,7 @@ export default async function ClientDeadlinesPage() {
         icon={Calendar}
         items={later}
         emptyMessage="No upcoming deadlines"
+        now={now}
       />
 
       {/* Info Banner */}

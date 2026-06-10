@@ -39,7 +39,7 @@ export function QuotationResponseClient({ token, canRespond, currentStatus }: Pr
         <XCircle className="size-10 text-red-400 mx-auto mb-3" />
         <h3 className="font-bold text-red-700 text-lg">Quotation Declined</h3>
         <p className="text-sm text-red-500 mt-1">
-          We appreciate your feedback. Feel free to reach out if you'd like to discuss revised terms.
+          We appreciate your feedback. Feel free to reach out if you&apos;d like to discuss revised terms.
         </p>
       </div>
     )
@@ -65,7 +65,7 @@ export function QuotationResponseClient({ token, canRespond, currentStatus }: Pr
     <div className="bg-white rounded-xl border border-slate-200 p-6">
       <h3 className="font-bold text-slate-800 text-base mb-1">Your Response</h3>
       <p className="text-sm text-slate-500 mb-5">
-        Please review the quotation above and indicate whether you'd like to proceed.
+        Please review the quotation above and indicate whether you&apos;d like to proceed.
       </p>
 
       {error && (
@@ -98,7 +98,7 @@ export function QuotationResponseClient({ token, canRespond, currentStatus }: Pr
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm text-slate-600">
             <MessageSquare className="size-4" />
-            <span>Please let us know why you're declining (optional)</span>
+            <span>Please let us know why you&apos;re declining (optional)</span>
           </div>
           <textarea
             value={reason}
