@@ -18,6 +18,11 @@ export default async function AppLayout({
     redirect("/login")
   }
 
+  // CLIENT-role users belong in the client portal, not the staff app
+  if (session.user.role === "CLIENT") {
+    redirect("/client")
+  }
+
   const onboardingStatus = await getOnboardingStatus()
 
   return (

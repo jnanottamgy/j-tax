@@ -66,7 +66,8 @@ export async function proxy(request: NextRequest) {
     const isSafe =
       raw.startsWith("/") && !raw.startsWith("//") && !raw.includes(":")
     const homeUrl = request.nextUrl.clone()
-    homeUrl.pathname = isSafe ? raw : "/"
+    // CLIENT role users must land on the client portal, never the staff app
+    homeUrl.pathname = role === "CLIENT" ? "/client" : (isSafe ? raw : "/")
     homeUrl.search = ""
     return NextResponse.redirect(homeUrl)
   }
@@ -78,6 +79,13 @@ export async function proxy(request: NextRequest) {
   if (!canAccessRoute(role, pathname)) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+    // CLIENT users hitting staff routes go to their portal, not the error page
+    if (role === "CLIENT") {
+      const clientUrl = request.nextUrl.clone()
+      clientUrl.pathname = "/client"
+      clientUrl.search = ""
+      return NextResponse.redirect(clientUrl)
     }
     const unauthorizedUrl = request.nextUrl.clone()
     unauthorizedUrl.pathname = "/unauthorized"

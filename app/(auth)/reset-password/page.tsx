@@ -6,7 +6,13 @@ import { GlassCard } from "@/components/dashboard/glass-card"
 import { LogoIcon } from "@/components/ui/logo"
 import { Button } from "@/components/ui/button"
 
-export default async function ResetPasswordPage() {
+type ResetPasswordPageProps = {
+  searchParams: Promise<{ error?: string }>
+}
+
+export default async function ResetPasswordPage({ searchParams }: ResetPasswordPageProps) {
+  const params = await searchParams
+
   return (
     <div className="space-y-8">
       <div className="space-y-3 text-center">
@@ -22,6 +28,14 @@ export default async function ResetPasswordPage() {
       </div>
 
       <GlassCard hover={false} className="p-7 md:p-8">
+        {params.error && (
+          <div
+            role="alert"
+            className="mb-5 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            {decodeURIComponent(params.error)}
+          </div>
+        )}
         <ResetPasswordForm />
       </GlassCard>
 

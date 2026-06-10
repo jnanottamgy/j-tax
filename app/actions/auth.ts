@@ -8,6 +8,7 @@ import { loginSchema, signupSchema, resetPasswordSchema, newPasswordSchema } fro
 import { createClient } from "@/lib/supabase/server"
 import { checkLoginRateLimit } from "@/lib/security/rate-limiter"
 import { logLoginSuccess, logLoginFailure } from "@/lib/security/audit-logger"
+import { parseAppRole } from "@/lib/auth/roles"
 
 export type AuthActionState = {
   error?: string
@@ -100,6 +101,16 @@ export async function signIn(
     } catch (err) {
       console.error("[workforce] login tracking error:", err)
     }
+  }
+
+  // CLIENT users must always go to the client portal, never the staff app
+  const userRole =
+    parseAppRole(data.user?.app_metadata?.role) ??
+    parseAppRole(data.user?.user_metadata?.role)
+
+  if (userRole === "CLIENT") {
+    revalidatePath("/", "layout")
+    redirect("/client")
   }
 
   // CRIT-01: Validate redirectTo is a safe same-origin path

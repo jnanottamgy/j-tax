@@ -456,6 +456,9 @@ export default async function DashboardPage() {
   const { user } = session
   const role = user.role
 
+  // CLIENT users must use the client portal — never the staff app
+  if (role === "CLIENT") redirect("/client")
+
   // ─── EMPLOYEE dashboard ───────────────────────────────────────────────────
   if (role === "EMPLOYEE") {
     const fetcher = makeEmployeeDashboardFetcher(user.id)

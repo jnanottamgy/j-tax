@@ -46,22 +46,27 @@ export const PROTECTED_ROUTE_PREFIXES = [
  *  - /reports   → PARTNER, MANAGER only
  *  - /proposals → PARTNER, MANAGER only
  */
+const STAFF_ROLES = ["PARTNER", "MANAGER", "EMPLOYEE"] as const satisfies readonly AppRole[]
+
 export const ROUTE_ACCESS: Record<string, AppRole[]> = {
-  "/": [...APP_ROLES],
-  "/clients": [...APP_ROLES],
-  "/work-tracker": [...APP_ROLES],
-  "/compliance": [...APP_ROLES],
+  // Staff-only routes — CLIENT role is explicitly excluded from all staff routes
+  "/": [...STAFF_ROLES],
+  "/clients": [...STAFF_ROLES],
+  "/work-tracker": [...STAFF_ROLES],
+  "/compliance": [...STAFF_ROLES],
   "/payments": ["PARTNER", "MANAGER"],
-  "/calendar": [...APP_ROLES],
+  "/calendar": [...STAFF_ROLES],
   "/employees": ["PARTNER", "MANAGER"],
-  "/documents": [...APP_ROLES],
-  "/messaging": [...APP_ROLES],
+  "/documents": [...STAFF_ROLES],
+  "/messaging": [...STAFF_ROLES],
   "/reports": ["PARTNER", "MANAGER"],
-  "/notifications": [...APP_ROLES],
-  "/settings": [...APP_ROLES],
+  "/notifications": [...STAFF_ROLES],
+  "/settings": [...STAFF_ROLES],
   "/activity": ["PARTNER"],          // Audit logs — PARTNER only
   "/workforce": ["PARTNER"],         // Employee intelligence — PARTNER only
   "/proposals": ["PARTNER", "MANAGER"],
+  // Client portal — CLIENT role only
+  "/client": ["CLIENT"],
 }
 
 export function parseAppRole(value: unknown): AppRole | null {
