@@ -42,7 +42,7 @@ import {
 import { ROLE_LABELS } from "@/lib/auth/roles"
 import { getUserInitials } from "@/lib/auth/utils"
 import {
-  filterGroupsByRole,
+  getNavigationForRole,
   isNavActive,
   navigationGroups,
   type NavGroup,
@@ -322,7 +322,7 @@ export function AppSidebar() {
   const pathname = usePathname()
   const initials = getUserInitials(user.name)
   const { addRecentItem } = useSidebarStore()
-  const visibleGroups = filterGroupsByRole(navigationGroups, user.role)
+  const visibleGroups = getNavigationForRole(user.role)
 
   // Track visited pages as recent items (most-specific href wins)
   useEffect(() => {

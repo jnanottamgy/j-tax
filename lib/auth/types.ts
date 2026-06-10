@@ -1,4 +1,4 @@
-export const APP_ROLES = ["PARTNER", "MANAGER", "EXECUTIVE", "CLIENT"] as const
+export const APP_ROLES = ["PARTNER", "MANAGER", "EMPLOYEE", "CLIENT"] as const
 
 export type AppRole = (typeof APP_ROLES)[number]
 

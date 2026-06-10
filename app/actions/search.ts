@@ -109,7 +109,7 @@ export async function globalSearch(query: string) {
         { phone: { contains: query, mode: "insensitive" } },
       ],
     }
-    if (role === "EXECUTIVE") {
+    if (role === "EMPLOYEE") {
       if (!executiveEmployeeId) {
         // EXECUTIVE with no linked employee sees nothing
       } else {
@@ -161,7 +161,7 @@ export async function globalSearch(query: string) {
         { description: { contains: query, mode: "insensitive" } },
       ],
     }
-    if (role === "EXECUTIVE") {
+    if (role === "EMPLOYEE") {
       if (executiveEmployeeId) {
         taskWhere.assignedEmployeeId = executiveEmployeeId
       } else {
@@ -199,7 +199,7 @@ export async function globalSearch(query: string) {
         { client: { name: { contains: query, mode: "insensitive" } } },
       ],
     }
-    if (role === "EXECUTIVE" && executiveEmployeeId) {
+    if (role === "EMPLOYEE" && executiveEmployeeId) {
       invoiceWhere.client = { assignedEmployeeId: executiveEmployeeId }
     }
 
@@ -229,7 +229,7 @@ export async function globalSearch(query: string) {
     const docWhere: Record<string, unknown> = {
       OR: [{ title: { contains: query, mode: "insensitive" } }],
     }
-    if (role === "EXECUTIVE" && executiveEmployeeId) {
+    if (role === "EMPLOYEE" && executiveEmployeeId) {
       docWhere.client = { assignedEmployeeId: executiveEmployeeId }
     }
 
@@ -285,7 +285,7 @@ export async function globalSearch(query: string) {
     const compWhere: Record<string, unknown> = {
       title: { contains: query, mode: "insensitive" },
     }
-    if (role === "EXECUTIVE" && executiveEmployeeId) {
+    if (role === "EMPLOYEE" && executiveEmployeeId) {
       compWhere.client = { assignedEmployeeId: executiveEmployeeId }
     }
 

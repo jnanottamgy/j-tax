@@ -11,7 +11,7 @@ datasource db {
 enum Role {
   PARTNER
   MANAGER
-  EXECUTIVE
+  EMPLOYEE
   CLIENT
 }
 

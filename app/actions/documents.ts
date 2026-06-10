@@ -11,7 +11,7 @@ import {
 import {
   canAccessAssignedClient,
   getExecutiveEmployeeId,
-  isExecutive as isExecutiveRole,
+  isEmployee as isEmployeeRole,
 } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
 import {
@@ -180,7 +180,7 @@ async function assertClientDocumentAccess(
   message = "You do not have permission to access documents for this client."
 ): Promise<string | null> {
   const executiveEmployeeId = await getExecutiveEmployeeId(session)
-  if (!isExecutiveRole(session.user.role)) return null
+  if (!isEmployeeRole(session.user.role)) return null
 
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -221,7 +221,7 @@ export async function getDocuments(filters?: {
   
   if (executiveEmployeeId) {
     where.client = { assignedEmployeeId: executiveEmployeeId }
-  } else if (session.user.role === "EXECUTIVE") {
+  } else if (session.user.role === "EMPLOYEE") {
     return { documents: [], clients: [], user: session.user }
   }
   

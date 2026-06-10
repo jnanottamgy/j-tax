@@ -152,7 +152,7 @@ export function TaskDetailDrawer({
   }
 
   const canEdit = currentUser?.role === "PARTNER" || currentUser?.role === "MANAGER" || 
-    (currentUser?.role === "EXECUTIVE" && task?.assignedEmployee?.id === currentUser?.id)
+    (currentUser?.role === "EMPLOYEE" && task?.assignedEmployee?.id === currentUser?.id)
 
   const STATUS_OPTIONS: TaskStatus[] = [
     "NOT_STARTED",

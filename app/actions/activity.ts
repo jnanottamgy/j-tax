@@ -98,7 +98,7 @@ export async function getUserTimeline(userId: string, limit: number = 50) {
   const session = await requireAuth()
 
   // Permission check - only PARTNER and MANAGER can view other users' activity
-  if (session.user.role === "EXECUTIVE" && session.user.id !== userId) {
+  if (session.user.role === "EMPLOYEE" && session.user.id !== userId) {
     throw new Error("You do not have permission to view this user's activity")
   }
 

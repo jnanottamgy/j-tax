@@ -1,6 +1,6 @@
 # J-TAX — Complete Project State Document
 
-**Last updated:** 2026-06-10 (Session 7 — Enterprise Navigation Sidebar)
+**Last updated:** 2026-06-10 (Session 8 — Enterprise RBAC Restructuring & Hardening)
 **Branch:** `main`
 **Last commit:** see `git log` — feat(nav): enterprise sidebar with groups, favorites, recent items
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)

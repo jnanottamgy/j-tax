@@ -1,10 +1,15 @@
 import { unstable_cache } from "next/cache"
+import { redirect } from "next/navigation"
 
+// Dashboard components
 import { ComplianceOverview } from "@/components/dashboard/compliance-overview"
+import { EmployeeDashboard } from "@/components/dashboard/employee-dashboard"
 import { ExecutiveSummary } from "@/components/dashboard/executive-summary"
 import { FilingChart } from "@/components/dashboard/filing-chart"
 import { KpiCards } from "@/components/dashboard/kpi-cards"
+import { ManagerDashboard } from "@/components/dashboard/manager-dashboard"
 import { OutstandingPayments } from "@/components/dashboard/outstanding-payments"
+import { PartnerCommandCenter } from "@/components/dashboard/partner-command-center"
 import { QuickActions } from "@/components/dashboard/quick-actions"
 import { RecentActivity } from "@/components/dashboard/recent-activity"
 import { RevenueChart } from "@/components/dashboard/revenue-chart"
@@ -15,34 +20,17 @@ import { PageHeader } from "@/components/layout/page-header"
 import { Breadcrumb } from "@/components/navigation/breadcrumb"
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
-import { redirect } from "next/navigation"
 
-// ─── Cached data fetcher ──────────────────────────────────────────────────────
-// Per-user cache keyed by userId + today's date string (YYYY-MM-DD).
-// 60-second TTL keeps data fresh while eliminating repeated DB hits during
-// rapid page visits (e.g., navigating away and back).
+// ─── PARTNER / full-firm dashboard fetcher ────────────────────────────────────
 
-function makeDashboardFetcher(userId: string, role: string) {
-  const todayKey = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-
+function makePartnerDashboardFetcher(userId: string) {
+  const todayKey = new Date().toISOString().slice(0, 10)
   return unstable_cache(
     async () => {
       const now = new Date()
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
-
-      // Build EXECUTIVE client scope filter
-      const isExecutive = role === "EXECUTIVE"
-      const assignedEmployee = isExecutive
-        ? await prisma.employee.findUnique({
-            where: { userId },
-            select: { id: true },
-          })
-        : null
-      const clientFilter: { assignedEmployeeId?: string } =
-        isExecutive && assignedEmployee
-          ? { assignedEmployeeId: assignedEmployee.id }
-          : {}
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
       const [
         totalClients,
@@ -65,108 +53,77 @@ function makeDashboardFetcher(userId: string, role: string) {
         checklistDocCount,
         checklistInvoiceCount,
         checklistComplianceCount,
+        pendingApprovals,
+        highRiskClients,
+        activeEmployeeCount,
       ] = await Promise.all([
-        prisma.client.count({ where: clientFilter }),
-        prisma.client.count({ where: { ...clientFilter, status: "ACTIVE" } }),
+        prisma.client.count(),
+        prisma.client.count({ where: { status: "ACTIVE" } }),
         prisma.invoice.aggregate({
-          where: { client: clientFilter },
           _sum: { amount: true, paidAmount: true, outstandingAmount: true },
           _count: true,
         }),
         prisma.invoice.aggregate({
-          where: { client: clientFilter, status: "OVERDUE" },
+          where: { status: "OVERDUE" },
           _sum: { outstandingAmount: true },
           _count: true,
         }),
-        prisma.complianceEvent.count({
-          where: {
-            client: Object.keys(clientFilter).length ? clientFilter : undefined,
-            status: "PENDING",
-          },
-        }),
-        prisma.complianceEvent.count({
-          where: {
-            client: Object.keys(clientFilter).length ? clientFilter : undefined,
-            status: "COMPLETED",
-          },
-        }),
-        // Tasks due today
+        prisma.complianceEvent.count({ where: { status: "PENDING" } }),
+        prisma.complianceEvent.count({ where: { status: "COMPLETED" } }),
         prisma.task.findMany({
-          where: {
-            client: clientFilter,
-            dueDate: { gte: todayStart, lt: todayEnd },
-            status: { not: "FILED_DONE" },
-          },
+          where: { dueDate: { gte: todayStart, lt: todayEnd }, status: { not: "FILED_DONE" } },
           include: { client: true },
           orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
           take: 5,
         }),
-        // Recent activity logs
-        prisma.activityLog.findMany({
-          orderBy: { timestamp: "desc" },
-          take: 6,
-        }),
-        // Outstanding invoices for the payments widget
+        prisma.activityLog.findMany({ orderBy: { timestamp: "desc" }, take: 6 }),
         prisma.invoice.findMany({
-          where: {
-            client: clientFilter,
-            status: { in: ["OVERDUE", "SENT", "PARTIALLY_PAID"] },
-            outstandingAmount: { gt: 0 },
-          },
+          where: { status: { in: ["OVERDUE", "SENT", "PARTIALLY_PAID"] }, outstandingAmount: { gt: 0 } },
           include: { client: { select: { name: true } } },
           orderBy: [{ status: "asc" }, { dueDate: "asc" }],
           take: 4,
         }),
-        // Compliance events for overview
         prisma.complianceEvent.findMany({
-          where: {
-            client: Object.keys(clientFilter).length ? clientFilter : undefined,
-            dueDate: { gte: now },
-            status: { in: ["PENDING", "OVERDUE"] },
-          },
+          where: { dueDate: { gte: now }, status: { in: ["PENDING", "OVERDUE"] } },
           orderBy: { dueDate: "asc" },
           take: 5,
         }),
-        // Task status breakdown for filing chart
-        prisma.task.groupBy({
-          by: ["status"],
-          where: { client: clientFilter },
-          _count: true,
-        }),
-        // Overdue tasks count
-        prisma.task.count({
-          where: {
-            client: clientFilter,
-            dueDate: { lt: todayStart },
-            status: { not: "FILED_DONE" },
-          },
-        }),
-        // Upcoming deadlines this week
+        prisma.task.groupBy({ by: ["status"], _count: true }),
+        prisma.task.count({ where: { dueDate: { lt: todayStart }, status: { not: "FILED_DONE" } } }),
         prisma.complianceEvent.count({
-          where: {
-            client: Object.keys(clientFilter).length ? clientFilter : undefined,
-            dueDate: {
-              gte: now,
-              lt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-            },
-            status: { in: ["PENDING", "OVERDUE"] },
-          },
+          where: { dueDate: { gte: now, lt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) }, status: { in: ["PENDING", "OVERDUE"] } },
         }),
-        // Total tasks (for workload calc)
-        prisma.task.count({ where: clientFilter }),
-        // Setup checklist data (global counts, role-scoped)
+        prisma.task.count(),
         prisma.employee.count(),
-        prisma.client.count({ where: clientFilter }),
-        prisma.task.count({ where: clientFilter }),
-        prisma.document.count({ where: { client: clientFilter } }),
-        prisma.invoice.count({ where: { client: clientFilter } }),
-        prisma.complianceEvent.count({
-          where: { client: Object.keys(clientFilter).length ? clientFilter : undefined },
+        prisma.client.count(),
+        prisma.task.count(),
+        prisma.document.count(),
+        prisma.invoice.count(),
+        prisma.complianceEvent.count(),
+        // Pending quotation approvals
+        prisma.quotation.count({ where: { status: "PENDING_APPROVAL" } }),
+        // High risk: clients with ≥3 overdue tasks
+        prisma.client.findMany({
+          where: {
+            tasks: {
+              some: { dueDate: { lt: now }, status: { not: "FILED_DONE" } },
+            },
+          },
+          select: {
+            id: true,
+            name: true,
+            _count: {
+              select: {
+                tasks: { where: { dueDate: { lt: now }, status: { not: "FILED_DONE" } } },
+              },
+            },
+          },
+          orderBy: { name: "asc" },
+          take: 5,
         }),
+        prisma.employee.count({ where: { isActive: true } }),
       ])
 
-      // Serialize Decimal → number before returning from cached function
-      // (Prisma Decimal objects are not plain-serializable)
       const serializedOutstandingInvoices = outstandingInvoicesRaw.map((inv) => ({
         ...inv,
         amount: Number(inv.amount),
@@ -174,12 +131,27 @@ function makeDashboardFetcher(userId: string, role: string) {
         outstandingAmount: Number(inv.outstandingAmount),
       }))
 
+      const totalRevenue = Number(invoiceAgg._sum.amount ?? 0)
+      const totalCollected = Number(invoiceAgg._sum.paidAmount ?? 0)
+      const totalOutstanding = Number(invoiceAgg._sum.outstandingAmount ?? 0)
+      const totalOverdue = Number(overdueInvoiceAgg._sum.outstandingAmount ?? 0)
+      const collectionRate =
+        totalRevenue > 0 ? Math.round((totalCollected / totalRevenue) * 100) : 0
+
+      // Pending approvals for command center
+      const pendingApprovalsList = await prisma.quotation.findMany({
+        where: { status: "PENDING_APPROVAL" },
+        select: { id: true, clientName: true, total: true, quotationNumber: true },
+        take: 3,
+      })
+
       return {
         totalClients,
         activeClients,
-        totalOutstanding: Number(invoiceAgg._sum.outstandingAmount ?? 0),
-        totalCollected: Number(invoiceAgg._sum.paidAmount ?? 0),
-        totalOverdue: Number(overdueInvoiceAgg._sum.outstandingAmount ?? 0),
+        totalOutstanding,
+        totalCollected,
+        totalRevenue,
+        totalOverdue,
         overdueCount: overdueInvoiceAgg._count,
         pendingComplianceCount,
         completedComplianceCount,
@@ -192,6 +164,7 @@ function makeDashboardFetcher(userId: string, role: string) {
         upcomingDeadlinesCount,
         totalTasks,
         totalDocuments: checklistDocCount,
+        collectionRate,
         setupChecklist: {
           hasEmployees: checklistEmployeeCount > 0,
           hasClients: checklistClientCount > 0,
@@ -200,14 +173,277 @@ function makeDashboardFetcher(userId: string, role: string) {
           hasInvoices: checklistInvoiceCount > 0,
           hasCompliance: checklistComplianceCount > 0,
         },
+        commandCenter: {
+          totalRevenue,
+          totalOutstanding,
+          totalOverdue,
+          collectionRate,
+          pendingApprovals,
+          activeEmployees: activeEmployeeCount,
+          highRiskClients: highRiskClients.filter((c) => c._count.tasks >= 2).length,
+          complianceScore: 0, // filled below
+        },
+        pendingApprovalsList: pendingApprovalsList.map((q) => ({
+          id: q.id,
+          clientName: q.clientName,
+          amount: Number(q.total),
+          type: q.quotationNumber,
+        })),
+        highRiskClientsList: highRiskClients
+          .filter((c) => c._count.tasks >= 2)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            riskReason: `${c._count.tasks} overdue`,
+          })),
       }
     },
-    // Cache key: per user + today's date (ensures daily rollover)
-    [`dashboard-${userId}-${todayKey}`],
-    {
-      revalidate: 60, // 60-second TTL — fresh enough for a live dashboard
-      tags: [`dashboard`, `dashboard-${userId}`],
-    }
+    [`dashboard-partner-${userId}-${todayKey}`],
+    { revalidate: 60, tags: ["dashboard", `dashboard-${userId}`] }
+  )
+}
+
+// ─── MANAGER dashboard fetcher ────────────────────────────────────────────────
+
+function makeManagerDashboardFetcher(userId: string) {
+  const todayKey = new Date().toISOString().slice(0, 10)
+  return unstable_cache(
+    async () => {
+      const now = new Date()
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+      const [employees, invoiceAgg, pendingCompliance] = await Promise.all([
+        prisma.employee.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true, department: true },
+          orderBy: { name: "asc" },
+          take: 20,
+        }),
+        prisma.invoice.aggregate({
+          _sum: { amount: true, paidAmount: true, outstandingAmount: true },
+        }),
+        prisma.complianceEvent.count({ where: { status: "PENDING" } }),
+      ])
+
+      const employeeIds = employees.map((e) => e.id)
+
+      const [tasksByEmployee, overdueByEmployee, completedThisWeek] =
+        await Promise.all([
+          prisma.task.groupBy({
+            by: ["assignedEmployeeId"],
+            where: { assignedEmployeeId: { in: employeeIds }, status: { not: "FILED_DONE" } },
+            _count: { _all: true },
+          }),
+          prisma.task.groupBy({
+            by: ["assignedEmployeeId"],
+            where: {
+              assignedEmployeeId: { in: employeeIds },
+              dueDate: { lt: now },
+              status: { not: "FILED_DONE" },
+            },
+            _count: { _all: true },
+          }),
+          prisma.task.count({
+            where: { status: "FILED_DONE", updatedAt: { gte: weekAgo } },
+          }),
+
+        ])
+
+      const totalByEmployee = await prisma.task.groupBy({
+        by: ["assignedEmployeeId"],
+        where: { assignedEmployeeId: { in: employeeIds } },
+        _count: { _all: true },
+      })
+
+      const activeMap = new Map(tasksByEmployee.map((r) => [r.assignedEmployeeId, r._count._all]))
+      const overdueMap = new Map(overdueByEmployee.map((r) => [r.assignedEmployeeId, r._count._all]))
+      const totalMap = new Map(totalByEmployee.map((r) => [r.assignedEmployeeId, r._count._all]))
+
+      const teamWorkload = employees.map((e) => {
+        const active = activeMap.get(e.id) ?? 0
+        const overdue = overdueMap.get(e.id) ?? 0
+        const total = totalMap.get(e.id) ?? 0
+        const completed = total - active
+        const productivity = total > 0 ? Math.round((completed / total) * 100) : 0
+        return {
+          employee: { id: e.id, name: e.name, department: e.department },
+          totalTasks: total,
+          completedTasks: completed,
+          overdueTasks: overdue,
+          productivity,
+        }
+      })
+
+      const totalActiveTasks = Array.from(activeMap.values()).reduce((s, v) => s + v, 0)
+      const overdueTotal = Array.from(overdueMap.values()).reduce((s, v) => s + v, 0)
+
+      // Urgent: overdue tasks & compliance
+      const [overdueTasksList, overdueComplianceList] = await Promise.all([
+        prisma.task.findMany({
+          where: { dueDate: { lt: now }, status: { not: "FILED_DONE" } },
+          include: { client: { select: { name: true } } },
+          orderBy: { dueDate: "asc" },
+          take: 6,
+        }),
+        prisma.complianceEvent.findMany({
+          where: { status: "OVERDUE" },
+          include: { client: { select: { name: true } } },
+          orderBy: { dueDate: "asc" },
+          take: 4,
+        }),
+      ])
+
+      const urgentItems = [
+        ...overdueTasksList.map((t) => ({
+          type: "TASK" as const,
+          title: t.title,
+          clientName: t.client?.name ?? "—",
+          dueDate: t.dueDate?.toISOString() ?? null,
+          priority: t.priority,
+        })),
+        ...overdueComplianceList.map((c) => ({
+          type: "COMPLIANCE" as const,
+          title: c.title,
+          clientName: c.client?.name ?? "—",
+          dueDate: c.dueDate?.toISOString() ?? null,
+        })),
+      ].slice(0, 8)
+
+      const totalRevenue = Number(invoiceAgg._sum.amount ?? 0)
+      const totalCollected = Number(invoiceAgg._sum.paidAmount ?? 0)
+      const collectionRate =
+        totalRevenue > 0 ? Math.round((totalCollected / totalRevenue) * 100) : 0
+
+      const totalClients = await prisma.client.count()
+
+      return {
+        teamStats: {
+          totalEmployees: employees.length,
+          totalActiveTasks,
+          completedThisWeek,
+          overdueTotal,
+          totalClients,
+          pendingCompliance,
+          collectionRate,
+          totalOutstanding: Number(invoiceAgg._sum.outstandingAmount ?? 0),
+        },
+        teamWorkload,
+        urgentItems,
+        recentActivity: [] as Array<{id: string; action: string; description: string; timestamp: string; entityType: string}>,
+      }
+    },
+    [`dashboard-manager-${userId}-${todayKey}`],
+    { revalidate: 60, tags: ["dashboard", `dashboard-${userId}`] }
+  )
+}
+
+// ─── EMPLOYEE personal dashboard fetcher ─────────────────────────────────────
+
+function makeEmployeeDashboardFetcher(userId: string) {
+  const todayKey = new Date().toISOString().slice(0, 10)
+  return unstable_cache(
+    async () => {
+      const now = new Date()
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+
+      // Find the employee record linked to this user
+      const myEmployee = await prisma.employee.findUnique({
+        where: { userId },
+        select: { id: true, name: true },
+      })
+
+      if (!myEmployee) {
+        return {
+          myEmployee: null,
+          stats: { totalTasks: 0, completedTasks: 0, overdueTasks: 0, tasksDueToday: 0, totalClients: 0, activeClients: 0, pendingCompliance: 0 },
+          todayTasks: [],
+          myTasks: [],
+          myClients: [],
+          upcomingCompliance: [],
+        }
+      }
+
+      const empId = myEmployee.id
+
+      const [
+        myTasksRaw,
+        myClientsRaw,
+        todayTasksRaw,
+        completedTasks,
+        overdueTasks,
+        upcomingComplianceRaw,
+        pendingCompliance,
+      ] = await Promise.all([
+        prisma.task.findMany({
+          where: { assignedEmployeeId: empId, status: { not: "FILED_DONE" } },
+          include: { client: { select: { name: true } } },
+          orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
+          take: 20,
+        }),
+        prisma.client.findMany({
+          where: { assignedEmployeeId: empId },
+          select: { id: true, name: true, clientCode: true, status: true },
+          orderBy: { name: "asc" },
+          take: 20,
+        }),
+        prisma.task.findMany({
+          where: { assignedEmployeeId: empId, dueDate: { gte: todayStart, lt: todayEnd }, status: { not: "FILED_DONE" } },
+          include: { client: { select: { name: true } } },
+          orderBy: [{ priority: "desc" }],
+          take: 10,
+        }),
+        prisma.task.count({ where: { assignedEmployeeId: empId, status: "FILED_DONE" } }),
+        prisma.task.count({ where: { assignedEmployeeId: empId, dueDate: { lt: now }, status: { not: "FILED_DONE" } } }),
+        prisma.complianceEvent.findMany({
+          where: {
+            client: { assignedEmployeeId: empId },
+            dueDate: { gte: now },
+            status: { not: "COMPLETED" },
+          },
+          include: { client: { select: { name: true } } },
+          orderBy: { dueDate: "asc" },
+          take: 10,
+        }),
+        prisma.complianceEvent.count({
+          where: { client: { assignedEmployeeId: empId }, status: "PENDING" },
+        }),
+      ])
+
+      const totalTasks = myTasksRaw.length + completedTasks
+      const activeClients = myClientsRaw.filter((c) => c.status === "ACTIVE").length
+
+      return {
+        myEmployee: { id: myEmployee.id, name: myEmployee.name },
+        stats: {
+          totalTasks,
+          completedTasks,
+          overdueTasks,
+          tasksDueToday: todayTasksRaw.length,
+          totalClients: myClientsRaw.length,
+          activeClients,
+          pendingCompliance,
+        },
+        todayTasks: todayTasksRaw.map((t) => ({
+          ...t,
+          dueDate: t.dueDate?.toISOString() ?? null,
+          client: t.client,
+        })),
+        myTasks: myTasksRaw.map((t) => ({
+          ...t,
+          dueDate: t.dueDate?.toISOString() ?? null,
+          client: t.client,
+        })),
+        myClients: myClientsRaw,
+        upcomingCompliance: upcomingComplianceRaw.map((e) => ({
+          ...e,
+          dueDate: e.dueDate.toISOString(),
+          client: e.client,
+        })),
+      }
+    },
+    [`dashboard-employee-${userId}-${todayKey}`],
+    { revalidate: 60, tags: ["dashboard", `dashboard-${userId}`] }
   )
 }
 
@@ -217,7 +453,70 @@ export default async function DashboardPage() {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const fetcher = makeDashboardFetcher(session.user.id, session.user.role)
+  const { user } = session
+  const role = user.role
+
+  // ─── EMPLOYEE dashboard ───────────────────────────────────────────────────
+  if (role === "EMPLOYEE") {
+    const fetcher = makeEmployeeDashboardFetcher(user.id)
+    const data = await fetcher()
+
+    return (
+      <PageContainer className="space-y-6">
+        <Breadcrumb items={[{ label: "Dashboard" }]} />
+        <PageHeader
+          label={`Welcome back, ${user.name}`}
+          title="My Work Dashboard"
+          description="Your tasks, clients, compliance queue, and personal performance."
+        />
+        <EmployeeDashboard
+          employeeName={user.name}
+          stats={data.stats}
+          todayTasks={data.todayTasks}
+          myTasks={data.myTasks}
+          myClients={data.myClients}
+          upcomingCompliance={data.upcomingCompliance}
+        />
+      </PageContainer>
+    )
+  }
+
+  // ─── MANAGER dashboard ────────────────────────────────────────────────────
+  if (role === "MANAGER") {
+    const fetcher = makeManagerDashboardFetcher(user.id)
+    const data = await fetcher()
+
+    return (
+      <PageContainer className="space-y-6">
+        <Breadcrumb items={[{ label: "Dashboard" }]} />
+        <PageHeader
+          label={`Welcome back, ${user.name}`}
+          title="Team Operations Dashboard"
+          description="Team workload, compliance status, SLA tracking, and urgent items."
+        />
+        <SetupChecklist
+          data={{
+            hasEmployees: data.teamStats.totalEmployees > 0,
+            hasClients: data.teamStats.totalClients > 0,
+            hasTasks: data.teamStats.totalActiveTasks > 0,
+            hasDocuments: true,
+            hasInvoices: true,
+            hasCompliance: data.teamStats.pendingCompliance > 0,
+          }}
+        />
+        <ManagerDashboard
+          managerName={user.name}
+          teamStats={data.teamStats}
+          teamWorkload={data.teamWorkload}
+          urgentItems={data.urgentItems}
+          recentActivity={data.recentActivity}
+        />
+      </PageContainer>
+    )
+  }
+
+  // ─── PARTNER dashboard (default / full firm view) ─────────────────────────
+  const fetcher = makePartnerDashboardFetcher(user.id)
   const data = await fetcher()
 
   const {
@@ -225,6 +524,7 @@ export default async function DashboardPage() {
     activeClients,
     totalOutstanding,
     totalCollected,
+    totalRevenue,
     totalOverdue,
     overdueCount,
     pendingComplianceCount,
@@ -239,6 +539,10 @@ export default async function DashboardPage() {
     totalTasks,
     totalDocuments,
     setupChecklist,
+    commandCenter,
+    pendingApprovalsList,
+    highRiskClientsList,
+    collectionRate,
   } = data
 
   const totalCompliance = pendingComplianceCount + completedComplianceCount
@@ -264,15 +568,20 @@ export default async function DashboardPage() {
     <PageContainer className="space-y-6">
       <Breadcrumb items={[{ label: "Dashboard" }]} />
       <PageHeader
-        label={`Welcome back, ${session.user.name}`}
-        title="Tax Operations Dashboard"
-        description="Monitor filings, compliance, and payments across your client portfolio in real time."
+        label={`Welcome back, ${user.name}`}
+        title="Partner Command Center"
+        description="Full firm visibility — revenue, compliance, workforce intelligence, and approvals."
       />
 
-      {/* Setup checklist — only shown to PARTNER/MANAGER, hidden once all steps done */}
-      {(session.user.role === "PARTNER" || session.user.role === "MANAGER") && (
-        <SetupChecklist data={setupChecklist} />
-      )}
+      {/* Partner command center */}
+      <PartnerCommandCenter
+        stats={{ ...commandCenter, complianceScore }}
+        pendingApprovals={pendingApprovalsList}
+        highRiskClients={highRiskClientsList}
+      />
+
+      {/* Setup checklist — hidden once all steps done */}
+      <SetupChecklist data={setupChecklist} />
 
       <ExecutiveSummary
         overdueTasks={overdueTasksCount}

@@ -58,7 +58,7 @@ export async function getTasksData(filters?: {
   
   if (executiveEmployeeId) {
     where.assignedEmployeeId = executiveEmployeeId
-  } else if (session.user.role === "EXECUTIVE") {
+  } else if (session.user.role === "EMPLOYEE") {
     return { tasks: [], employees: [], user: session.user }
   }
   
@@ -211,7 +211,7 @@ export async function updateTask(
 
     // Only PARTNER and MANAGER can reassign tasks
     if (parsed.data.assignedEmployeeId && parsed.data.assignedEmployeeId !== task.assignedEmployeeId) {
-      if (session.user.role === "EXECUTIVE") {
+      if (session.user.role === "EMPLOYEE") {
         return { error: "You do not have permission to reassign tasks" }
       }
     }
@@ -428,7 +428,7 @@ export async function deleteComment(commentId: string): Promise<TaskActionState>
     }
 
     // Users can delete their own comments, PARTNER and MANAGER can delete any
-    if (session.user.role === "EXECUTIVE" && comment.userId !== session.user.id) {
+    if (session.user.role === "EMPLOYEE" && comment.userId !== session.user.id) {
       return { error: "You can only delete your own comments" }
     }
 
@@ -506,7 +506,7 @@ export async function deleteAttachment(attachmentId: string): Promise<TaskAction
     }
 
     // Users can delete their own attachments, PARTNER and MANAGER can delete any
-    if (session.user.role === "EXECUTIVE" && attachment.uploadedBy !== session.user.id) {
+    if (session.user.role === "EMPLOYEE" && attachment.uploadedBy !== session.user.id) {
       return { error: "You can only delete your own attachments" }
     }
 

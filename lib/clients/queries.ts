@@ -65,7 +65,7 @@ async function getVisibleClientWhere(opts?: {
   role?: AppRole
   userId?: string
 }): Promise<Prisma.ClientWhereInput> {
-  if (opts?.role !== "EXECUTIVE" || !opts.userId) {
+  if (opts?.role !== "EMPLOYEE" || !opts.userId) {
     return {}
   }
 

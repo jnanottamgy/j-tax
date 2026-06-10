@@ -50,7 +50,7 @@ export async function getMessages(filters?: {
   
   if (executiveEmployeeId) {
     where.client = { assignedEmployeeId: executiveEmployeeId }
-  } else if (session.user.role === "EXECUTIVE") {
+  } else if (session.user.role === "EMPLOYEE") {
     return { messages: [], clients: [], user: session.user }
   }
   

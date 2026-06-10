@@ -4,7 +4,7 @@ import { APP_ROLES } from "@/lib/auth/types"
 /** Higher number = more privileges */
 export const ROLE_LEVEL: Record<AppRole, number> = {
   CLIENT: 0,
-  EXECUTIVE: 1,
+  EMPLOYEE: 1,
   MANAGER: 2,
   PARTNER: 3,
 }
@@ -12,7 +12,7 @@ export const ROLE_LEVEL: Record<AppRole, number> = {
 export const ROLE_LABELS: Record<AppRole, string> = {
   PARTNER: "Partner",
   MANAGER: "Manager",
-  EXECUTIVE: "Executive",
+  EMPLOYEE: "Employee",
   CLIENT: "Client",
 }
 
@@ -35,7 +35,17 @@ export const PROTECTED_ROUTE_PREFIXES = [
   "/proposals",
 ] as const
 
-/** Minimum role required per route (most permissive list) */
+/**
+ * Minimum role required per route.
+ *
+ * Phase 2 RBAC hardening (Session 7):
+ *  - /activity  → PARTNER only  (audit logs; Managers & Employees must not see firm-wide audit trail)
+ *  - /workforce → PARTNER only  (employee intelligence; sensitive)
+ *  - /payments  → PARTNER, MANAGER only
+ *  - /employees → PARTNER, MANAGER only
+ *  - /reports   → PARTNER, MANAGER only
+ *  - /proposals → PARTNER, MANAGER only
+ */
 export const ROUTE_ACCESS: Record<string, AppRole[]> = {
   "/": [...APP_ROLES],
   "/clients": [...APP_ROLES],
@@ -49,8 +59,8 @@ export const ROUTE_ACCESS: Record<string, AppRole[]> = {
   "/reports": ["PARTNER", "MANAGER"],
   "/notifications": [...APP_ROLES],
   "/settings": [...APP_ROLES],
-  "/activity": [...APP_ROLES],
-  "/workforce": ["PARTNER"],
+  "/activity": ["PARTNER"],          // Audit logs — PARTNER only
+  "/workforce": ["PARTNER"],         // Employee intelligence — PARTNER only
   "/proposals": ["PARTNER", "MANAGER"],
 }
 

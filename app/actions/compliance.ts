@@ -41,15 +41,15 @@ export async function getComplianceDashboard() {
   const now = new Date()
   const thirtyDaysOut = addDays(now, 30)
 
-  const isExecutive = session.user.role === "EXECUTIVE"
-  const assignedEmployee = isExecutive
+  const isEmployee = session.user.role === "EMPLOYEE"
+  const assignedEmployee = isEmployee
     ? await prisma.employee.findUnique({
         where: { userId: session.user.id },
         select: { id: true },
       })
     : null
   const clientFilter =
-    isExecutive && assignedEmployee
+    isEmployee && assignedEmployee
       ? { assignedEmployeeId: assignedEmployee.id }
       : {}
 
@@ -139,15 +139,15 @@ export async function getComplianceDashboard() {
 export async function getComplianceEvents(month?: number, year?: number) {
   const session = await requireAuth()
 
-  const isExecutive = session.user.role === "EXECUTIVE"
-  const assignedEmployee = isExecutive
+  const isEmployee = session.user.role === "EMPLOYEE"
+  const assignedEmployee = isEmployee
     ? await prisma.employee.findUnique({
         where: { userId: session.user.id },
         select: { id: true },
       })
     : null
   const clientFilter =
-    isExecutive && assignedEmployee
+    isEmployee && assignedEmployee
       ? { assignedEmployeeId: assignedEmployee.id }
       : {}
 
@@ -179,15 +179,15 @@ export async function getUpcomingDeadlines(days: number = 30) {
   const startDate = new Date()
   const endDate = addDays(startDate, days)
 
-  const isExecutive = session.user.role === "EXECUTIVE"
-  const assignedEmployee = isExecutive
+  const isEmployee = session.user.role === "EMPLOYEE"
+  const assignedEmployee = isEmployee
     ? await prisma.employee.findUnique({
         where: { userId: session.user.id },
         select: { id: true },
       })
     : null
   const clientFilter =
-    isExecutive && assignedEmployee
+    isEmployee && assignedEmployee
       ? { assignedEmployeeId: assignedEmployee.id }
       : {}
 
@@ -211,7 +211,7 @@ export async function getClientComplianceData(clientId: string) {
   const session = await requireAuth()
 
   // EXECUTIVE permission check
-  if (session.user.role === "EXECUTIVE") {
+  if (session.user.role === "EMPLOYEE") {
     const assignedEmployee = await prisma.employee.findUnique({
       where: { userId: session.user.id },
       select: { id: true },
@@ -274,7 +274,7 @@ export async function getComplianceEventDetail(eventId: string) {
 
   if (!event) throw new Error("Compliance event not found")
 
-  if (session.user.role === "EXECUTIVE" && event.clientId) {
+  if (session.user.role === "EMPLOYEE" && event.clientId) {
     const assignedEmployee = await prisma.employee.findUnique({
       where: { userId: session.user.id },
       select: { id: true },
@@ -411,7 +411,7 @@ export async function updateComplianceWorkflowStatus(
 ): Promise<ComplianceActionState> {
   try {
     const session = await requireAuth()
-    if (session.user.role === "EXECUTIVE") {
+    if (session.user.role === "EMPLOYEE") {
       return { error: "You do not have permission to update compliance status." }
     }
 
@@ -479,7 +479,7 @@ export async function updateComplianceEventStatus(
 ): Promise<ComplianceActionState> {
   try {
     const session = await requireAuth()
-    if (session.user.role === "EXECUTIVE") {
+    if (session.user.role === "EMPLOYEE") {
       return { error: "You do not have permission to update compliance event status." }
     }
 

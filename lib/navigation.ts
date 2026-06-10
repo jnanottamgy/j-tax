@@ -16,6 +16,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Star,
   UserPlus,
   Users,
   Wallet,
@@ -37,6 +38,8 @@ export type NavGroup = {
   label: string
   items: NavItem[]
 }
+
+// ─── Full navigation tree (all roles) ────────────────────────────────────────
 
 export const navigationGroups: NavGroup[] = [
   {
@@ -179,7 +182,97 @@ export const navigationGroups: NavGroup[] = [
   },
 ]
 
-// Flat list kept for backward compatibility (command palette, etc.)
+// ─── Role-specific navigation overrides ──────────────────────────────────────
+
+/** Returns navigation groups tailored to the viewer's role. */
+export function getNavigationForRole(role: AppRole): NavGroup[] {
+  // PARTNER sees the full tree (role-filtered by canAccessRoute)
+  if (role === "PARTNER") {
+    return filterGroupsByRole(navigationGroups, role)
+  }
+
+  // MANAGER — operations + team + quotations + documents + settings
+  if (role === "MANAGER") {
+    return [
+      {
+        id: "operations",
+        label: "Operations",
+        items: [
+          { title: "Dashboard", href: "/", icon: LayoutDashboard, description: "Overview & KPIs" },
+          { title: "Clients", href: "/clients", icon: Building2, description: "Client management" },
+          { title: "Work Tracker", href: "/work-tracker", icon: ClipboardList, description: "Tasks & assignments" },
+          { title: "Compliance", href: "/compliance", icon: ShieldCheck, description: "Filing compliance" },
+          { title: "Calendar", href: "/calendar", icon: CalendarDays, description: "Compliance calendar" },
+        ],
+      },
+      {
+        id: "team",
+        label: "Team",
+        items: [
+          { title: "Employees", href: "/employees", icon: Users, description: "Your team members" },
+          { title: "Messaging", href: "/messaging", icon: MessageSquare, description: "Communications" },
+        ],
+      },
+      {
+        id: "finance",
+        label: "Finance",
+        items: [
+          { title: "Payments", href: "/payments", icon: Wallet, description: "Payment tracking" },
+          { title: "Invoices", href: "/payments/invoices", icon: Receipt, description: "Invoice management" },
+          { title: "Quotations", href: "/proposals", icon: Send, description: "Proposals & quotes" },
+        ],
+      },
+      {
+        id: "resources",
+        label: "Resources",
+        items: [
+          { title: "Documents", href: "/documents", icon: FileText, description: "Document vault" },
+          { title: "Reports", href: "/reports", icon: PieChart, description: "Analytics & exports" },
+          { title: "Settings", href: "/settings", icon: Settings, description: "Account settings" },
+        ],
+      },
+    ]
+  }
+
+  // EMPLOYEE — personal work view only
+  if (role === "EMPLOYEE") {
+    return [
+      {
+        id: "my-work",
+        label: "My Work",
+        items: [
+          { title: "My Dashboard", href: "/", icon: LayoutDashboard, description: "Your personal dashboard" },
+          { title: "My Tasks", href: "/work-tracker", icon: ClipboardList, description: "Tasks assigned to you" },
+          { title: "My Clients", href: "/clients", icon: Building2, description: "Clients you manage" },
+          { title: "Compliance Work", href: "/compliance", icon: ShieldCheck, description: "Compliance for your clients" },
+          { title: "Calendar", href: "/calendar", icon: CalendarDays, description: "Upcoming deadlines" },
+        ],
+      },
+      {
+        id: "resources",
+        label: "Resources",
+        items: [
+          { title: "Documents", href: "/documents", icon: FileText, description: "Client documents" },
+          { title: "Messaging", href: "/messaging", icon: MessageSquare, description: "Communications" },
+        ],
+      },
+      {
+        id: "personal",
+        label: "Personal",
+        items: [
+          { title: "Notifications", href: "/notifications", icon: Bell, description: "Alerts & reminders" },
+          { title: "Settings", href: "/settings", icon: Settings, description: "Your preferences" },
+        ],
+      },
+    ]
+  }
+
+  // CLIENT — handled by client portal, should not reach app layout
+  return []
+}
+
+// ─── Legacy flat exports (backward compat) ────────────────────────────────────
+
 export const mainNavigation: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
   { title: "Clients", href: "/clients", icon: Building2 },
@@ -201,6 +294,8 @@ export const systemNavigation: NavItem[] = [
   { title: "Notifications", href: "/notifications", icon: Bell },
   { title: "Settings", href: "/settings", icon: Settings },
 ]
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function isNavActive(pathname: string, href: string): boolean {
   const cleanHref = href.split("?")[0]
