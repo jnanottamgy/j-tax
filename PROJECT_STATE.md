@@ -1,8 +1,8 @@
 # J-TAX — Complete Project State Document
 
-**Last updated:** 2026-06-10 (Session 11 — 90-Day Operational Simulation + Workflow Bug Fixes)
+**Last updated:** 2026-06-10 (Session 12 — Production Launch Hardening, 8-Phase Certification)
 **Branch:** `main`
-**Last commit:** `679acce` — sim(ops): 90-day simulation — seed + 5 workflow bug fixes
+**Last commit:** `fbb38f6` — feat(hardening): production launch hardening — 8-phase certification
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
 **Test credentials:** `admin@jtax.test` / `JTax@Admin2026!` (PARTNER role)
 
@@ -246,28 +246,34 @@ All required vars set in `.env`:
 | **EMPLOYEE compliance workflow** | ✅ Done S11 | Employees can now update workflow status for their assigned clients |
 | **Notification RBAC** | ✅ Done S11 | createNotification RBAC fixed; PARTNER/MANAGER can notify any user |
 | **Client code race condition** | ✅ Done S11 | generateClientCode runs inside transaction to prevent duplicate codes |
+| **Role migration (DB)** | ✅ Done S12 | EXECUTIVE removed from DB enum via prisma db push; migration SQL idempotent |
+| **FirmSettings DB model** | ✅ Done S12 | Singleton table; PARTNER configures in Settings; env-var fallback for fresh installs |
+| **Dynamic email branding** | ✅ Done S12 | resend-provider reads from DB on every send; no restart needed after settings change |
+| **Settings PARTNER-only guard** | ✅ Done S12 | Firm Details card only rendered for PARTNER; saveFirmSettings() uses requirePartner() |
+| **RLS SQL generated** | ✅ Done S12 | 002_rls_policies.sql covers 12 tables; run in Supabase SQL editor to activate |
+| **Dev artifacts removed** | ✅ Done S12 | 22 QA reports deleted; test-client-master.ts deleted; seedEmployeesIfEmpty removed |
+| **EMPLOYEE onboarding bypass** | ✅ Done S12 | EMPLOYEE goes straight to dashboard; wizard only for PARTNER/MANAGER |
 | Automated tests | ❌ None | No Jest/Vitest/Playwright |
-| RLS policies | ❌ None | Application-layer auth only |
+| RLS activation | ⚠️ Pending | SQL generated; must be run in Supabase SQL editor to take effect |
 
 ---
 
 ## 8. REMAINING WORK (priority order)
 
-### CRITICAL — Before Production
-1. **Run DB migration** — `prisma/migrations-manual/001_rename_executive_to_employee.sql` in Supabase SQL editor. Required before any EMPLOYEE-role user logs in.
-2. **Set `FIRM_NAME` env var** — Currently defaults to "Your Tax Firm" in all outbound emails and PDFs. Set to actual firm name in Vercel/prod env.
+### CRITICAL — Before First Production User
+1. **Configure Firm Settings** — Log in as PARTNER → Settings → Firm Details. Set firm name and sender email. Without a valid `fromEmail`, email sends will fail silently.
+2. **Activate RLS** — Run `prisma/migrations-manual/002_rls_policies.sql` in Supabase SQL editor. Until then, direct API calls bypass application-layer guards.
+3. **Verify Resend sender domain** — The `fromEmail` configured in Firm Settings must be a verified domain/address in the Resend dashboard.
 
 ### HIGH — Security
-3. **Supabase RLS policies** — No row-level security. Direct Supabase API calls bypass all application guards. Risk: authenticated users can query any table directly.
 4. **Upstash Redis rate limiter** — In-memory rate limiter resets on serverless cold starts. Migration path documented in `lib/security/rate-limiter.ts`.
 
 ### MEDIUM — Testing
 5. **Playwright E2E test suite** — No automated tests. Priority scenarios: CLIENT cannot access `/`, EMPLOYEE cannot access `/payments`, EMPLOYEE sees only assigned clients, PARTNER sees all data, password reset end-to-end.
 
 ### LOW — Quality
-6. **Settings page firm-level guard** — `/settings` accessible to all staff, but firm name/GSTIN/address fields should be PARTNER-only within the page.
-7. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` in `.env` to enable real WhatsApp messaging.
-8. **Supabase `documents` bucket** — Verify in dashboard; `assertDocumentBucketExists()` creates on first upload.
+6. **WhatsApp Business API** — Set `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` in `.env` to enable real WhatsApp messaging.
+7. **Supabase `documents` bucket** — Verify exists in Supabase dashboard; `assertDocumentBucketExists()` creates on first upload automatically.
 
 ---
 
