@@ -1,10 +1,17 @@
 /**
- * WhatsApp API Integration
- * 
- * This module provides integration with WhatsApp Business API for sending messages.
- * Currently implements a mock implementation for testing purposes.
- * In production, this should be replaced with actual WhatsApp Business API integration.
+ * WhatsApp Business API Integration (Meta Cloud API)
+ *
+ * Requires env vars:
+ *   WHATSAPP_API_TOKEN       — Meta permanent access token
+ *   WHATSAPP_PHONE_NUMBER_ID — Sending phone number ID from Meta Business
+ *
+ * When those vars are absent every call returns { success: false, error: "WhatsApp not configured" }
+ * so callers degrade gracefully and the UI can surface the banner already in whatsapp-chat.tsx.
  */
+
+const WHATSAPP_API_TOKEN = process.env.WHATSAPP_API_TOKEN
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID
+const WHATSAPP_API_BASE = "https://graph.facebook.com/v19.0"
 
 export interface SendTextMessageResult {
   success: boolean
@@ -13,126 +20,120 @@ export interface SendTextMessageResult {
   error?: string
 }
 
+function notConfigured(): SendTextMessageResult {
+  return { success: false, error: "WhatsApp Business API not configured" }
+}
+
 /**
- * Send a text message via WhatsApp
- * 
- * @param phoneNumber - The recipient's phone number (with country code)
- * @param content - The message content
- * @returns Result with success status, message ID, or error
+ * Send a plain-text message via WhatsApp Cloud API.
  */
 export async function sendTextMessage(
-  _phoneNumber: string,
-  _content: string
+  phoneNumber: string,
+  content: string
 ): Promise<SendTextMessageResult> {
+  if (!WHATSAPP_API_TOKEN || !WHATSAPP_PHONE_NUMBER_ID) return notConfigured()
+
   try {
-    // Mock implementation for testing
-    // In production, replace with actual WhatsApp Business API call
-    
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    
-    // Simulate 95% success rate
-    const shouldSucceed = Math.random() > 0.05
-    
-    if (shouldSucceed) {
-      // Generate a mock message ID
-      const messageId = `wa_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      
-      return {
-        success: true,
-        messageId,
-        status: "sent",
+    const response = await fetch(
+      `${WHATSAPP_API_BASE}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: phoneNumber.replace(/\D/g, ""),
+          type: "text",
+          text: { body: content },
+        }),
       }
-    } else {
-      // Simulate a failure
-      const errors = [
-        "Phone number not registered on WhatsApp",
-        "Rate limit exceeded",
-        "Invalid phone number format",
-        "API timeout",
-        "Authentication failed",
-      ]
-      
-      const error = errors[Math.floor(Math.random() * errors.length)]
-      
-      return {
-        success: false,
-        error,
-      }
+    )
+
+    const json = await response.json()
+
+    if (!response.ok) {
+      const errMsg = json?.error?.message ?? `HTTP ${response.status}`
+      return { success: false, error: errMsg }
     }
-  } catch (error) {
+
+    const messageId: string = json?.messages?.[0]?.id ?? ""
+    return { success: true, messageId, status: "sent" }
+  } catch (err) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: err instanceof Error ? err.message : "Unknown error",
     }
   }
 }
 
 /**
- * Send a template message via WhatsApp
- * 
- * @param phoneNumber - The recipient's phone number (with country code)
- * @param templateName - The WhatsApp template name
- * @param variables - Template variables
- * @returns Result with success status, message ID, or error
+ * Send a pre-approved template message via WhatsApp Cloud API.
  */
 export async function sendTemplateMessage(
-  _phoneNumber: string,
-  _templateName: string,
-  _variables: Record<string, string>
+  phoneNumber: string,
+  templateName: string,
+  variables: Record<string, string>
 ): Promise<SendTextMessageResult> {
+  if (!WHATSAPP_API_TOKEN || !WHATSAPP_PHONE_NUMBER_ID) return notConfigured()
+
+  const components =
+    Object.keys(variables).length > 0
+      ? [
+          {
+            type: "body",
+            parameters: Object.values(variables).map((v) => ({
+              type: "text",
+              text: v,
+            })),
+          },
+        ]
+      : []
+
   try {
-    // Mock implementation for testing
-    // In production, replace with actual WhatsApp Business API call
-    
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    
-    const shouldSucceed = Math.random() > 0.05
-    
-    if (shouldSucceed) {
-      const messageId = `wa_template_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      
-      return {
-        success: true,
-        messageId,
-        status: "sent",
+    const response = await fetch(
+      `${WHATSAPP_API_BASE}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: phoneNumber.replace(/\D/g, ""),
+          type: "template",
+          template: { name: templateName, language: { code: "en" }, components },
+        }),
       }
-    } else {
-      return {
-        success: false,
-        error: "Template message failed to send",
-      }
+    )
+
+    const json = await response.json()
+
+    if (!response.ok) {
+      const errMsg = json?.error?.message ?? `HTTP ${response.status}`
+      return { success: false, error: errMsg }
     }
-  } catch (error) {
+
+    const messageId: string = json?.messages?.[0]?.id ?? ""
+    return { success: true, messageId, status: "sent" }
+  } catch (err) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: err instanceof Error ? err.message : "Unknown error",
     }
   }
 }
 
 /**
- * Check message delivery status
- * 
- * @param messageId - The WhatsApp message ID
- * @returns Delivery status
+ * Check message delivery status via WhatsApp Cloud API webhook data.
+ * The Cloud API pushes status updates via webhooks — polling is not supported.
+ * Returns "sent" as a safe default; integrate webhooks to get real delivery status.
  */
 export async function getMessageStatus(_messageId: string): Promise<{
   status: "sent" | "delivered" | "read" | "failed"
   timestamp?: Date
 }> {
-  // Mock implementation
-  // In production, call WhatsApp Business API to check status
-  
-  const statuses: Array<"sent" | "delivered" | "read" | "failed"> = [
-    "sent",
-    "delivered",
-    "read",
-    "failed",
-  ]
-  
-  return {
-    status: statuses[Math.floor(Math.random() * statuses.length)],
-    timestamp: new Date(),
-  }
+  return { status: "sent", timestamp: new Date() }
 }

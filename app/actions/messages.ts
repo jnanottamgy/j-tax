@@ -152,7 +152,7 @@ export async function createMessage(
     const sendResult = await notificationService.send({
       channel: "email",
       to: recipient,
-      subject: "Message from TaxWise Consultants",
+      subject: `Message from ${process.env.FIRM_NAME || "Your Tax Firm"}`,
       content: parsed.data.content,
       metadata: {
         messageId: message.id,
@@ -398,7 +398,7 @@ export async function sendBulkReminders(
       const sendResult = await notificationService.send({
         channel: "email",
         to: recipient,
-        subject: `${template.type.replace(/_/g, " ")} - TaxWise Consultants`,
+        subject: `${template.type.replace(/_/g, " ")} - ${process.env.FIRM_NAME || "Your Tax Firm"}`,
         content,
         metadata: {
           messageId: message.id,

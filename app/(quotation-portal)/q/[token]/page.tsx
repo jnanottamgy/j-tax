@@ -165,7 +165,9 @@ export default async function QuotationPortalPage({
         />
 
         <p className="text-center text-xs text-slate-400 pb-4">
-          Questions? Contact us at <a href={`mailto:${process.env.FROM_EMAIL || "contact@taxwiseconsultants.com"}`} className="underline">{process.env.FROM_EMAIL || "contact@taxwiseconsultants.com"}</a>
+          {process.env.FROM_EMAIL && (
+            <>Questions? Contact us at <a href={`mailto:${process.env.FROM_EMAIL}`} className="underline">{process.env.FROM_EMAIL}</a></>
+          )}
         </p>
       </div>
     </div>

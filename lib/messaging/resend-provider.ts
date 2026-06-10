@@ -15,7 +15,9 @@ import type {
 
 const RESEND_API_URL = "https://api.resend.com/emails"
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const FROM_EMAIL = process.env.FROM_EMAIL || "noreply@taxwiseconsultants.com"
+const FROM_EMAIL = process.env.FROM_EMAIL || ""
+const FIRM_NAME = process.env.FIRM_NAME || "Your Tax Firm"
+const FIRM_PHONE = process.env.FIRM_PHONE || ""
 
 export class ResendProvider implements NotificationProvider {
   readonly providerType = "email" as const
@@ -41,7 +43,7 @@ export class ResendProvider implements NotificationProvider {
       }
 
       // Sanitize subject to prevent email injection
-      const sanitizedSubject = this.sanitizeContent(data.subject || "Notification from TaxWise Consultants")
+      const sanitizedSubject = this.sanitizeContent(data.subject || `Notification from ${FIRM_NAME}`)
 
       const response = await fetch(RESEND_API_URL, {
         method: "POST",
@@ -222,19 +224,19 @@ export class ResendProvider implements NotificationProvider {
   private getTemplate(templateName: string): { subject: string; html: string } | null {
     const templates: Record<string, { subject: string; html: string }> = {
       payment_reminder: {
-        subject: "Payment Reminder - TaxWise Consultants",
+        subject: `Payment Reminder - ${FIRM_NAME}`,
         html: this.getPaymentReminderTemplate(),
       },
       compliance_reminder: {
-        subject: "Compliance Reminder - TaxWise Consultants",
+        subject: `Compliance Reminder - ${FIRM_NAME}`,
         html: this.getComplianceReminderTemplate(),
       },
       document_request: {
-        subject: "Document Request - TaxWise Consultants",
+        subject: `Document Request - ${FIRM_NAME}`,
         html: this.getDocumentRequestTemplate(),
       },
       task_notification: {
-        subject: "Task Notification - TaxWise Consultants",
+        subject: `Task Notification - ${FIRM_NAME}`,
         html: this.getTaskNotificationTemplate(),
       },
     }
@@ -268,7 +270,7 @@ export class ResendProvider implements NotificationProvider {
 <body>
   <div class="container">
     <div class="header">
-      <h1>TaxWise Consultants</h1>
+      <h1>${FIRM_NAME}</h1>
     </div>
     <div class="content">
       <p>Dear {{client_name}},</p>
@@ -290,8 +292,8 @@ export class ResendProvider implements NotificationProvider {
       <p>Thank you for your business.</p>
       
       <div class="footer">
-        <p>TaxWise Consultants</p>
-        <p>Email: contact@taxwiseconsultants.com | Phone: +91-XXX-XXX-XXXX</p>
+        <p>${FIRM_NAME}</p>
+        <p>Email: ${FROM_EMAIL}${FIRM_PHONE ? ` | Phone: ${FIRM_PHONE}` : ""}</p>
         <p>This is an automated email. Please do not reply.</p>
       </div>
     </div>
@@ -326,7 +328,7 @@ export class ResendProvider implements NotificationProvider {
 <body>
   <div class="container">
     <div class="header">
-      <h1>TaxWise Consultants</h1>
+      <h1>${FIRM_NAME}</h1>
     </div>
     <div class="content">
       <p>Dear {{client_name}},</p>
@@ -343,8 +345,8 @@ export class ResendProvider implements NotificationProvider {
       <p>If you need any assistance or have questions, please contact our team.</p>
       
       <div class="footer">
-        <p>TaxWise Consultants</p>
-        <p>Email: contact@taxwiseconsultants.com | Phone: +91-XXX-XXX-XXXX</p>
+        <p>${FIRM_NAME}</p>
+        <p>Email: ${FROM_EMAIL}${FIRM_PHONE ? ` | Phone: ${FIRM_PHONE}` : ""}</p>
         <p>This is an automated email. Please do not reply.</p>
       </div>
     </div>
@@ -381,7 +383,7 @@ export class ResendProvider implements NotificationProvider {
 <body>
   <div class="container">
     <div class="header">
-      <h1>TaxWise Consultants</h1>
+      <h1>${FIRM_NAME}</h1>
     </div>
     <div class="content">
       <p>Dear {{client_name}},</p>
@@ -400,8 +402,8 @@ export class ResendProvider implements NotificationProvider {
       <p>If you have any questions about these requirements, please don't hesitate to reach out.</p>
       
       <div class="footer">
-        <p>TaxWise Consultants</p>
-        <p>Email: contact@taxwiseconsultants.com | Phone: +91-XXX-XXX-XXXX</p>
+        <p>${FIRM_NAME}</p>
+        <p>Email: ${FROM_EMAIL}${FIRM_PHONE ? ` | Phone: ${FIRM_PHONE}` : ""}</p>
         <p>This is an automated email. Please do not reply.</p>
       </div>
     </div>
@@ -435,7 +437,7 @@ export class ResendProvider implements NotificationProvider {
 <body>
   <div class="container">
     <div class="header">
-      <h1>TaxWise Consultants</h1>
+      <h1>${FIRM_NAME}</h1>
     </div>
     <div class="content">
       <p>Dear {{recipient_name}},</p>
@@ -452,8 +454,8 @@ export class ResendProvider implements NotificationProvider {
       <p>Please complete this task by the due date. If you need any assistance, please contact your manager.</p>
       
       <div class="footer">
-        <p>TaxWise Consultants</p>
-        <p>Email: contact@taxwiseconsultants.com | Phone: +91-XXX-XXX-XXXX</p>
+        <p>${FIRM_NAME}</p>
+        <p>Email: ${FROM_EMAIL}${FIRM_PHONE ? ` | Phone: ${FIRM_PHONE}` : ""}</p>
         <p>This is an automated email. Please do not reply.</p>
       </div>
     </div>
