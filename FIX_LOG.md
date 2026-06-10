@@ -1,6 +1,6 @@
 # J-TAX Fix Log
 
-**Last updated:** 2026-06-10 (Session 11 — 90-Day Operational Simulation + Workflow Bug Fixes)
+**Last updated:** 2026-06-10 (Session 12 — Production Launch Hardening, 8-Phase Certification)
 **Branch:** `main`
 
 ---
@@ -828,3 +828,81 @@ Replaced all 12 hardcoded instances across payment reminder, compliance reminder
 - 42 routes, 0 TypeScript errors, 0 build errors ✅
 - ESLint: 0 errors, 260 warnings (all `warn`-level) ✅
 - Seed: 10 employees, 100 clients, 500 tasks, 200 invoices, 1000 notifications ✅
+
+---
+
+## SESSION 12 — PRODUCTION LAUNCH HARDENING (8-PHASE CERTIFICATION)
+
+---
+
+### HARD-001 — EXECUTIVE References Cleaned from Runtime Code
+
+- **Severity:** Medium — stale comments in search.ts, compliance.ts, invoices.ts still said "EXECUTIVE"
+- **Fix:** Updated all comments to say EMPLOYEE; enhanced `001_rename_executive_to_employee.sql` with idempotent DO block and verification queries
+- **DB:** `prisma db push --accept-data-loss` removed EXECUTIVE from the `Role` enum and created `firm_settings` table atomically
+- **Files:** `app/actions/search.ts`, `app/actions/compliance.ts`, `app/actions/invoices.ts`, `prisma/migrations-manual/001_rename_executive_to_employee.sql`
+
+---
+
+### HARD-002 — Firm Settings DB Model + Dynamic Email Branding
+
+- **Severity:** Critical — emails sent `"Your Tax Firm <>"` as sender; firm name was a stale module-level constant read once at startup
+- **Root cause:** `resend-provider.ts` used `const FIRM_NAME = process.env.FIRM_NAME` at module load time; no DB storage for firm config; no way for PARTNER to configure sender email without env var changes
+- **Fix:**
+  - Added `FirmSettings` model to `prisma/schema.prisma` (singleton row, `id = "singleton"`)
+  - Created `lib/firm-settings.ts`: `getFirmSettings()` reads DB row, falls back to env vars; `upsertFirmSettings()` for writes
+  - Rewrote `lib/messaging/resend-provider.ts`: async `getFirmSettings()` call in every `send()` / `sendTemplate()` — no restart needed after settings change; sender formatted as `"Firm Name <email>"`; optional `reply_to` header; all 4 email templates rebuilt with dynamic branding
+  - Added `saveFirmSettings()` server action (`requirePartner()` guard, Zod validation) and `loadFirmSettings()` to `app/actions/settings.ts`
+- **Files:** `prisma/schema.prisma`, `lib/firm-settings.ts` (new), `lib/messaging/resend-provider.ts`, `app/actions/settings.ts`
+
+---
+
+### HARD-003 — RLS Policies Generated
+
+- **Severity:** High — no row-level security; direct Supabase API calls bypassed all application guards
+- **Fix:** Created `prisma/migrations-manual/002_rls_policies.sql` covering 12 tables:
+  - `auth.user_role()` and `auth.employee_id()` helper functions
+  - PARTNER: full access to all tables
+  - MANAGER: full access except audit_logs (PARTNER-only)
+  - EMPLOYEE: assigned-client scoped read/write; own notifications only; self employee record only
+  - All tables: RLS enabled; service-role key (Next.js backend) bypasses automatically
+- **Status:** SQL generated and committed; must be run in Supabase SQL editor to activate
+- **File:** `prisma/migrations-manual/002_rls_policies.sql` (new)
+
+---
+
+### HARD-004 — Settings Page PARTNER-Only Firm Section
+
+- **Severity:** High — firm name, GSTIN, sender email were accessible to all staff (or simply not configurable at all)
+- **Fix:**
+  - `app/(app)/settings/page.tsx`: now async; loads firm settings + user role server-side; passes both to client component
+  - `components/settings/settings-page-client.tsx` rewritten: Firm Details card (name, sender email, reply-to, phone, GSTIN, PAN, website, address) visible only to PARTNER; MANAGER sees read-only summary; Billing card hidden from non-PARTNER; `useActionState` wired to `saveFirmSettings`
+- **Files:** `app/(app)/settings/page.tsx`, `components/settings/settings-page-client.tsx`
+
+---
+
+### HARD-005 — Dev Artifacts Removed
+
+- **Severity:** Medium — `seedEmployeesIfEmpty()` was called on every `/clients` page load in production, silently injecting 4 fake employees if none existed
+- **Fix:**
+  - Deleted `seedEmployeesIfEmpty()` from `lib/clients/queries.ts`
+  - Removed all callers: `app/actions/clients.ts`, `app/api/clients/route.ts`
+  - Deleted `test-client-master.ts` (dev QA script checked into repo)
+  - Removed 22 stale `*_REPORT.md` files from repo root
+- **Files:** `lib/clients/queries.ts`, `app/actions/clients.ts`, `app/api/clients/route.ts`, `test-client-master.ts` (deleted), 22 report files (deleted)
+
+---
+
+### HARD-006 — EMPLOYEE Role Shown Onboarding Wizard
+
+- **Severity:** Medium — EMPLOYEE users landing for the first time were shown the firm-setup onboarding wizard (intended for PARTNER/MANAGER only); the wizard asked for firm name, employee setup, etc. — irrelevant to staff
+- **Fix:** `app/(app)/layout.tsx` — `needsOnboarding` now checks `role === "PARTNER" || role === "MANAGER"` before evaluating `onboardingStatus.completed`; EMPLOYEE skips the wizard entirely and goes straight to their dashboard
+- **File:** `app/(app)/layout.tsx`
+
+---
+
+### BUILD STATUS (Session 12)
+- 42 routes, 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 250 warnings (down from 260; test file + 22 report deletions) ✅
+- DB: EXECUTIVE enum value removed; `firm_settings` table created ✅
+- RLS SQL: generated, committed, pending Supabase activation ✅
