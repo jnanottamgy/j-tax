@@ -173,16 +173,13 @@ export async function createNotification(data: {
   actionType?: string
 }) {
   const session = await requireAuth()
-  
-  // RBAC: Users can only create notifications for themselves or subordinates
-  // For now, we allow any authenticated user to create notifications for themselves
-  // In a real app, you'd check if the target userId is authorized
-  
-  // Security fix: Users can only create notifications for themselves
-  if (data.userId !== session.user.id) {
+
+  // PARTNER and MANAGER can create notifications for any user (task assignments,
+  // compliance alerts, payment received, etc.). EMPLOYEE can only self-notify.
+  if (session.user.role === "EMPLOYEE" && data.userId !== session.user.id) {
     return { success: false, error: "You can only create notifications for yourself" }
   }
-  
+
   const notification = await prisma.notification.create({
     data: {
       userId: data.userId,

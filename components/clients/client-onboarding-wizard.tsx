@@ -136,14 +136,25 @@ export function ClientOnboardingWizard({
   )
 
   const servicesJson = JSON.stringify(selectedServices)
-  const canContinue = getStepValidity(step, {
+  const stepChecks = {
     hasName: basic.name.trim().length >= 2,
     hasService: selectedServices.length > 0,
     hasConfiguredServices: selectedServices.every(
       (service) => services[service.serviceType]?.frequency
     ),
     hasChecklistReviewed: checklistReview.reviewed,
-  })
+  }
+  const canContinue = getStepValidity(step, stepChecks)
+
+  // A step is accessible if you can reach it: all preceding steps are valid
+  function isStepAccessible(index: number): boolean {
+    if (index === 0) return true
+    if (index === 1) return stepChecks.hasName
+    if (index === 2) return stepChecks.hasName && stepChecks.hasService
+    if (index === 3) return stepChecks.hasName && stepChecks.hasService && stepChecks.hasConfiguredServices
+    if (index === 4) return stepChecks.hasName && stepChecks.hasService && stepChecks.hasConfiguredServices && stepChecks.hasChecklistReviewed
+    return false
+  }
 
   useEffect(() => {
     if (state.success) {
@@ -265,17 +276,24 @@ export function ClientOnboardingWizard({
                   const Icon = item.icon
                   const isActive = step === index
                   const isDone = step > index
+                  const accessible = isStepAccessible(index)
 
                   return (
                     <button
                       key={item.title}
                       type="button"
-                      onClick={() => setStep(index)}
+                      onClick={() => {
+                        if (accessible) setStep(index)
+                      }}
+                      disabled={!accessible}
+                      title={!accessible ? "Complete previous steps first" : undefined}
                       className={cn(
                         "group flex min-h-16 items-center gap-3 rounded-xl border p-3 text-left transition-all duration-300",
                         isActive
                           ? "border-primary/30 bg-primary/10 text-foreground shadow-[0_10px_34px_-20px_oklch(0.72_0.14_230/70%)]"
-                          : "border-white/[0.06] bg-white/[0.025] text-muted-foreground hover:border-white/[0.12] hover:text-foreground"
+                          : accessible
+                            ? "border-white/[0.06] bg-white/[0.025] text-muted-foreground hover:border-white/[0.12] hover:text-foreground"
+                            : "border-white/[0.04] bg-white/[0.01] text-muted-foreground/40 cursor-not-allowed"
                       )}
                     >
                       <span

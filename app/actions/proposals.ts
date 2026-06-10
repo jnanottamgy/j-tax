@@ -15,8 +15,8 @@ import {
   type QuotationEmailVars,
 } from "@/lib/quotations/email-templates"
 
-const FIRM_NAME = process.env.FIRM_NAME || "TaxWise Consultants"
-const FIRM_EMAIL = process.env.FROM_EMAIL || "noreply@taxwiseconsultants.com"
+const FIRM_NAME = process.env.FIRM_NAME || "Your Tax Firm"
+const FIRM_EMAIL = process.env.FROM_EMAIL || ""
 const _FIRM_PHONE = process.env.FIRM_PHONE || "+91-XXXXXXXXXX"
 const _FIRM_ADDRESS = process.env.FIRM_ADDRESS || "India"
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"

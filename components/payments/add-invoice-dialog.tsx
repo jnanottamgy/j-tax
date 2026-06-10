@@ -89,8 +89,10 @@ export function AddInvoiceDialog({
     formData.clientId.length > 0 &&
     formData.invoiceNumber.trim().length > 0 &&
     formData.amount.trim().length > 0 &&
+    parseFloat(formData.amount) > 0 &&
     formData.issueDate.length > 0 &&
-    formData.dueDate.length > 0
+    formData.dueDate.length > 0 &&
+    new Date(formData.dueDate) >= new Date(formData.issueDate)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

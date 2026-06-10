@@ -146,6 +146,28 @@ export async function createTask(
       }
     } catch {}
 
+    // In-app notification for the assigned employee
+    if (newTask.assignedEmployeeId) {
+      try {
+        const assignedEmployee = await prisma.employee.findUnique({
+          where: { id: newTask.assignedEmployeeId },
+          select: { userId: true },
+        })
+        if (assignedEmployee?.userId) {
+          await prisma.notification.create({
+            data: {
+              userId: assignedEmployee.userId,
+              title: "New Task Assigned",
+              message: `You have been assigned: "${newTask.title}" for ${newTask.client.name}`,
+              type: "TASK_ASSIGNED",
+              entityType: "TASK",
+              entityId: newTask.id,
+            },
+          })
+        }
+      } catch {}
+    }
+
     revalidatePath("/work-tracker")
 
     return { success: true }
@@ -310,9 +332,10 @@ export async function deleteTask(taskId: string): Promise<TaskActionState> {
   try {
     await requirePartnerOrManager()
 
-    await prisma.task.delete({
-      where: { id: taskId },
-    })
+    const task = await prisma.task.findUnique({ where: { id: taskId } })
+    if (!task) return { error: "Task not found." }
+
+    await prisma.task.delete({ where: { id: taskId } })
 
     revalidatePath("/work-tracker")
 

@@ -6,8 +6,11 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import {
-  Dialog, DialogContent, DialogHeader,
-  DialogTitle, DialogDescription,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -38,6 +41,18 @@ export function AddComplianceEventDialog({
   const [state, formAction, isPending] = useActionState(createComplianceEvent, initialState)
   const [clientList, setClientList] = useState(clients)
 
+  // Controlled fields for canSubmit guard
+  const [title, setTitle] = useState("")
+  const [dueDate, setDueDate] = useState("")
+
+  // Reset controlled fields when dialog opens
+  useEffect(() => {
+    if (open) {
+      setTitle("")
+      setDueDate("")
+    }
+  }, [open])
+
   // Load clients if not provided
   useEffect(() => {
     if (clients.length === 0 && open) {
@@ -58,6 +73,8 @@ export function AddComplianceEventDialog({
     }
   }, [state, onSuccess])
 
+  const canSubmit = title.trim().length >= 1 && dueDate.length > 0 && !isPending
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg border-white/[0.08] bg-popover/95 backdrop-blur-2xl max-h-[90vh] overflow-y-auto">
@@ -71,12 +88,19 @@ export function AddComplianceEventDialog({
         <form action={formAction} className="space-y-4 pt-2">
           {/* Title */}
           <div className="space-y-2">
-            <Label htmlFor="ce-title">Title <span className="text-destructive">*</span></Label>
+            <Label htmlFor="ce-title">
+              Title <span className="text-destructive">*</span>
+            </Label>
             <Input
-              id="ce-title" name="title"
+              id="ce-title"
+              name="title"
               placeholder="e.g. GSTR-1 Filing — Apr 2026"
               className="h-10 rounded-xl"
               required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              aria-invalid={!!state.fieldErrors?.title}
+              disabled={isPending}
             />
             {state.fieldErrors?.title && (
               <p className="text-xs text-destructive">{state.fieldErrors.title[0]}</p>
@@ -86,26 +110,36 @@ export function AddComplianceEventDialog({
           {/* Type + Workflow Status */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="ce-type">Filing Type <span className="text-destructive">*</span></Label>
+              <Label htmlFor="ce-type">
+                Filing Type <span className="text-destructive">*</span>
+              </Label>
               <select
-                id="ce-type" name="type"
+                id="ce-type"
+                name="type"
                 className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
                 defaultValue="CUSTOM"
+                disabled={isPending}
               >
                 {COMPLIANCE_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="ce-workflow">Status</Label>
               <select
-                id="ce-workflow" name="workflowStatus"
+                id="ce-workflow"
+                name="workflowStatus"
                 className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
                 defaultValue="NOT_STARTED"
+                disabled={isPending}
               >
                 {WORKFLOW_STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -114,11 +148,19 @@ export function AddComplianceEventDialog({
           {/* Due Date + Filing Period */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="ce-due">Due Date <span className="text-destructive">*</span></Label>
+              <Label htmlFor="ce-due">
+                Due Date <span className="text-destructive">*</span>
+              </Label>
               <Input
-                id="ce-due" name="dueDate" type="date"
+                id="ce-due"
+                name="dueDate"
+                type="date"
                 className="h-10 rounded-xl"
                 required
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                aria-invalid={!!state.fieldErrors?.dueDate}
+                disabled={isPending}
               />
               {state.fieldErrors?.dueDate && (
                 <p className="text-xs text-destructive">{state.fieldErrors.dueDate[0]}</p>
@@ -127,9 +169,11 @@ export function AddComplianceEventDialog({
             <div className="space-y-2">
               <Label htmlFor="ce-period">Filing Period</Label>
               <Input
-                id="ce-period" name="filingPeriod"
+                id="ce-period"
+                name="filingPeriod"
                 placeholder="e.g. Apr 2026 / Q1 FY26"
                 className="h-10 rounded-xl"
+                disabled={isPending}
               />
             </div>
           </div>
@@ -138,13 +182,17 @@ export function AddComplianceEventDialog({
           <div className="space-y-2">
             <Label htmlFor="ce-client">Client</Label>
             <select
-              id="ce-client" name="clientId"
+              id="ce-client"
+              name="clientId"
               className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
               defaultValue={defaultClientId ?? ""}
+              disabled={isPending}
             >
               <option value="">— No specific client —</option>
               {clientList.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
             </select>
           </div>
@@ -153,19 +201,30 @@ export function AddComplianceEventDialog({
           <div className="space-y-2">
             <Label htmlFor="ce-reminder">Reminder (days before due)</Label>
             <Input
-              id="ce-reminder" name="reminderDays" type="number"
-              min="0" max="90" defaultValue="7"
+              id="ce-reminder"
+              name="reminderDays"
+              type="number"
+              min="1"
+              max="90"
+              defaultValue="7"
               className="h-10 rounded-xl"
+              disabled={isPending}
             />
+            {state.fieldErrors?.reminderDays && (
+              <p className="text-xs text-destructive">{state.fieldErrors.reminderDays[0]}</p>
+            )}
           </div>
 
           {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="ce-desc">Description</Label>
             <Textarea
-              id="ce-desc" name="description"
-              placeholder="Optional notes about this filing..."
-              rows={3} className="rounded-xl"
+              id="ce-desc"
+              name="description"
+              placeholder="Optional notes about this filing…"
+              rows={3}
+              className="rounded-xl"
+              disabled={isPending}
             />
           </div>
 
@@ -173,27 +232,41 @@ export function AddComplianceEventDialog({
           <div className="space-y-2">
             <Label htmlFor="ce-notes">Internal Notes</Label>
             <Textarea
-              id="ce-notes" name="notes"
-              placeholder="Internal team notes..."
-              rows={2} className="rounded-xl"
+              id="ce-notes"
+              name="notes"
+              placeholder="Internal team notes…"
+              rows={2}
+              className="rounded-xl"
+              disabled={isPending}
             />
           </div>
 
           {/* Statutory toggle */}
           <div className="flex items-center gap-3">
             <input
-              type="checkbox" id="ce-statutory" name="isStatutory"
-              value="true" defaultChecked
+              type="checkbox"
+              id="ce-statutory"
+              name="isStatutory"
+              value="true"
+              defaultChecked
               className="h-4 w-4 rounded border-input"
+              disabled={isPending}
             />
             <Label htmlFor="ce-statutory" className="cursor-pointer">
               Statutory filing (government mandated)
             </Label>
           </div>
 
+          {state.error && (
+            <p className="text-sm text-destructive rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2">
+              {state.error}
+            </p>
+          )}
+
           <div className="flex gap-2 pt-2">
             <Button
-              type="button" variant="outline"
+              type="button"
+              variant="outline"
               className="flex-1 h-10 rounded-xl"
               onClick={() => onOpenChange(false)}
               disabled={isPending}
@@ -203,11 +276,16 @@ export function AddComplianceEventDialog({
             <Button
               type="submit"
               className="flex-1 h-10 rounded-xl btn-glow"
-              disabled={isPending}
+              disabled={!canSubmit}
             >
               {isPending ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating...</>
-              ) : "Create Event"}
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Creating…
+                </>
+              ) : (
+                "Create Event"
+              )}
             </Button>
           </div>
         </form>

@@ -65,8 +65,9 @@ export function TemplateBuilder({
   const [newVariable, setNewVariable] = useState("")
 
   const handleAddVariable = () => {
-    if (newVariable && !variables.includes(newVariable)) {
-      setVariables([...variables, newVariable])
+    const trimmed = newVariable.trim()
+    if (trimmed && !variables.includes(trimmed)) {
+      setVariables([...variables, trimmed])
       setNewVariable("")
     }
   }

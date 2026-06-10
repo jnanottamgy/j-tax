@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { requireAuth } from "@/lib/auth/guards"
+import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
 
 export async function getOnboardingStatus() {
@@ -45,43 +45,43 @@ export async function updateOnboardingStep(step: number) {
 
 export async function completeOnboarding() {
   const session = await requireAuth()
-  
+
   await prisma.user.upsert({
     where: { id: session.user.id },
-    update: { onboardingCompleted: true, onboardingStep: 5 },
+    update: { onboardingCompleted: true, onboardingStep: 6 },
     create: {
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
       role: session.user.role as any,
       onboardingCompleted: true,
-      onboardingStep: 5,
+      onboardingStep: 6,
     },
   })
 
   revalidatePath("/")
-  
+
   return { success: true }
 }
 
 export async function skipOnboarding() {
   const session = await requireAuth()
-  
+
   await prisma.user.upsert({
     where: { id: session.user.id },
-    update: { onboardingCompleted: true, onboardingStep: 5 },
+    update: { onboardingCompleted: true, onboardingStep: 6 },
     create: {
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
       role: session.user.role as any,
       onboardingCompleted: true,
-      onboardingStep: 5,
+      onboardingStep: 6,
     },
   })
 
   revalidatePath("/")
-  
+
   return { success: true }
 }
 
@@ -230,14 +230,132 @@ export async function saveNotificationPreferences(data: {
 
   await prisma.user.upsert({
     where: { id: session.user.id },
-    update: { onboardingStep: 5, onboardingCompleted: true },
+    update: { onboardingStep: 5 },
     create: {
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
       role: session.user.role,
       onboardingStep: 5,
-      onboardingCompleted: true,
+    },
+  })
+
+  revalidatePath("/")
+  return { success: true }
+}
+
+export async function createEmployeeFromOnboarding(data: {
+  name: string
+  email: string
+  department?: string
+}): Promise<{ success: boolean; error?: string; employeeId?: string }> {
+  try {
+    await requirePartnerOrManager()
+  } catch {
+    return { success: false, error: "Permission denied." }
+  }
+
+  if (!data.name?.trim() || !data.email?.trim()) {
+    return { success: false, error: "Name and email are required." }
+  }
+
+  try {
+    const existing = await prisma.employee.findUnique({ where: { email: data.email.trim() } })
+    if (existing) {
+      return { success: false, error: "An employee with this email already exists." }
+    }
+
+    const linkedUser = await prisma.user.findUnique({
+      where: { email: data.email.trim() },
+      select: { id: true },
+    })
+
+    const employee = await prisma.employee.create({
+      data: {
+        name: data.name.trim(),
+        email: data.email.trim(),
+        department: data.department?.trim() || null,
+        isActive: true,
+        userId: linkedUser?.id ?? null,
+      },
+    })
+
+    revalidatePath("/employees")
+    return { success: true, employeeId: employee.id }
+  } catch (error) {
+    console.error("Failed to create employee during onboarding:", error)
+    return { success: false, error: "Failed to create employee. Please try again." }
+  }
+}
+
+export async function createClientFromOnboarding(data: {
+  name: string
+  email?: string
+  phone?: string
+  gstin?: string
+}): Promise<{ success: boolean; error?: string; clientId?: string; clientName?: string }> {
+  try {
+    await requirePartnerOrManager()
+  } catch {
+    return { success: false, error: "Permission denied." }
+  }
+
+  if (!data.name?.trim()) {
+    return { success: false, error: "Client name is required." }
+  }
+
+  try {
+    const count = await prisma.client.count()
+    const clientCode = `CLI-${String(count + 1).padStart(4, "0")}`
+
+    const client = await prisma.client.create({
+      data: {
+        name: data.name.trim(),
+        clientCode,
+        email: data.email?.trim() || null,
+        phone: data.phone?.trim() || null,
+        gstin: data.gstin?.trim().toUpperCase() || null,
+        status: "ACTIVE",
+        priority: "MEDIUM",
+      },
+    })
+
+    revalidatePath("/clients")
+    return { success: true, clientId: client.id, clientName: client.name }
+  } catch (error) {
+    console.error("Failed to create client during onboarding:", error)
+    return { success: false, error: "Failed to create client. Please try again." }
+  }
+}
+
+export async function saveEmailConfiguration(data: {
+  fromEmail?: string
+  emailEnabled: boolean
+  whatsappEnabled: boolean
+  reminderFrequency: string
+}) {
+  const session = await requireAuth()
+
+  const { createClient } = await import("@/lib/supabase/server")
+  const supabase = await createClient()
+  await supabase.auth.updateUser({
+    data: {
+      notification_email: data.emailEnabled,
+      notification_whatsapp: data.whatsappEnabled,
+      notification_reminder_frequency: data.reminderFrequency,
+      onboarding_from_email: data.fromEmail?.trim() || null,
+    },
+  })
+
+  await prisma.user.upsert({
+    where: { id: session.user.id },
+    update: { onboardingStep: 5 },
+    create: {
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      role: session.user.role,
+      onboardingStep: 5,
     },
   })
 

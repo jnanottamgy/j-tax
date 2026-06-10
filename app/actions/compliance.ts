@@ -411,8 +411,27 @@ export async function updateComplianceWorkflowStatus(
 ): Promise<ComplianceActionState> {
   try {
     const session = await requireAuth()
+
+    // EMPLOYEE can update workflow status only for compliance events belonging to their clients
     if (session.user.role === "EMPLOYEE") {
-      return { error: "You do not have permission to update compliance status." }
+      const assignedEmployee = await prisma.employee.findUnique({
+        where: { userId: session.user.id },
+        select: { id: true },
+      })
+      if (!assignedEmployee) {
+        return { error: "No employee record found for your account." }
+      }
+      const event = await prisma.complianceEvent.findUnique({
+        where: { id: eventId },
+        select: { clientId: true },
+      })
+      if (!event?.clientId) {
+        return { error: "Compliance event not found or not linked to a client." }
+      }
+      const client = await prisma.client.findUnique({ where: { id: event.clientId } })
+      if (!client || client.assignedEmployeeId !== assignedEmployee.id) {
+        return { error: "You can only update compliance events for your assigned clients." }
+      }
     }
 
     const updateData: any = { workflowStatus }
@@ -479,8 +498,27 @@ export async function updateComplianceEventStatus(
 ): Promise<ComplianceActionState> {
   try {
     const session = await requireAuth()
+
+    // EMPLOYEE can update status only for compliance events of their assigned clients
     if (session.user.role === "EMPLOYEE") {
-      return { error: "You do not have permission to update compliance event status." }
+      const assignedEmployee = await prisma.employee.findUnique({
+        where: { userId: session.user.id },
+        select: { id: true },
+      })
+      if (!assignedEmployee) {
+        return { error: "No employee record found for your account." }
+      }
+      const event = await prisma.complianceEvent.findUnique({
+        where: { id: eventId },
+        select: { clientId: true },
+      })
+      if (!event?.clientId) {
+        return { error: "Compliance event not found or not linked to a client." }
+      }
+      const client = await prisma.client.findUnique({ where: { id: event.clientId } })
+      if (!client || client.assignedEmployeeId !== assignedEmployee.id) {
+        return { error: "You can only update compliance events for your assigned clients." }
+      }
     }
 
     const updateData: any = { status }

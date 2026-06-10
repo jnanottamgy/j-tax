@@ -364,7 +364,7 @@ export async function sendBulkReminders(
         id: { in: clientIds },
         OR: [
           { email: { not: null } },
-          { phoneNumber: { not: null } },
+          { phone: { not: null } },
         ],
       },
     })
@@ -378,7 +378,7 @@ export async function sendBulkReminders(
 
     // Dispatch each message via notification service
     for (const client of clients) {
-      const recipient = client.email || client.phoneNumber || ""
+      const recipient = client.email || client.phone || ""
       if (!recipient) continue
       
       const content = template.content

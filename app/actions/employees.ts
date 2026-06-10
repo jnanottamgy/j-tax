@@ -128,7 +128,6 @@ export async function updateEmployee(
 }
 
 export async function deleteEmployee(employeeId: string) {
-  // C-02 fix: enforce PARTNER/MANAGER auth on all mutations
   try {
     await requirePartnerOrManager()
   } catch {
@@ -137,13 +136,28 @@ export async function deleteEmployee(employeeId: string) {
 
   try {
     const existing = await prisma.employee.findUnique({ where: { id: employeeId } })
-    if (!existing) {
-      return { error: "Employee not found." }
+    if (!existing) return { error: "Employee not found." }
+
+    // Prevent deletion when the employee still owns clients or open tasks
+    const [assignedClients, openTasks] = await Promise.all([
+      prisma.client.count({ where: { assignedEmployeeId: employeeId } }),
+      prisma.task.count({
+        where: { assignedEmployeeId: employeeId, status: { not: "FILED_DONE" } },
+      }),
+    ])
+
+    if (assignedClients > 0) {
+      return {
+        error: `Cannot delete — ${assignedClients} client(s) are assigned to this employee. Reassign them first.`,
+      }
+    }
+    if (openTasks > 0) {
+      return {
+        error: `Cannot delete — ${openTasks} open task(s) are assigned to this employee. Complete or reassign them first.`,
+      }
     }
 
-    await prisma.employee.delete({
-      where: { id: employeeId },
-    })
+    await prisma.employee.delete({ where: { id: employeeId } })
 
     revalidatePath("/employees")
     return { success: true }

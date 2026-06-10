@@ -9,9 +9,9 @@ import type {
 } from "@/lib/validations/client"
 import { prisma } from "@/lib/prisma"
 
-// MED-03: sequential code (matches seeded CLI-NNNN pattern) instead of Math.random()
-async function generateClientCode(): Promise<string> {
-  const count = await prisma.client.count()
+async function generateClientCode(tx?: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]): Promise<string> {
+  const db = tx ?? prisma
+  const count = await db.client.count()
   return `CLI-${String(count + 1).padStart(4, "0")}`
 }
 
@@ -107,8 +107,6 @@ export async function listClients(opts?: {
 export async function createClientWithOnboarding(
   input: CreateClientInput
 ): Promise<ClientListItem> {
-  const clientCode = await generateClientCode()
-
   let assignedEmployeeName: string | undefined
   if (input.assignedEmployeeId) {
     const employee = await prisma.employee.findUnique({
@@ -118,6 +116,9 @@ export async function createClientWithOnboarding(
   }
 
   const client = await prisma.$transaction(async (tx) => {
+    // Generate client code inside the transaction to avoid race conditions
+    const clientCode = await generateClientCode(tx)
+
     const created = await tx.client.create({
       data: {
         clientCode,
