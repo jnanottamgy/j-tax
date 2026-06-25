@@ -36,8 +36,6 @@ export function ResetPasswordForm() {
     submit(formData)
   }
 
-  const canSubmit = formData.email.trim().length > 0
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       {formError && <FormAlert message={formError} />}
@@ -60,7 +58,6 @@ export function ResetPasswordForm() {
         pendingLabel="Sending reset link..."
         label="Send reset link"
         className="w-full h-10 rounded-xl"
-        disabled={!canSubmit}
       />
     </form>
   )

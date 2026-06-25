@@ -40,10 +40,6 @@ export function UpdatePasswordForm() {
     submit(formData)
   }
 
-  const canSubmit =
-    formData.password.length >= 8 &&
-    formData.password === formData.confirmPassword
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       {formError && <FormAlert message={formError} />}
@@ -87,7 +83,6 @@ export function UpdatePasswordForm() {
         pendingLabel="Updating password..."
         label="Update password"
         className="w-full h-10 rounded-xl"
-        disabled={!canSubmit}
       />
     </form>
   )

@@ -26,7 +26,11 @@ export default async function UpdatePasswordPage({ searchParams }: Props) {
 
   if (!params.code) {
     // No code — link is invalid or already used
-    redirect("/reset-password?error=invalid_link")
+    redirect(
+      `/reset-password?error=${encodeURIComponent(
+        "This reset link is invalid or has already been used. Please request a new one."
+      )}`
+    )
   }
 
   // Exchange the PKCE code for a session so updateUser() works
