@@ -44,12 +44,6 @@ export function SignUpForm() {
     submit(formData)
   }
 
-  const canSubmit =
-    formData.name.trim().length >= 2 &&
-    formData.email.trim().length > 0 &&
-    formData.password.length >= 8 &&
-    formData.password === formData.confirmPassword
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       {formError && <FormAlert message={formError} />}
@@ -119,7 +113,6 @@ export function SignUpForm() {
         pendingLabel="Creating account..."
         label="Create account"
         className="w-full h-10 rounded-xl"
-        disabled={!canSubmit}
       />
     </form>
   )
