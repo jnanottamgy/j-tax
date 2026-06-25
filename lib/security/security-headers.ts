@@ -57,9 +57,14 @@ export function getSecurityHeaders(config: SecurityHeadersConfig): Record<string
 function getContentSecurityPolicy(isDev: boolean, _domain: string): string {
   const directives = {
     'default-src': ["'self'"],
+    // Next.js injects inline bootstrap/RSC-streaming scripts that need
+    // 'unsafe-inline'. We do NOT set a per-request nonce here (headers are
+    // static), so we must allow inline scripts directly. NOTE: a nonce MUST
+    // NOT be present alongside 'unsafe-inline' — browsers ignore 'unsafe-inline'
+    // whenever a nonce/hash is specified, which previously broke production.
     'script-src': isDev
       ? ["'self'", "'unsafe-eval'", "'unsafe-inline'"]
-      : ["'self'", "'nonce-{nonce}'"],
+      : ["'self'", "'unsafe-inline'"],
     'style-src': ["'self'", "'unsafe-inline'"], // Required for many UI libraries
     'img-src': ["'self'", 'data:', 'blob:', 'https:'],
     'font-src': ["'self'", 'data:'],
