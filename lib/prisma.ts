@@ -12,7 +12,13 @@ function createPrismaClient() {
     throw new Error("DATABASE_URL is not set")
   }
 
-  const pool = new pg.Pool({ connectionString })
+  // Fail fast if the DB host is unreachable (e.g. wrong/old connection string
+  // on a serverless host) instead of hanging the request forever.
+  const pool = new pg.Pool({
+    connectionString,
+    connectionTimeoutMillis: 10000,
+    statement_timeout: 20000,
+  })
   const adapter = new PrismaPg(pool)
   return new PrismaClient({ adapter })
 }
