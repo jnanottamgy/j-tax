@@ -55,7 +55,7 @@ export function ClientsPageClient({
       <PageHeader
         label="Client management"
         title="Clients"
-        description="Master client records powering tasks, payments, documents, and compliance across J-TAX."
+        description="Master client records powering tasks, payments, documents, and compliance across J-TACS."
         action={
           <>
             <Button

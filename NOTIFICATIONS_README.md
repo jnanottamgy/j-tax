@@ -1,8 +1,8 @@
-# J-TAX Real-Time Notifications System
+# J-TACS Real-Time Notifications System
 
 ## Overview
 
-The J-TAX notification system provides real-time, role-based notifications for task assignments, compliance deadlines, payments, invoices, and document uploads. Built with Supabase Realtime for live updates and featuring a polished UI with sound notifications.
+The J-TACS notification system provides real-time, role-based notifications for task assignments, compliance deadlines, payments, invoices, and document uploads. Built with Supabase Realtime for live updates and featuring a polished UI with sound notifications.
 
 ## Features
 
@@ -60,7 +60,7 @@ The J-TAX notification system provides real-time, role-based notifications for t
 ## File Structure
 
 ```
-j-tax/
+j-tacs/
 ├── prisma/
 │   └── schema.prisma              # Notification model with types
 ├── app/
@@ -286,7 +286,7 @@ function playBeep() {
 }
 ```
 
-Sound preference is stored in localStorage: `jtax.notifications.sound`
+Sound preference is stored in localStorage: `jtacs.notifications.sound`
 
 ## UI Components
 

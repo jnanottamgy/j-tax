@@ -1,0 +1,59 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { AlertTriangle, RefreshCw, Home } from "lucide-react"
+import Link from "next/link"
+import { reportError } from "@/lib/observability/report-error"
+
+/**
+ * Route-group error boundary for /(app)/* — staff-facing pages.
+ * Catches errors thrown in any (app) route segment so the failure stays
+ * within the layout chrome (sidebar + topbar) instead of falling through
+ * to the root error boundary.
+ */
+export default function StaffError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  const [ref, setRef] = useState<string>("")
+  useEffect(() => {
+    setRef(reportError(error, { source: "app-error-boundary", digest: error.digest }))
+  }, [error])
+
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center p-4">
+      <Card className="w-full max-w-md border-destructive/25 bg-destructive/5 p-8 text-center">
+        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-destructive/10">
+          <AlertTriangle className="h-10 w-10 text-destructive" />
+        </div>
+        <h1 className="mb-2 text-2xl font-semibold">Something went wrong</h1>
+        <p className="mb-2 text-sm text-muted-foreground">
+          An unexpected error occurred while loading this page. Please try again,
+          or contact support if it keeps happening.
+        </p>
+        {ref && (
+          <p className="mb-6 font-mono text-xs text-muted-foreground/70">
+            Ref: {ref}
+          </p>
+        )}
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <Button onClick={reset} className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Try again
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/">
+              <Home className="mr-2 h-4 w-4" />
+              Go to dashboard
+            </Link>
+          </Button>
+        </div>
+      </Card>
+    </div>
+  )
+}

@@ -3,9 +3,8 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { notificationService } from "@/lib/messaging/notification-service"
 import { followUpEmailHTML, followUpSubject } from "@/lib/quotations/email-templates"
+import { getFirmSettings } from "@/lib/firm-settings"
 
-const FIRM_NAME = process.env.FIRM_NAME || "TaxWise Consultants"
-const FIRM_EMAIL = process.env.FROM_EMAIL || "noreply@taxwiseconsultants.com"
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 
 function safeCompare(a: string, b: string): boolean {
@@ -29,6 +28,9 @@ export async function GET(request: Request) {
   const now = new Date()
   let sent = 0
   let skipped = 0
+
+  // Resolve firm identity once per cron tick — used for every email this run.
+  const cfg = await getFirmSettings()
 
   try {
     // Find pending follow-ups where scheduledAt has passed
@@ -69,8 +71,8 @@ export async function GET(request: Request) {
       const dayNumber = followUp.followUpDay as 3 | 7 | 14
 
       const html = followUpEmailHTML({
-        firmName: FIRM_NAME,
-        firmEmail: FIRM_EMAIL,
+        firmName: cfg.firmName,
+        firmEmail: cfg.fromEmail,
         clientName: q.clientName,
         quotationNumber: q.quotationNumber,
         total: `₹${Number(q.total).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
@@ -78,7 +80,7 @@ export async function GET(request: Request) {
         dayNumber,
       })
 
-      const subject = followUpSubject(q.quotationNumber, dayNumber, FIRM_NAME)
+      const subject = followUpSubject(q.quotationNumber, dayNumber, cfg.firmName)
 
       const result = await notificationService.send({
         channel: "email",
@@ -111,6 +113,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: true, sent, skipped })
   } catch (err) {
     console.error("Quotation follow-up cron error:", err)
-    return NextResponse.json({ success: false, error: String(err) }, { status: 500 })
+    return NextResponse.json({ success: false, error: "Cron job failed." }, { status: 500 })
   }
 }

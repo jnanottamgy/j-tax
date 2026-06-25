@@ -1,5 +1,5 @@
 /**
- * Rate Limiting for J-TAX
+ * Rate Limiting for J-TACS
  * 
  * Implements rate limiting for API routes and server actions.
  * Uses a sliding window algorithm with in-memory storage.

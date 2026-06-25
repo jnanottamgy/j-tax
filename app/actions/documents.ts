@@ -14,6 +14,7 @@ import {
   isEmployee as isEmployeeRole,
 } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
+import { recordTimelineEvent } from "@/lib/timeline/events"
 import {
   assertDocumentBucketExists,
   createSignedUploadUrl,
@@ -36,6 +37,8 @@ const documentSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
   description: z.string().optional(),
   isConfidential: z.boolean().default(false),
+  expiryDate: z.string().optional(),
+  renewalDate: z.string().optional(),
 })
 
 /**
@@ -280,6 +283,8 @@ export async function uploadDocument(
       clientId: formData.get("clientId"),
       description: formData.get("description") || undefined,
       isConfidential: formData.get("isConfidential") === "true",
+      expiryDate: formData.get("expiryDate") || undefined,
+      renewalDate: formData.get("renewalDate") || undefined,
     }
 
     const parsed = documentSchema.safeParse(raw)
@@ -313,15 +318,18 @@ export async function uploadDocument(
       return { error: `Storage upload failed: ${uploadResult.error}` }
     }
 
+    const { expiryDate, renewalDate, ...docFields } = parsed.data
     const document = await prisma.document.create({
       data: {
-        ...parsed.data,
+        ...docFields,
         fileName: file.name,
         fileSize: file.size,
         fileType: file.type,
         storagePath,
         uploadedBy: session.user.id,
         version: 1,
+        expiryDate: expiryDate ? new Date(expiryDate) : null,
+        renewalDate: renewalDate ? new Date(renewalDate) : null,
       },
     })
 
@@ -348,6 +356,15 @@ export async function uploadDocument(
       },
     })
 
+    // Timeline event
+    await recordTimelineEvent({
+      clientId: docFields.clientId,
+      eventType: "DOCUMENT_UPLOADED",
+      title: `Document uploaded: ${docFields.title}`,
+      description: `Category: ${docFields.category}`,
+      performedBy: session.user.id,
+    })
+
     // Workforce tracking
     try {
       const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
@@ -357,16 +374,16 @@ export async function uploadDocument(
           employeeId: employee.id,
           userId: session.user.id,
           activityType: "DOCUMENT_UPLOADED",
-          description: `Uploaded document "${parsed.data.title}"`,
+          description: `Uploaded document "${docFields.title}"`,
           entityType: "DOCUMENT",
           entityId: document.id,
-          entityName: parsed.data.title,
+          entityName: docFields.title,
         })
       }
-    } catch {}
+    } catch (logErr) { console.error("document activity log failed:", logErr) }
 
     revalidatePath("/documents")
-    revalidatePath(`/clients/${parsed.data.clientId}`)
+    revalidatePath(`/clients/${docFields.clientId}`)
 
     return { success: true }
   } catch (error) {
@@ -929,4 +946,61 @@ export async function getDocumentDetail(documentId: string) {
   })
 
   return { document, user: session.user }
+}
+
+// ─── Document Completeness Score ────────────────────────────────────────────
+
+const EXPECTED_DOCUMENT_CATEGORIES_BY_SERVICE: Record<string, string[]> = {
+  GST_RETURN: ["GST", "INVOICES", "BANK_STATEMENTS"],
+  INCOME_TAX: ["INCOME_TAX", "BANK_STATEMENTS", "INVOICES"],
+  TDS: ["TDS", "BANK_STATEMENTS"],
+  PAYROLL: ["PAYROLL"],
+  BOOKKEEPING: ["BANK_STATEMENTS", "INVOICES"],
+  AUDIT: ["AUDIT", "BANK_STATEMENTS", "INVOICES", "AGREEMENTS"],
+  COMPANY_LAW: ["ROC", "AGREEMENTS"],
+  OTHER: [],
+}
+
+export async function getClientDocumentCompleteness(clientId: string) {
+  const services = await prisma.clientService.findMany({
+    where: { clientId, isActive: true },
+    select: { serviceType: true },
+  })
+
+  const expectedCategories = new Set<string>()
+  for (const s of services) {
+    const cats = EXPECTED_DOCUMENT_CATEGORIES_BY_SERVICE[s.serviceType] || []
+    for (const c of cats) expectedCategories.add(c)
+  }
+
+  // Always expect PAN for Indian clients
+  expectedCategories.add("INCOME_TAX")
+
+  const docs = await prisma.document.findMany({
+    where: { clientId },
+    select: { category: true, expiryDate: true },
+  })
+
+  const receivedCategories = new Set(docs.map((d) => d.category as string))
+  const totalExpected = expectedCategories.size || 1
+  const totalReceived = [...expectedCategories].filter((c) => receivedCategories.has(c)).length
+
+  const score = Math.round((totalReceived / totalExpected) * 100)
+
+  const now = new Date()
+  const expiringSoon = docs.filter(
+    (d) => d.expiryDate && d.expiryDate > now && d.expiryDate < new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+  ).length
+
+  const expired = docs.filter((d) => d.expiryDate && d.expiryDate <= now).length
+
+  return {
+    score,
+    totalExpected,
+    totalReceived,
+    totalDocuments: docs.length,
+    pendingCategories: [...expectedCategories].filter((c) => !receivedCategories.has(c)),
+    expiringSoon,
+    expired,
+  }
 }

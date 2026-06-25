@@ -65,6 +65,7 @@ export const ROUTE_ACCESS: Record<string, AppRole[]> = {
   "/activity": ["PARTNER"],          // Audit logs — PARTNER only
   "/workforce": ["PARTNER"],         // Employee intelligence — PARTNER only
   "/proposals": ["PARTNER", "MANAGER"],
+  "/docs": [...STAFF_ROLES],         // Help / setup documentation
   // Client portal — CLIENT role only
   "/client": ["CLIENT"],
 }

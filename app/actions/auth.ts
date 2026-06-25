@@ -128,6 +128,15 @@ export async function signUp(
   _prevState: AuthActionState,
   formData: FormData
 ): Promise<AuthActionState> {
+  // Rate-limit signups per IP to prevent automated account-creation abuse.
+  const ip = await getClientIp()
+  const rateLimit = checkLoginRateLimit(ip)
+  if (!rateLimit.success) {
+    return {
+      error: `Too many attempts. Please try again in ${rateLimit.retryAfter ?? 60} seconds.`,
+    }
+  }
+
   const raw = {
     email: formData.get("email"),
     password: formData.get("password"),
@@ -179,6 +188,16 @@ export async function resetPassword(
   _prevState: AuthActionState,
   formData: FormData
 ): Promise<AuthActionState> {
+  // Rate-limit password-reset by IP so we don't become a free email-blast tool.
+  // Reuses the same limiter bucket as login so 5/min per IP applies across both.
+  const ip = await getClientIp()
+  const rateLimit = checkLoginRateLimit(ip)
+  if (!rateLimit.success) {
+    return {
+      error: `Too many requests. Please try again in ${rateLimit.retryAfter ?? 60} seconds.`,
+    }
+  }
+
   const raw = {
     email: formData.get("email"),
   }

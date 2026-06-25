@@ -7,7 +7,9 @@ import {
   BarChart3,
   CheckSquare,
   DollarSign,
+  FileWarning,
   Shield,
+  Target,
   TrendingDown,
   TrendingUp,
   Users,
@@ -38,6 +40,15 @@ interface PartnerCommandCenterProps {
     name: string
     riskReason: string
   }>
+  crmMetrics?: {
+    totalLeads: number
+    followUpLeads: number
+    wonLeads: number
+    lostLeads: number
+    quotationsSent: number
+    revenuePipeline: number
+    expiredDocuments: number
+  }
 }
 
 function MetricTile({
@@ -99,6 +110,7 @@ export function PartnerCommandCenter({
   stats,
   pendingApprovals,
   highRiskClients,
+  crmMetrics,
 }: PartnerCommandCenterProps) {
   const formatCurrency = (n: number) =>
     n >= 100000
@@ -184,6 +196,49 @@ export function PartnerCommandCenter({
             trend={stats.highRiskClients > 3 ? "down" : "neutral"}
           />
         </div>
+
+        {/* Sales / CRM Metrics */}
+        {crmMetrics && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-widest mb-3">
+              Sales / CRM Pipeline
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricTile
+                label="Total Leads"
+                value={crmMetrics.totalLeads}
+                subtext={`${crmMetrics.wonLeads} converted`}
+                icon={Target}
+                color="bg-blue-500/10 text-blue-400"
+                href="/proposals"
+              />
+              <MetricTile
+                label="Follow-Up Required"
+                value={crmMetrics.followUpLeads}
+                subtext="leads need attention"
+                icon={Activity}
+                color={crmMetrics.followUpLeads > 0 ? "bg-amber-500/10 text-amber-400" : "bg-white/[0.05] text-muted-foreground"}
+                href="/proposals"
+              />
+              <MetricTile
+                label="Revenue Pipeline"
+                value={formatCurrency(crmMetrics.revenuePipeline)}
+                subtext={`${crmMetrics.quotationsSent} quotes pending`}
+                icon={DollarSign}
+                color="bg-purple-500/10 text-purple-400"
+                href="/proposals"
+              />
+              <MetricTile
+                label="Expired Documents"
+                value={crmMetrics.expiredDocuments}
+                subtext="need renewal"
+                icon={FileWarning}
+                color={crmMetrics.expiredDocuments > 0 ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}
+                href="/documents"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Pending approvals list */}
         {pendingApprovals.length > 0 && (

@@ -9,16 +9,13 @@ import { requirePartner, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
 import { toUserError } from "@/lib/forms/errors"
 import { notificationService } from "@/lib/messaging/notification-service"
+import { getFirmSettings } from "@/lib/firm-settings"
 import {
   quotationEmailHTML,
   quotationSubject,
   type QuotationEmailVars,
 } from "@/lib/quotations/email-templates"
 
-const FIRM_NAME = process.env.FIRM_NAME || "Your Tax Firm"
-const FIRM_EMAIL = process.env.FROM_EMAIL || ""
-const _FIRM_PHONE = process.env.FIRM_PHONE || "+91-XXXXXXXXXX"
-const _FIRM_ADDRESS = process.env.FIRM_ADDRESS || "India"
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 
 // ─── Lead Actions ─────────────────────────────────────────────────────────────
@@ -74,8 +71,9 @@ export async function updateLead(
     if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors }
 
     const statusRaw = formData.get("status")
-    const status = statusRaw && ["NEW_LEAD","CONTACTED","PROPOSAL_SENT","NEGOTIATION","WON","LOST"].includes(String(statusRaw))
-      ? (String(statusRaw) as "NEW_LEAD"|"CONTACTED"|"PROPOSAL_SENT"|"NEGOTIATION"|"WON"|"LOST")
+    const VALID_LEAD_STATUSES = ["NEW_LEAD","CONTACTED","QUOTATION_REQUESTED","FOLLOW_UP_REQUIRED","CLIENT_WILL_REVERT","PROPOSAL_SENT","NEGOTIATION","WON","LOST"] as const
+    const status = statusRaw && VALID_LEAD_STATUSES.includes(String(statusRaw) as typeof VALID_LEAD_STATUSES[number])
+      ? (String(statusRaw) as typeof VALID_LEAD_STATUSES[number])
       : undefined
 
     await prisma.lead.update({
@@ -99,12 +97,15 @@ export async function updateLead(
   }
 }
 
+const VALID_LEAD_STATUSES_SET = new Set(["NEW_LEAD","CONTACTED","QUOTATION_REQUESTED","FOLLOW_UP_REQUIRED","CLIENT_WILL_REVERT","PROPOSAL_SENT","NEGOTIATION","WON","LOST"])
+
 export async function updateLeadStatus(leadId: string, status: string) {
   try {
     await requirePartnerOrManager()
+    if (!VALID_LEAD_STATUSES_SET.has(status)) return { error: "Invalid lead status." }
     await prisma.lead.update({
       where: { id: leadId },
-      data: { status: status as "NEW_LEAD"|"CONTACTED"|"PROPOSAL_SENT"|"NEGOTIATION"|"WON"|"LOST" },
+      data: { status: status as any },
     })
     revalidatePath("/proposals")
     return { success: true }
@@ -284,9 +285,11 @@ export async function approveAndSendQuotation(quotationId: string): Promise<Quot
 
     const viewUrl = `${APP_URL}/q/${quotation.token}`
 
+    const cfg = await getFirmSettings()
+
     const emailVars: QuotationEmailVars = {
-      firmName: FIRM_NAME,
-      firmEmail: FIRM_EMAIL,
+      firmName: cfg.firmName,
+      firmEmail: cfg.fromEmail,
       clientName: quotation.clientName,
       quotationNumber: quotation.quotationNumber,
       total: `₹${Number(quotation.total).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
@@ -304,7 +307,7 @@ export async function approveAndSendQuotation(quotationId: string): Promise<Quot
     const result = await notificationService.send({
       channel: "email",
       to: quotation.clientEmail,
-      subject: quotationSubject(quotation.quotationNumber, FIRM_NAME),
+      subject: quotationSubject(quotation.quotationNumber, cfg.firmName),
       content: quotationEmailHTML(emailVars),
     })
 
@@ -326,7 +329,7 @@ export async function approveAndSendQuotation(quotationId: string): Promise<Quot
           resendId: result.messageId || null,
           emailType: "INITIAL",
           to: quotation.clientEmail,
-          subject: quotationSubject(quotation.quotationNumber, FIRM_NAME),
+          subject: quotationSubject(quotation.quotationNumber, cfg.firmName),
           status: result.success ? "SENT" : "FAILED",
         },
       }),
@@ -470,6 +473,130 @@ export async function markQuotationViewed(token: string) {
   })
 }
 
+// ─── Lead Detail ─────────────────────────────────────────────────────────────
+
+export async function getLeadDetail(leadId: string) {
+  await requirePartnerOrManager()
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    include: {
+      quotations: {
+        include: { items: { orderBy: { sortOrder: "asc" } }, emailLogs: { orderBy: { sentAt: "desc" }, take: 5 } },
+        orderBy: { createdAt: "desc" },
+      },
+      timelineEvents: { orderBy: { createdAt: "desc" }, take: 50 },
+    },
+  })
+  if (!lead) return null
+
+  const employees = await prisma.employee.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, userId: true },
+    orderBy: { name: "asc" },
+  })
+
+  return {
+    lead: {
+      ...lead,
+      estimatedValue: lead.estimatedValue ? Number(lead.estimatedValue) : null,
+      quotations: lead.quotations.map(q => ({
+        ...q,
+        subtotal: Number(q.subtotal),
+        taxAmount: Number(q.taxAmount),
+        total: Number(q.total),
+        items: q.items.map(i => ({ ...i, unitPrice: Number(i.unitPrice), taxRate: Number(i.taxRate), taxAmount: Number(i.taxAmount), total: Number(i.total) })),
+      })),
+    },
+    employees,
+  }
+}
+
+// ─── Lead → Client Conversion ───────────────────────────────────────────────
+
+export async function convertLeadToClient(leadId: string): Promise<{ success?: boolean; error?: string; clientId?: string }> {
+  try {
+    const session = await requirePartnerOrManager()
+
+    const lead = await prisma.lead.findUnique({
+      where: { id: leadId },
+      include: {
+        quotations: { where: { status: "ACCEPTED" }, take: 1, orderBy: { respondedAt: "desc" } },
+      },
+    })
+
+    if (!lead) return { error: "Lead not found." }
+    if (lead.convertedClientId) return { error: "This lead has already been converted to a client." }
+    if (lead.status !== "WON") return { error: "Only leads with WON status can be converted." }
+
+    const count = await prisma.client.count()
+    const clientCode = `CLI-${String(count + 1).padStart(4, "0")}`
+
+    const client = await prisma.$transaction(async (tx) => {
+      const newClient = await tx.client.create({
+        data: {
+          clientCode,
+          name: lead.company || lead.name,
+          email: lead.email,
+          phone: lead.phone || null,
+          notes: lead.notes || null,
+          status: "ACTIVE",
+          priority: "MEDIUM",
+        },
+      })
+
+      await tx.lead.update({
+        where: { id: leadId },
+        data: { convertedClientId: newClient.id },
+      })
+
+      await tx.clientTimelineEvent.createMany({
+        data: [
+          {
+            clientId: newClient.id,
+            leadId,
+            eventType: "LEAD_CREATED",
+            title: "Lead created",
+            description: `Lead "${lead.name}" was created via ${lead.source}`,
+            performedBy: lead.createdBy,
+            createdAt: lead.createdAt,
+          },
+          {
+            clientId: newClient.id,
+            leadId,
+            eventType: "CLIENT_ONBOARDED",
+            title: "Converted from lead",
+            description: `Lead "${lead.name}" converted to client "${newClient.name}" (${clientCode})`,
+            performedBy: session.user.id,
+          },
+        ],
+      })
+
+      if (lead.quotations.length > 0) {
+        const q = lead.quotations[0]
+        await tx.clientTimelineEvent.create({
+          data: {
+            clientId: newClient.id,
+            leadId,
+            eventType: "QUOTATION_ACCEPTED",
+            title: `Quotation ${q.quotationNumber} accepted`,
+            description: `₹${Number(q.total).toLocaleString("en-IN")} — accepted on ${q.respondedAt?.toLocaleDateString("en-IN") ?? "N/A"}`,
+            performedBy: session.user.id,
+            createdAt: q.respondedAt ?? new Date(),
+          },
+        })
+      }
+
+      return newClient
+    })
+
+    revalidatePath("/proposals")
+    revalidatePath("/clients")
+    return { success: true, clientId: client.id }
+  } catch (err) {
+    return { error: toUserError(err) }
+  }
+}
+
 // ─── Analytics ────────────────────────────────────────────────────────────────
 
 export async function getProposalAnalytics() {
@@ -516,6 +643,12 @@ export async function getProposalAnalytics() {
   const wonLeads = leadsByStatus.find((l) => l.status === "WON")?._count ?? 0
   const conversionRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0
 
+  const followUpLeads = (leadsByStatus.find((l) => l.status === "FOLLOW_UP_REQUIRED")?._count ?? 0)
+    + (leadsByStatus.find((l) => l.status === "CLIENT_WILL_REVERT")?._count ?? 0)
+  const pendingQuotations = (quotationsByStatus.find((q) => q.status === "PENDING_APPROVAL")?._count ?? 0)
+    + (quotationsByStatus.find((q) => q.status === "DRAFT")?._count ?? 0)
+  const lostLeads = leadsByStatus.find((l) => l.status === "LOST")?._count ?? 0
+
   return {
     totalLeads,
     leadsByStatus: Object.fromEntries(leadsByStatus.map((l) => [l.status, l._count])),
@@ -526,5 +659,9 @@ export async function getProposalAnalytics() {
     avgDealSize,
     revenuePipeline: Number(totalRevenuePipeline._sum.total ?? 0),
     wonRevenue: Number(wonRevenue._sum.total ?? 0),
+    followUpLeads,
+    pendingQuotations,
+    lostLeads,
+    wonLeads,
   }
 }

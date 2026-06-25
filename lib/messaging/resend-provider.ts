@@ -15,7 +15,7 @@ import type {
   SendNotificationResult,
   DeliveryStatus,
 } from "./provider-interface"
-import { getFirmSettings } from "@/lib/firm-settings"
+import { getFirmSettings, resolveSenderEnvelope } from "@/lib/firm-settings"
 
 const RESEND_API_URL = "https://api.resend.com/emails"
 const RESEND_API_KEY = process.env.RESEND_API_KEY
@@ -34,12 +34,10 @@ export class ResendProvider implements NotificationProvider {
       }
 
       const cfg = await getFirmSettings()
-      const fromAddress = cfg.fromEmail
-        ? `${cfg.firmName} <${cfg.fromEmail}>`
-        : cfg.fromEmail
+      const envelope = resolveSenderEnvelope(cfg)
 
-      if (!fromAddress) {
-        return { success: false, error: "Sender email not configured. Set it in Settings → Firm Details." }
+      if (!envelope.fromAddress) {
+        return { success: false, error: envelope.reason }
       }
 
       const sanitizedSubject = this.sanitizeContent(
@@ -47,13 +45,17 @@ export class ResendProvider implements NotificationProvider {
       )
 
       const body: Record<string, unknown> = {
-        from: fromAddress,
+        from: envelope.fromAddress,
         to: [data.to],
         subject: sanitizedSubject,
         html: data.content,
       }
-      if (cfg.replyToEmail) body.reply_to = cfg.replyToEmail
-      if (data.metadata) body.tags = this.formatMetadata(data.metadata)
+      if (envelope.replyTo) body.reply_to = envelope.replyTo
+      const tags = [
+        ...(data.metadata ? this.formatMetadata(data.metadata) : []),
+        { name: "branding_mode", value: envelope.usingFallback ? "fallback" : "direct" },
+      ]
+      body.tags = tags
 
       const response = await fetch(RESEND_API_URL, {
         method: "POST",
@@ -103,22 +105,24 @@ export class ResendProvider implements NotificationProvider {
       const htmlContent = this.substituteVariables(template.html, data.variables)
       const subject = this.substituteVariables(template.subject, data.variables)
 
-      const fromAddress = cfg.fromEmail
-        ? `${cfg.firmName} <${cfg.fromEmail}>`
-        : cfg.fromEmail
-
-      if (!fromAddress) {
-        return { success: false, error: "Sender email not configured. Set it in Settings → Firm Details." }
+      const envelope = resolveSenderEnvelope(cfg)
+      if (!envelope.fromAddress) {
+        return { success: false, error: envelope.reason }
       }
 
       const body: Record<string, unknown> = {
-        from: fromAddress,
+        from: envelope.fromAddress,
         to: [data.to],
         subject,
         html: htmlContent,
       }
-      if (cfg.replyToEmail) body.reply_to = cfg.replyToEmail
-      if (data.metadata) body.tags = this.formatMetadata(data.metadata)
+      if (envelope.replyTo) body.reply_to = envelope.replyTo
+      const tags = [
+        ...(data.metadata ? this.formatMetadata(data.metadata) : []),
+        { name: "branding_mode", value: envelope.usingFallback ? "fallback" : "direct" },
+        { name: "template", value: data.templateName },
+      ]
+      body.tags = tags
 
       const response = await fetch(RESEND_API_URL, {
         method: "POST",
@@ -203,11 +207,20 @@ export class ResendProvider implements NotificationProvider {
     templateName: string,
     cfg: Awaited<ReturnType<typeof getFirmSettings>>
   ): { subject: string; html: string } | null {
+    const contactBits = [
+      cfg.fromEmail ? `Email: ${cfg.fromEmail}` : "",
+      cfg.firmPhone ? `Phone: ${cfg.firmPhone}` : "",
+      cfg.website ? `Web: ${cfg.website}` : "",
+    ].filter(Boolean).join(" &nbsp;|&nbsp; ")
+    const replyHint = cfg.replyToEmail && cfg.replyToEmail !== cfg.fromEmail
+      ? `<p style="font-size:12px;">Reply to: ${cfg.replyToEmail}</p>`
+      : ""
     const footer = `
       <div style="text-align:center;margin-top:30px;color:#6b7280;font-size:14px;">
-        <p>${cfg.firmName}</p>
-        ${cfg.fromEmail ? `<p>Email: ${cfg.fromEmail}${cfg.firmPhone ? ` &nbsp;|&nbsp; Phone: ${cfg.firmPhone}` : ""}</p>` : ""}
-        <p>This is an automated email. Please do not reply.</p>
+        <p><strong>${cfg.firmName}</strong></p>
+        ${contactBits ? `<p>${contactBits}</p>` : ""}
+        ${cfg.firmAddress ? `<p style="font-size:12px;">${cfg.firmAddress}</p>` : ""}
+        ${replyHint}
       </div>`
 
     const header = (title: string) => `

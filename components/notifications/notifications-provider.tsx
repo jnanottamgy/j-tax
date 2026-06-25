@@ -63,7 +63,7 @@ function playBeep() {
   }
 }
 
-const SOUND_PREF_KEY = "jtax.notifications.sound"
+const SOUND_PREF_KEY = "jtacs.notifications.sound"
 
 export function NotificationsProvider({
   children,

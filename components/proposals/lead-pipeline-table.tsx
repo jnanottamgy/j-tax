@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { format } from "date-fns"
-import { MoreHorizontal, TrendingUp, ChevronDown, Trash2, FileText } from "lucide-react"
+import { MoreHorizontal, TrendingUp, ChevronDown, Trash2, FileText, Eye, UserPlus } from "lucide-react"
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -14,18 +14,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { updateLeadStatus, deleteLead, type getLeads } from "@/app/actions/proposals"
+import { updateLeadStatus, deleteLead, convertLeadToClient, type getLeads } from "@/app/actions/proposals"
 
 type Lead = Awaited<ReturnType<typeof getLeads>>[number]
 
-const STATUSES = ["NEW_LEAD","CONTACTED","PROPOSAL_SENT","NEGOTIATION","WON","LOST"] as const
+const STATUSES = ["NEW_LEAD","CONTACTED","QUOTATION_REQUESTED","FOLLOW_UP_REQUIRED","CLIENT_WILL_REVERT","PROPOSAL_SENT","NEGOTIATION","WON","LOST"] as const
 const STATUS_LABELS: Record<string, string> = {
-  NEW_LEAD: "New Lead", CONTACTED: "Contacted", PROPOSAL_SENT: "Proposal Sent",
-  NEGOTIATION: "Negotiation", WON: "Won", LOST: "Lost",
+  NEW_LEAD: "New Lead", CONTACTED: "Contacted", QUOTATION_REQUESTED: "Quotation Requested",
+  FOLLOW_UP_REQUIRED: "Follow-Up Required", CLIENT_WILL_REVERT: "Client Will Revert",
+  PROPOSAL_SENT: "Proposal Sent", NEGOTIATION: "Negotiation", WON: "Won", LOST: "Lost",
 }
 const STATUS_COLORS: Record<string, string> = {
   NEW_LEAD: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   CONTACTED: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+  QUOTATION_REQUESTED: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  FOLLOW_UP_REQUIRED: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  CLIENT_WILL_REVERT: "bg-slate-500/10 text-slate-400 border-slate-500/20",
   PROPOSAL_SENT: "bg-purple-500/10 text-purple-400 border-purple-500/20",
   NEGOTIATION: "bg-orange-500/10 text-orange-400 border-orange-500/20",
   WON: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
@@ -47,6 +51,15 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
   function handleDelete(leadId: string) {
     setLeads((prev) => prev.filter((l) => l.id !== leadId))
     startTransition(async () => { await deleteLead(leadId) })
+  }
+
+  function handleConvert(leadId: string) {
+    startTransition(async () => {
+      const result = await convertLeadToClient(leadId)
+      if (result.success && result.clientId) {
+        setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, convertedClientId: result.clientId! } as Lead : l))
+      }
+    })
   }
 
   const countByStatus = Object.fromEntries(
@@ -118,11 +131,26 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild>
+                      <Link href={`/proposals/leads/${lead.id}`}>
+                        <Eye className="size-3.5 mr-2" />
+                        View Details
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
                       <Link href={`/proposals/quotations/new?leadId=${lead.id}`}>
                         <FileText className="size-3.5 mr-2" />
                         Create Quotation
                       </Link>
                     </DropdownMenuItem>
+                    {lead.status === "WON" && !lead.convertedClientId && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleConvert(lead.id)}>
+                          <UserPlus className="size-3.5 mr-2" />
+                          Convert to Client
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-destructive"

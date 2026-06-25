@@ -38,12 +38,12 @@ const FAQS = [
   },
   {
     question: "How do compliance reminders work?",
-    answer: "J-TAX automatically sends reminders based on due dates. You can configure reminder timing in Settings > Notifications. Reminders are sent via email, SMS, and WhatsApp.",
+    answer: "J-TACS automatically sends reminders based on due dates. You can configure reminder timing in Settings > Notifications. Reminders are sent via email, SMS, and WhatsApp.",
     category: "compliance",
   },
   {
     question: "Can I import data from other software?",
-    answer: "Yes! J-TAX supports CSV import for clients, tasks, and historical data. Go to Settings > Import to get started. We also offer migration assistance for large datasets.",
+    answer: "Yes! J-TACS supports CSV import for clients, tasks, and historical data. Go to Settings > Import to get started. We also offer migration assistance for large datasets.",
     category: "general",
   },
   {
@@ -58,7 +58,7 @@ const FAQS = [
   },
   {
     question: "How secure is my data?",
-    answer: "J-TAX uses enterprise-grade encryption and is hosted on secure cloud infrastructure. All data is backed up daily and we comply with Indian data protection regulations.",
+    answer: "J-TACS uses enterprise-grade encryption and is hosted on secure cloud infrastructure. All data is backed up daily and we comply with Indian data protection regulations.",
     category: "security",
   },
 ]
@@ -66,7 +66,7 @@ const FAQS = [
 const GUIDES = [
   {
     id: "getting-started",
-    title: "Getting Started with J-TAX",
+    title: "Getting Started with J-TACS",
     description: "Learn the basics of setting up your firm and managing clients.",
     duration: "10 min read",
     category: "basics",
@@ -122,7 +122,7 @@ const TUTORIALS = [
   {
     id: "quick-start",
     title: "Quick Start Video",
-    description: "5-minute overview of J-TAX key features.",
+    description: "5-minute overview of J-TACS key features.",
     duration: "5:00",
     thumbnail: "quick-start",
   },

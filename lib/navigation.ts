@@ -5,7 +5,6 @@ import {
   Bell,
   Building2,
   CalendarDays,
-  CheckSquare,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -16,6 +15,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Target,
   UserPlus,
   Users,
   Wallet,
@@ -84,6 +84,24 @@ export const navigationGroups: NavGroup[] = [
     ],
   },
   {
+    id: "sales",
+    label: "Sales / CRM",
+    items: [
+      {
+        title: "Lead Pipeline",
+        href: "/proposals",
+        icon: Target,
+        description: "Leads & conversions",
+      },
+      {
+        title: "Quotations",
+        href: "/proposals",
+        icon: Send,
+        description: "Proposals & quotes",
+      },
+    ],
+  },
+  {
     id: "finance",
     label: "Finance",
     items: [
@@ -98,12 +116,6 @@ export const navigationGroups: NavGroup[] = [
         href: "/payments/invoices",
         icon: Receipt,
         description: "Invoice management",
-      },
-      {
-        title: "Quotations",
-        href: "/proposals",
-        icon: Send,
-        description: "Proposals & quotes",
       },
     ],
   },
@@ -166,12 +178,6 @@ export const navigationGroups: NavGroup[] = [
         description: "Document vault",
       },
       {
-        title: "Approvals",
-        href: "/proposals",
-        icon: CheckSquare,
-        description: "Pending approvals",
-      },
-      {
         title: "Settings",
         href: "/settings",
         icon: Settings,
@@ -190,7 +196,7 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
     return filterGroupsByRole(navigationGroups, role)
   }
 
-  // MANAGER — operations + team + quotations + documents + settings
+  // MANAGER — operations + sales/CRM + team + finance + resources
   if (role === "MANAGER") {
     return [
       {
@@ -202,6 +208,14 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "Work Tracker", href: "/work-tracker", icon: ClipboardList, description: "Tasks & assignments" },
           { title: "Compliance", href: "/compliance", icon: ShieldCheck, description: "Filing compliance" },
           { title: "Calendar", href: "/calendar", icon: CalendarDays, description: "Compliance calendar" },
+        ],
+      },
+      {
+        id: "sales",
+        label: "Sales / CRM",
+        items: [
+          { title: "Lead Pipeline", href: "/proposals", icon: Target, description: "Leads & conversions" },
+          { title: "Quotations", href: "/proposals", icon: Send, description: "Proposals & quotes" },
         ],
       },
       {
@@ -218,7 +232,6 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
         items: [
           { title: "Payments", href: "/payments", icon: Wallet, description: "Payment tracking" },
           { title: "Invoices", href: "/payments/invoices", icon: Receipt, description: "Invoice management" },
-          { title: "Quotations", href: "/proposals", icon: Send, description: "Proposals & quotes" },
         ],
       },
       {

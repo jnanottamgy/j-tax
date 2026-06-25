@@ -1,3 +1,5 @@
+import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type PageHeaderProps = {
@@ -6,6 +8,7 @@ type PageHeaderProps = {
   description?: string
   className?: string
   action?: React.ReactNode
+  backHref?: string
 }
 
 export function PageHeader({
@@ -14,6 +17,7 @@ export function PageHeader({
   description,
   className,
   action,
+  backHref,
 }: PageHeaderProps) {
   return (
     <div
@@ -23,6 +27,12 @@ export function PageHeader({
       )}
     >
       <div className="space-y-3">
+        {backHref && (
+          <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="size-3.5" />
+            Back
+          </Link>
+        )}
         {label && <p className="label-premium">{label}</p>}
         <h1 className="text-gradient text-3xl font-semibold tracking-tight md:text-[2rem] md:leading-tight lg:text-4xl">
           {title}

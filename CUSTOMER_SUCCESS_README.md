@@ -1,8 +1,8 @@
-# J-TAX Customer Success Features
+# J-TACS Customer Success Features
 
 ## Overview
 
-The Customer Success features in J-TAX are designed to help users understand and get the most out of the product without requiring formal training. These features include a comprehensive onboarding wizard, guided tours, a searchable help center, and contextual empty states.
+The Customer Success features in J-TACS are designed to help users understand and get the most out of the product without requiring formal training. These features include a comprehensive onboarding wizard, guided tours, a searchable help center, and contextual empty states.
 
 ## Features
 
@@ -10,7 +10,7 @@ The Customer Success features in J-TAX are designed to help users understand and
 
 The onboarding wizard guides new users through the initial setup process:
 
-- **Welcome Step** - Introduction to J-TAX
+- **Welcome Step** - Introduction to J-TACS
 - **Firm Information** - Set up firm details (name, GSTIN, address, contact)
 - **Employee Setup** - Configure team structure and departments
 - **Service Configuration** - Select services offered (GST, TDS, Income Tax, ROC, etc.)
@@ -44,7 +44,7 @@ Interactive tours that teach users how to use different parts of the application
 A comprehensive help system with searchable content:
 
 **Guides:**
-- Getting Started with J-TAX
+- Getting Started with J-TACS
 - Client Management Guide
 - Compliance Workflow
 - Billing & Invoicing
@@ -169,7 +169,7 @@ function AppLayout() {
 2. **Contextual** - Help appears when and where it's needed
 3. **Progressive** - Start simple, offer deeper learning for those who want it
 4. **Non-Intrusive** - Users can skip or dismiss help at any time
-5. **Consistent** - Same look and feel as the rest of J-TAX
+5. **Consistent** - Same look and feel as the rest of J-TACS
 
 ## Best Practices
 

@@ -31,9 +31,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { ClientComplianceTab } from "@/components/compliance/client-compliance-tab"
+import { ClientTimeline } from "@/components/clients/client-timeline"
 import { cn } from "@/lib/utils"
 
-type TabType = "overview" | "services" | "tasks" | "payments" | "documents" | "compliance" | "activity"
+type TabType = "overview" | "services" | "tasks" | "payments" | "documents" | "compliance" | "activity" | "timeline"
 
 interface Client360ClientProps {
   initialData: any
@@ -54,6 +55,7 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
     { id: "documents" as TabType, label: "Documents", icon: Folder },
     { id: "compliance" as TabType, label: "Compliance", icon: Calendar },
     { id: "activity" as TabType, label: "Activity", icon: Activity },
+    { id: "timeline" as TabType, label: "Timeline", icon: TrendingUp },
   ]
 
   const quickActions = [
@@ -301,6 +303,18 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
                 <ActivityTab data={data} />
               </motion.div>
             )}
+
+            {activeTab === "timeline" && (
+              <motion.div
+                key="timeline"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ClientTimeline events={data.timelineEvents || []} />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </div>
@@ -374,6 +388,50 @@ function OverviewTab({ data }: { data: any }) {
           </div>
         </div>
       </GlassCard>
+
+      {data.documentCompleteness && (
+        <GlassCard hover={false} className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Document Completeness</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Completeness Score</span>
+              <span className="text-xl font-bold">{data.documentCompleteness.score}%</span>
+            </div>
+            <div className="w-full bg-muted/30 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all ${data.documentCompleteness.score >= 80 ? "bg-emerald-500" : data.documentCompleteness.score >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                style={{ width: `${data.documentCompleteness.score}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <p className="text-muted-foreground">Received</p>
+                <p className="font-medium">{data.documentCompleteness.totalReceived} / {data.documentCompleteness.totalExpected}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Expiring Soon</p>
+                <p className="font-medium text-amber-400">{data.documentCompleteness.expiringSoon}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Expired</p>
+                <p className="font-medium text-red-400">{data.documentCompleteness.expired}</p>
+              </div>
+            </div>
+            {data.documentCompleteness.pendingCategories.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Pending Document Categories</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {data.documentCompleteness.pendingCategories.map((cat: string) => (
+                    <Badge key={cat} variant="outline" className="text-[10px] border-amber-500/20 text-amber-400">
+                      {cat.replace(/_/g, " ")}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </GlassCard>
+      )}
 
       <GlassCard hover={false} className="p-6">
         <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>

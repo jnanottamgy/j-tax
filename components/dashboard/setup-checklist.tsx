@@ -81,7 +81,7 @@ export function SetupChecklist({ data }: { data: SetupChecklistData }) {
           <div className="flex items-center gap-2">
             <Sparkles className="size-4 text-primary" />
             <CardTitle className="text-sm font-semibold">
-              Get started with J-TAX
+              Get started with J-TACS
             </CardTitle>
             <span className="text-xs text-muted-foreground">
               {completedCount} / {totalCount} complete

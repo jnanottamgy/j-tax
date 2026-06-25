@@ -1,5 +1,5 @@
 {
-  "name": "j-tax",
+  "name": "j-tacs",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,6 +7,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test -r dotenv/config tests/firm-settings.test.ts tests/roles.test.ts tests/validations.test.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",

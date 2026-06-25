@@ -1,16 +1,16 @@
-# J-TAX — Complete Project State Document
+# J-TACS — Complete Project State Document
 
-**Last updated:** 2026-06-10 (Session 12 — Production Launch Hardening, 8-Phase Certification)
+**Last updated:** 2026-06-10 (Session 15 — Firm-Branded Email System, Phases 1-8)
 **Branch:** `main`
-**Last commit:** `fbb38f6` — feat(hardening): production launch hardening — 8-phase certification
+**Last commit:** `8a2a7e0` — docs: add session 12 entries to FIX_LOG
 **App URL:** http://localhost:3000 (dev) | Vercel (prod, not yet deployed)
-**Test credentials:** `admin@jtax.test` / `JTax@Admin2026!` (PARTNER role)
+**Test credentials:** `admin@jtacs.test` / `JTacs@Admin2026!` (PARTNER role)
 
 ---
 
 ## 1. WHAT THIS PROJECT IS
 
-J-TAX is an enterprise tax operations management platform for Indian CA/tax firms. It manages:
+J-TACS is an enterprise tax operations management platform for Indian CA/tax firms. It manages:
 - Client portfolio (GST, ITR, TDS, Payroll, Audit, ROC filings)
 - Work tracker (Kanban board of tasks per client)
 - Compliance calendar (deadline tracking with status)
@@ -89,7 +89,7 @@ CLIENT routing enforced at 4 layers: `signIn` action, `proxy.ts`, `(app)/layout.
 ## 5. REPOSITORY STRUCTURE (key files only)
 
 ```
-j-tax/
+j-tacs/
 ├── app/
 │   ├── (app)/
 │   │   ├── page.tsx                  # Role dashboards + CLIENT guard
@@ -208,7 +208,7 @@ All required vars set in `.env`:
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Production build | ✅ Passes | 42 routes, 0 errors |
+| Production build | ✅ Passes | 46 routes, 0 errors |
 | TypeScript strict mode | ✅ Passes | 0 errors |
 | ESLint | ✅ Passes | 0 errors, 260 warnings (all `warn`, not `error`) |
 | Login/auth flow | ✅ Manual | |
@@ -250,20 +250,34 @@ All required vars set in `.env`:
 | **FirmSettings DB model** | ✅ Done S12 | Singleton table; PARTNER configures in Settings; env-var fallback for fresh installs |
 | **Dynamic email branding** | ✅ Done S12 | resend-provider reads from DB on every send; no restart needed after settings change |
 | **Settings PARTNER-only guard** | ✅ Done S12 | Firm Details card only rendered for PARTNER; saveFirmSettings() uses requirePartner() |
-| **RLS SQL generated** | ✅ Done S12 | 002_rls_policies.sql covers 12 tables; run in Supabase SQL editor to activate |
+| **RLS SQL generated** | ✅ Done S12→S14 | 002_rls_policies.sql covers ALL 36 tables; 56 policies; jtacs_auth schema; idempotent |
 | **Dev artifacts removed** | ✅ Done S12 | 22 QA reports deleted; test-client-master.ts deleted; seedEmployeesIfEmpty removed |
 | **EMPLOYEE onboarding bypass** | ✅ Done S12 | EMPLOYEE goes straight to dashboard; wizard only for PARTNER/MANAGER |
+| **Lead CRM Enhancement** | ✅ Done S13 | 9 statuses, detail page, conversion workflow, sidebar reorganized |
+| **Recurring Compliance Engine** | ✅ Done S13 | 17 templates, auto-task generation, monthly cron |
+| **Document Completeness** | ✅ Done S13 | Expiry/renewal dates, score calculation, Client 360 integration |
+| **Automated Email Reminders** | ✅ Done S13 | Compliance/doc/task reminders via daily cron |
+| **Employee Alerts** | ✅ Done S13 | Overdue tasks, compliance deadlines, doc expiry — notification + email |
+| **Management Command Center** | ✅ Done S13 | CRM metrics, compliance score, pipeline data in Partner dashboard |
+| **Client Lifecycle Timeline** | ✅ Done S13 | 19 event types, timeline tab in Client 360, event hooks in actions |
+| **Lead → Client Conversion** | ✅ Done S13 | Auto-creates client from WON lead, preserves history |
+| **RLS Full Certification** | ✅ Done S14 | 36/36 tables; 56 policies; jtacs_auth schema (auth schema read-only fix); activation guide |
+| **Firm-Branded Email System** | ✅ Done S15 | All 8 phases — hardcoded firm identity eliminated; FirmSettings model extended with domain-verification fields; sender envelope resolver; platform fallback with firm Reply-To; in-app DNS verification flow with live `dns/promises` checks; PARTNER-only DNS records UI; in-app Email Setup Guide at `/docs/email-setup`; 11/11 runtime certification PASS |
 | Automated tests | ❌ None | No Jest/Vitest/Playwright |
-| RLS activation | ⚠️ Pending | SQL generated; must be run in Supabase SQL editor to take effect |
+| RLS activation | ⚠️ Pending | SQL generated and certified; run `002_rls_policies.sql` in Supabase SQL editor |
+| FirmSettings domain migration | ⚠️ Pending | Run `003_firm_settings_domain.sql` in Supabase SQL editor for Phase 8 columns |
+| Platform fallback sender | ⚠️ Pending | Set `PLATFORM_FROM_EMAIL` env var (Resend-verified address on platform domain) so unverified firms still send with firm branding |
 
 ---
 
 ## 8. REMAINING WORK (priority order)
 
 ### CRITICAL — Before First Production User
-1. **Configure Firm Settings** — Log in as PARTNER → Settings → Firm Details. Set firm name and sender email. Without a valid `fromEmail`, email sends will fail silently.
-2. **Activate RLS** — Run `prisma/migrations-manual/002_rls_policies.sql` in Supabase SQL editor. Until then, direct API calls bypass application-layer guards.
-3. **Verify Resend sender domain** — The `fromEmail` configured in Firm Settings must be a verified domain/address in the Resend dashboard.
+1. **Configure Firm Settings** — Log in as PARTNER → Settings → Firm Details. Set firm name and sender email. The wizard's Step 1 also writes these to the FirmSettings DB row.
+2. **Activate RLS** — Run `prisma/migrations-manual/002_rls_policies.sql` in Supabase SQL editor. Covers all 36 tables with 56 policies. See `RLS_ACTIVATION_GUIDE.md`.
+3. **Run firm-settings domain migration** — `prisma/migrations-manual/003_firm_settings_domain.sql` adds the 5 columns needed by the Domain Verification UI. Idempotent.
+4. **Set `PLATFORM_FROM_EMAIL`** env var — a Resend-verified address on a platform-owned domain. Unverified firms send with firm display name via this address with Reply-To routing back to the firm. Without it, the "Mode B" fallback isn't available.
+5. **Verify firm's domain in Resend** (or platform domain at minimum) — direct branded send requires the firm's domain to be a verified Resend identity. The in-app DNS Verification UI guides PARTNERs through this.
 
 ### HIGH — Security
 4. **Upstash Redis rate limiter** — In-memory rate limiter resets on serverless cold starts. Migration path documented in `lib/security/rate-limiter.ts`.

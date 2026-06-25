@@ -1,6 +1,6 @@
 "use server"
 
-import { requireAuth } from "@/lib/auth/guards"
+import { requireAuth, requirePartner } from "@/lib/auth/guards"
 import {
   canAccessAssignedClient,
   getExecutiveEmployeeId,
@@ -8,6 +8,9 @@ import {
 import { prisma } from "@/lib/prisma"
 import { getGlobalActivityLogs, getEntityActivityLogs, getUserActivityLogs } from "@/lib/activity/logger"
 
+// Firm-wide activity log — PARTNER only. The `/activity` route is
+// PARTNER-restricted at the proxy layer, but this server action is callable
+// directly via form submission, so we must enforce the guard here too.
 export async function getGlobalTimeline(
   filters?: {
     entityType?: string
@@ -18,7 +21,7 @@ export async function getGlobalTimeline(
   limit: number = 100,
   offset: number = 0
 ) {
-  const session = await requireAuth()
+  const session = await requirePartner()
 
   const parsedFilters: any = {}
   if (filters?.entityType) parsedFilters.entityType = filters.entityType
@@ -64,6 +67,20 @@ export async function getClientTimeline(clientId: string, limit: number = 50) {
 export async function getTaskTimeline(taskId: string, limit: number = 50) {
   const session = await requireAuth()
 
+  // EMPLOYEEs can only view timelines for tasks assigned to them
+  if (session.user.role === "EMPLOYEE") {
+    const executiveEmployeeId = await getExecutiveEmployeeId(session)
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { assignedEmployeeId: true, client: { select: { assignedEmployeeId: true } } },
+    })
+    if (!task) throw new Error("Task not found")
+    const canSee =
+      task.assignedEmployeeId === executiveEmployeeId ||
+      task.client.assignedEmployeeId === executiveEmployeeId
+    if (!canSee) throw new Error("You do not have permission to view this task's activity")
+  }
+
   const logs = await getEntityActivityLogs("TASK", taskId, limit)
 
   return {
@@ -73,7 +90,12 @@ export async function getTaskTimeline(taskId: string, limit: number = 50) {
 }
 
 export async function getInvoiceTimeline(invoiceId: string, limit: number = 50) {
+  // Invoices are PARTNER/MANAGER only; EMPLOYEEs have no business viewing
+  // invoice activity (consistent with /payments route restriction).
   const session = await requireAuth()
+  if (session.user.role === "EMPLOYEE") {
+    throw new Error("You do not have permission to view invoice activity")
+  }
 
   const logs = await getEntityActivityLogs("INVOICE", invoiceId, limit)
 
@@ -85,6 +107,19 @@ export async function getInvoiceTimeline(invoiceId: string, limit: number = 50) 
 
 export async function getDocumentTimeline(documentId: string, limit: number = 50) {
   const session = await requireAuth()
+
+  // EMPLOYEEs can only view timelines for documents on clients assigned to them
+  if (session.user.role === "EMPLOYEE") {
+    const executiveEmployeeId = await getExecutiveEmployeeId(session)
+    const doc = await prisma.document.findUnique({
+      where: { id: documentId },
+      select: { client: { select: { assignedEmployeeId: true } } },
+    })
+    if (!doc) throw new Error("Document not found")
+    if (doc.client.assignedEmployeeId !== executiveEmployeeId) {
+      throw new Error("You do not have permission to view this document's activity")
+    }
+  }
 
   const logs = await getEntityActivityLogs("DOCUMENT", documentId, limit)
 

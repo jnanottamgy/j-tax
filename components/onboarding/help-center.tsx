@@ -98,7 +98,7 @@ const guides: Guide[] = [
   },
   {
     title: "API Documentation",
-    description: "Integrate J-TAX with your tools",
+    description: "Integrate J-TACS with your tools",
     icon: <ExternalLink className="size-5" />,
     link: "/docs/api",
   },

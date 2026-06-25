@@ -15,6 +15,7 @@ import {
 import type { FormActionState } from "@/lib/forms/types"
 import { prisma } from "@/lib/prisma"
 import { notificationService } from "@/lib/messaging/notification-service"
+import { getFirmSettings } from "@/lib/firm-settings"
 import { messageSchema, templateSchema } from "@/lib/validations/message"
 
 export type MessageActionState = FormActionState
@@ -148,11 +149,12 @@ export async function createMessage(
       },
     })
 
-    // Dispatch via notification service
+    // Dispatch via notification service — use firm name from DB settings
+    const cfgForSubject = await getFirmSettings()
     const sendResult = await notificationService.send({
       channel: "email",
       to: recipient,
-      subject: `Message from ${process.env.FIRM_NAME || "Your Tax Firm"}`,
+      subject: `Message from ${cfgForSubject.firmName}`,
       content: parsed.data.content,
       metadata: {
         messageId: message.id,
@@ -395,10 +397,11 @@ export async function sendBulkReminders(
         },
       })
 
+      const cfgForTemplateSubject = await getFirmSettings()
       const sendResult = await notificationService.send({
         channel: "email",
         to: recipient,
-        subject: `${template.type.replace(/_/g, " ")} - ${process.env.FIRM_NAME || "Your Tax Firm"}`,
+        subject: `${template.type.replace(/_/g, " ")} - ${cfgForTemplateSubject.firmName}`,
         content,
         metadata: {
           messageId: message.id,

@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
+import { recordTimelineEvent } from "@/lib/timeline/events"
 import type { FormActionState } from "@/lib/forms/types"
 import {
   followUpSchema,
@@ -49,8 +50,9 @@ export async function createInvoice(
   formData: FormData
 ): Promise<FormActionState> {
   // C-09 fix: only PARTNER/MANAGER can create invoices
+  let session: Awaited<ReturnType<typeof requirePartnerOrManager>>
   try {
-    await requirePartnerOrManager()
+    session = await requirePartnerOrManager()
   } catch {
     return { error: "You do not have permission to create invoices." }
   }
@@ -76,7 +78,7 @@ export async function createInvoice(
       return { error: "An invoice with this number already exists." }
     }
 
-    await prisma.invoice.create({
+    const newInvoice = await prisma.invoice.create({
       data: {
         clientId: data.clientId,
         invoiceNumber: data.invoiceNumber,
@@ -87,6 +89,14 @@ export async function createInvoice(
         outstandingAmount: amountValue,
         paidAmount: 0,
       },
+    })
+
+    await recordTimelineEvent({
+      clientId: data.clientId,
+      eventType: "INVOICE_CREATED",
+      title: `Invoice ${data.invoiceNumber} created`,
+      description: `Amount: ₹${amountValue.toLocaleString("en-IN")}`,
+      performedBy: session.user.id,
     })
 
     revalidatePath("/payments/invoices")
@@ -222,6 +232,14 @@ export async function recordPayment(
       }),
     ])
 
+    // Timeline event
+    await recordTimelineEvent({
+      clientId: invoice.clientId,
+      eventType: "PAYMENT_RECEIVED",
+      title: `Payment received: ₹${amount.toLocaleString("en-IN")}`,
+      description: `Invoice ${invoice.invoiceNumber}${method ? ` via ${method}` : ""}`,
+    })
+
     // Notify all PARTNER/MANAGER users about the received payment
     try {
       const managers = await prisma.user.findMany({
@@ -240,7 +258,7 @@ export async function recordPayment(
           })),
         })
       }
-    } catch {}
+    } catch (logErr) { console.error("payment notification log failed:", logErr) }
 
     revalidatePath(`/payments/invoices/${invoiceId}`)
     revalidatePath("/payments/invoices")

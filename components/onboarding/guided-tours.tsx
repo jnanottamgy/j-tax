@@ -187,7 +187,7 @@ export function GuidedTours({ available: _available = true, onComplete }: Guided
           <span className="text-sm font-medium">Guided Tours</span>
         </div>
         <p className="text-xs text-muted-foreground mb-3">
-          Learn how to use J-TAX with interactive tours.
+          Learn how to use J-TACS with interactive tours.
         </p>
         <div className="grid grid-cols-2 gap-2">
           {TOURS.map((tour) => (
@@ -319,7 +319,7 @@ export function useTourState() {
   const [completedTours, setCompletedTours] = useState<TourType[]>([])
 
   useEffect(() => {
-    const stored = localStorage.getItem("jtax.completedTours")
+    const stored = localStorage.getItem("jtacs.completedTours")
     if (stored) {
       setCompletedTours(JSON.parse(stored))
     }
@@ -328,12 +328,12 @@ export function useTourState() {
   const markTourComplete = (tourId: TourType) => {
     const updated = [...completedTours, tourId]
     setCompletedTours(updated)
-    localStorage.setItem("jtax.completedTours", JSON.stringify(updated))
+    localStorage.setItem("jtacs.completedTours", JSON.stringify(updated))
   }
 
   const resetTours = () => {
     setCompletedTours([])
-    localStorage.removeItem("jtax.completedTours")
+    localStorage.removeItem("jtacs.completedTours")
   }
 
   return { completedTours, markTourComplete, resetTours }

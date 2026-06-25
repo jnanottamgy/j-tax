@@ -17,11 +17,28 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "J-TAX | Enterprise Tax Dashboard",
+  title: "J-TACS | Tax · Compliance · Intelligence",
   description:
-    "Modern tax compliance and financial operations dashboard for enterprise teams.",
+    "The operating system for modern CA firms. From lead to compliance — one platform.",
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/branding/jtacs-icon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/branding/jtacs-full-logo.png",
+  },
+  openGraph: {
+    title: "J-TACS | Tax · Compliance · Intelligence",
+    description:
+      "The operating system for modern CA firms. From lead to compliance — one platform.",
+    images: ["/branding/jtacs-full-logo.png"],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "J-TACS | Tax · Compliance · Intelligence",
+    description: "The operating system for modern CA firms.",
+    images: ["/branding/jtacs-full-logo.png"],
   },
 };
 

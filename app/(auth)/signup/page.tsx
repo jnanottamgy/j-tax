@@ -17,7 +17,7 @@ export default async function SignUpPage() {
           Create your account
         </h1>
         <p className="text-[15px] leading-relaxed text-muted-foreground">
-          Join J-TAX to manage your tax operations efficiently
+          Join J-TACS to manage your tax operations efficiently
         </p>
       </div>
 

@@ -2,19 +2,26 @@ import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 import { generateQuotationPDF } from "@/lib/quotations/pdf-generator"
-
-const FIRM_NAME = process.env.FIRM_NAME || "TaxWise Consultants"
-const FIRM_EMAIL = process.env.FROM_EMAIL || "noreply@taxwiseconsultants.com"
-const FIRM_PHONE = process.env.FIRM_PHONE || "+91-XXXXXXXXXX"
-const FIRM_ADDRESS = process.env.FIRM_ADDRESS || "India"
+import { getFirmSettings } from "@/lib/firm-settings"
+import { checkApiRateLimit, getRateLimitHeaders } from "@/lib/security/rate-limiter"
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession()
   if (!session || !["PARTNER", "MANAGER"].includes(session.user.role)) {
     return new NextResponse("Unauthorized", { status: 401 })
+  }
+
+  // PDF generation is CPU-heavy — rate-limit per user to prevent a single
+  // authenticated caller from exhausting the serverless function budget.
+  const rl = checkApiRateLimit(`pdf:${session.user.id}`)
+  if (!rl.success) {
+    return new NextResponse("Too many requests", {
+      status: 429,
+      headers: getRateLimitHeaders(rl),
+    })
   }
 
   const { id } = await params
@@ -26,14 +33,15 @@ export async function GET(
   if (!quotation) return new NextResponse("Not found", { status: 404 })
 
   try {
+    const cfg = await getFirmSettings()
     const pdfBuffer = await generateQuotationPDF({
       quotationNumber: quotation.quotationNumber,
       createdAt: quotation.createdAt,
       validUntil: quotation.validUntil,
-      firmName: FIRM_NAME,
-      firmEmail: FIRM_EMAIL,
-      firmPhone: FIRM_PHONE,
-      firmAddress: FIRM_ADDRESS,
+      firmName: cfg.firmName,
+      firmEmail: cfg.fromEmail || "",
+      firmPhone: cfg.firmPhone || "",
+      firmAddress: cfg.firmAddress || "",
       clientName: quotation.clientName,
       clientEmail: quotation.clientEmail,
       clientPhone: quotation.clientPhone,

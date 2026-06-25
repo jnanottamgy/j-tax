@@ -1,5 +1,5 @@
 /**
- * Security Module for J-TAX
+ * Security Module for J-TACS
  * 
  * Central export for all security-related utilities.
  */

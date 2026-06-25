@@ -25,7 +25,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <LogoIcon size={56} glow />
         </div>
         <h1 className="text-gradient text-2xl font-semibold tracking-tight md:text-3xl mt-4">
-          Sign in to J-TAX
+          Sign in to J-TACS
         </h1>
         <p className="text-[15px] leading-relaxed text-muted-foreground">
           Enterprise tax operations for partners, managers, and executives

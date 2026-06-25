@@ -6,6 +6,7 @@ import {
   getExecutiveEmployeeId,
 } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
+import { getClientDocumentCompleteness } from "./documents"
 
 export async function getClient360Data(clientId: string) {
   const session = await requireAuth()
@@ -32,6 +33,8 @@ export async function getClient360Data(clientId: string) {
     documents,
     services,
     complianceEvents,
+    documentCompleteness,
+    timelineEvents,
   ] = await Promise.all([
     prisma.client.findUnique({
       where: { id: clientId },
@@ -57,6 +60,12 @@ export async function getClient360Data(clientId: string) {
       where: { clientId },
       orderBy: { dueDate: "asc" },
       include: { task: { select: { id: true, title: true, status: true } } },
+    }),
+    getClientDocumentCompleteness(clientId),
+    prisma.clientTimelineEvent.findMany({
+      where: { clientId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
     }),
   ])
 
@@ -105,6 +114,8 @@ export async function getClient360Data(clientId: string) {
     documents,
     services,
     complianceEvents,
+    documentCompleteness,
+    timelineEvents,
     metrics,
     user: session.user,
   }

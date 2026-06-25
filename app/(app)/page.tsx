@@ -56,6 +56,13 @@ function makePartnerDashboardFetcher(userId: string) {
         pendingApprovals,
         highRiskClients,
         activeEmployeeCount,
+        crmTotalLeads,
+        crmFollowUpLeads,
+        crmWonLeads,
+        crmLostLeads,
+        crmQuotationsSent,
+        crmRevenuePipeline,
+        expiredDocuments,
       ] = await Promise.all([
         prisma.client.count(),
         prisma.client.count({ where: { status: "ACTIVE" } }),
@@ -122,6 +129,14 @@ function makePartnerDashboardFetcher(userId: string) {
           take: 5,
         }),
         prisma.employee.count({ where: { isActive: true } }),
+        // CRM metrics for command center
+        prisma.lead.count(),
+        prisma.lead.count({ where: { status: { in: ["FOLLOW_UP_REQUIRED", "CLIENT_WILL_REVERT", "CONTACTED"] } } }),
+        prisma.lead.count({ where: { status: "WON" } }),
+        prisma.lead.count({ where: { status: "LOST" } }),
+        prisma.quotation.count({ where: { status: { in: ["SENT", "VIEWED"] } } }),
+        prisma.quotation.aggregate({ where: { status: { in: ["SENT", "VIEWED", "PENDING_APPROVAL", "APPROVED"] } }, _sum: { total: true } }),
+        prisma.document.count({ where: { expiryDate: { lte: now } } }),
       ])
 
       const serializedOutstandingInvoices = outstandingInvoicesRaw.map((inv) => ({
@@ -181,7 +196,18 @@ function makePartnerDashboardFetcher(userId: string) {
           pendingApprovals,
           activeEmployees: activeEmployeeCount,
           highRiskClients: highRiskClients.filter((c) => c._count.tasks >= 2).length,
-          complianceScore: 0, // filled below
+          complianceScore: (pendingComplianceCount + completedComplianceCount) > 0
+            ? Math.round((completedComplianceCount / (pendingComplianceCount + completedComplianceCount)) * 100)
+            : 100,
+        },
+        crmMetrics: {
+          totalLeads: crmTotalLeads,
+          followUpLeads: crmFollowUpLeads,
+          wonLeads: crmWonLeads,
+          lostLeads: crmLostLeads,
+          quotationsSent: crmQuotationsSent,
+          revenuePipeline: Number(crmRevenuePipeline._sum.total ?? 0),
+          expiredDocuments,
         },
         pendingApprovalsList: pendingApprovalsList.map((q) => ({
           id: q.id,
@@ -546,6 +572,7 @@ export default async function DashboardPage() {
     pendingApprovalsList,
     highRiskClientsList,
     collectionRate: _collectionRate,
+    crmMetrics,
   } = data
 
   const totalCompliance = pendingComplianceCount + completedComplianceCount
@@ -581,6 +608,7 @@ export default async function DashboardPage() {
         stats={{ ...commandCenter, complianceScore }}
         pendingApprovals={pendingApprovalsList}
         highRiskClients={highRiskClientsList}
+        crmMetrics={crmMetrics}
       />
 
       {/* Setup checklist — hidden once all steps done */}

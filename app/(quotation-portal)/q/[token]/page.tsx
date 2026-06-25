@@ -3,9 +3,8 @@ import { format } from "date-fns"
 import { CheckCircle, XCircle, Clock, Eye, FileText } from "lucide-react"
 import { prisma } from "@/lib/prisma"
 import { markQuotationViewed } from "@/app/actions/proposals"
+import { getFirmSettings } from "@/lib/firm-settings"
 import { QuotationResponseClient } from "./quotation-response-client"
-
-const FIRM_NAME = process.env.FIRM_NAME || "TaxWise Consultants"
 
 export default async function QuotationPortalPage({
   params,
@@ -14,10 +13,13 @@ export default async function QuotationPortalPage({
 }) {
   const { token } = await params
 
-  const quotation = await prisma.quotation.findUnique({
-    where: { token },
-    include: { items: { orderBy: { sortOrder: "asc" } } },
-  })
+  const [quotation, cfg] = await Promise.all([
+    prisma.quotation.findUnique({
+      where: { token },
+      include: { items: { orderBy: { sortOrder: "asc" } } },
+    }),
+    getFirmSettings(),
+  ])
 
   if (!quotation) notFound()
 
@@ -54,7 +56,7 @@ export default async function QuotationPortalPage({
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div>
             <p className="text-blue-200 text-xs uppercase tracking-widest">Quotation Portal</p>
-            <h1 className="text-white text-xl font-bold mt-0.5">{FIRM_NAME}</h1>
+            <h1 className="text-white text-xl font-bold mt-0.5">{cfg.firmName}</h1>
           </div>
           <div className="text-right">
             <p className="text-blue-200 text-xs">Quotation</p>
@@ -165,8 +167,13 @@ export default async function QuotationPortalPage({
         />
 
         <p className="text-center text-xs text-slate-400 pb-4">
-          {process.env.FROM_EMAIL && (
-            <>Questions? Contact us at <a href={`mailto:${process.env.FROM_EMAIL}`} className="underline">{process.env.FROM_EMAIL}</a></>
+          {cfg.fromEmail && (
+            <>Questions? Contact us at{" "}
+              <a href={`mailto:${cfg.replyToEmail || cfg.fromEmail}`} className="underline">
+                {cfg.replyToEmail || cfg.fromEmail}
+              </a>
+              {cfg.firmPhone ? <> &nbsp;|&nbsp; {cfg.firmPhone}</> : null}
+            </>
           )}
         </p>
       </div>

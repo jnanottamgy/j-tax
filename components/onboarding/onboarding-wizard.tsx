@@ -124,13 +124,16 @@ export function OnboardingWizard() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // Firm info
+  // Firm info — captured into FirmSettings on save so outbound email immediately
+  // uses the firm's identity.
   const [firmInfo, setFirmInfo] = useState({
     firmName: "",
     gstin: "",
     address: "",
     phone: "",
     email: "",
+    replyToEmail: "",
+    website: "",
   })
   const [firmError, setFirmError] = useState("")
 
@@ -352,7 +355,7 @@ export function OnboardingWizard() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] shrink-0">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-sm">J-TAX Setup</span>
+          <span className="font-semibold text-sm">J-TACS Setup</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground hidden sm:block">
@@ -683,13 +686,44 @@ function StepFirmInformation({
               />
             </div>
             <div>
-              <Label htmlFor="firmEmail">Email</Label>
+              <Label htmlFor="firmEmail">
+                Firm Email <span className="text-muted-foreground text-xs">(used as sender)</span>
+              </Label>
               <Input
                 id="firmEmail"
                 type="email"
                 value={data.email}
                 onChange={(e) => onChange({ ...data, email: e.target.value })}
-                placeholder="firm@example.com"
+                placeholder="office@yourfirm.com"
+                className="mt-2"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="replyToEmail">
+                Reply-To Email <span className="text-muted-foreground text-xs">(optional)</span>
+              </Label>
+              <Input
+                id="replyToEmail"
+                type="email"
+                value={data.replyToEmail}
+                onChange={(e) => onChange({ ...data, replyToEmail: e.target.value })}
+                placeholder="contact@yourfirm.com"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="firmWebsite">
+                Website <span className="text-muted-foreground text-xs">(optional)</span>
+              </Label>
+              <Input
+                id="firmWebsite"
+                type="url"
+                value={data.website}
+                onChange={(e) => onChange({ ...data, website: e.target.value })}
+                placeholder="https://yourfirm.com"
                 className="mt-2"
               />
             </div>
@@ -699,7 +733,7 @@ function StepFirmInformation({
 
       <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
         <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary/60" />
-        <span>You can update these details at any time from <strong>Settings</strong>.</span>
+        <span>Your firm name and email become the <strong>sender identity</strong> for every client email. You can verify your domain after onboarding from <strong>Settings → Email Domain Verification</strong>.</span>
       </div>
 
       <StepNav onNext={onNext} saving={saving} nextLabel="Save & Continue" />
@@ -742,7 +776,7 @@ function StepAddEmployees({
         iconBg="bg-green-500/10"
         iconColor="text-green-400"
         title="Add your team members"
-        description="Add the employees who will use J-TAX to manage clients and filings."
+        description="Add the employees who will use J-TACS to manage clients and filings."
       />
 
       <Card className="bg-white/[0.02] border-white/[0.08] p-6">
@@ -1249,21 +1283,21 @@ function StepConfigureEmail({
       <div className="mt-4 bg-blue-500/5 border border-blue-500/20 rounded-lg px-4 py-3 space-y-2">
         <p className="text-sm font-medium text-blue-400 flex items-center gap-2">
           <Mail className="h-4 w-4" />
-          Outbound Email Setup
+          Firm-Branded Email — How It Works
         </p>
-        <p className="text-xs text-muted-foreground">
-          J-TAX sends client emails via <strong>Resend</strong>. Make sure{" "}
-          <code className="bg-black/20 px-1 py-0.5 rounded text-xs">FROM_EMAIL</code> and{" "}
-          <code className="bg-black/20 px-1 py-0.5 rounded text-xs">FIRM_NAME</code> are set in your
-          environment variables before sending any emails to clients.
-        </p>
+        <ul className="text-xs text-muted-foreground space-y-1.5 list-disc list-inside">
+          <li>Every email is sent from your firm&apos;s identity (name + address) you entered in Step 1.</li>
+          <li>Until you verify your domain, emails go out with your <strong>firm display name</strong> via the platform domain. Reply-To still routes back to you.</li>
+          <li>To send directly from your own domain, finish onboarding then visit{" "}
+            <strong>Settings → Email Domain Verification</strong> and publish 3 DNS records.</li>
+        </ul>
         <a
-          href="https://resend.com/docs"
+          href="/docs/email-setup"
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-blue-400 hover:underline flex items-center gap-1 mt-1"
         >
-          Resend documentation
+          Email Setup Guide
           <ExternalLink className="h-3 w-3" />
         </a>
       </div>

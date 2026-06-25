@@ -77,10 +77,11 @@ export async function GET(request: Request) {
       message: `Processed ${overdueInvoices.length} newly overdue invoices.`,
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error"
+    // Log full detail server-side; return a generic message so internal
+    // errors (stack hints, DB errors) aren't echoed to any caller.
     console.error("Payment CRON Error:", error)
     return NextResponse.json(
-      { success: false, error: message },
+      { success: false, error: "Cron job failed." },
       { status: 500 }
     )
   }

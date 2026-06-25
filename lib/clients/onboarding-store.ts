@@ -146,7 +146,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
         }),
     }),
     {
-      name: "j-tax-client-onboarding",
+      name: "j-tacs-client-onboarding",
       partialize: (state) => ({
         step: state.step,
         basic: state.basic,

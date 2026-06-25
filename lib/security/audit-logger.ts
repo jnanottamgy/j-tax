@@ -1,5 +1,5 @@
 /**
- * Audit Logging for J-TAX
+ * Audit Logging for J-TACS
  * 
  * Comprehensive audit logging for security events and user actions.
  * All security-relevant actions are logged for compliance and forensic analysis.

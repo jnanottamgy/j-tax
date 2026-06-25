@@ -477,7 +477,7 @@ export async function updateComplianceWorkflowStatus(
             entityName: event.title,
           })
         }
-      } catch {}
+      } catch (logErr) { console.error("compliance activity log failed:", logErr) }
     }
 
     revalidatePath("/calendar")

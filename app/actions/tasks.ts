@@ -15,6 +15,7 @@ import {
 import type { FormActionState } from "@/lib/forms/types"
 import { prisma } from "@/lib/prisma"
 import { parseCreateTaskFormData, taskBaseSchema } from "@/lib/validations/task"
+import { recordTimelineEvent } from "@/lib/timeline/events"
 
 export type TaskActionState = FormActionState
 
@@ -129,6 +130,15 @@ export async function createTask(
       include: { client: { select: { name: true } } },
     })
 
+    // Timeline event
+    await recordTimelineEvent({
+      clientId: newTask.clientId,
+      eventType: "TASK_CREATED",
+      title: `Task created: ${newTask.title}`,
+      description: newTask.description || null,
+      performedBy: session.user.id,
+    })
+
     // Workforce tracking
     try {
       const { trackEmployeeActivity, getEmployeeByUserId } = await import("@/lib/workforce/tracker")
@@ -144,7 +154,7 @@ export async function createTask(
           entityName: newTask.title,
         })
       }
-    } catch {}
+    } catch (logErr) { console.error("activity/notification log failed:", logErr) }
 
     // In-app notification for the assigned employee
     if (newTask.assignedEmployeeId) {
@@ -165,7 +175,7 @@ export async function createTask(
             },
           })
         }
-      } catch {}
+      } catch (logErr) { console.error("activity/notification log failed:", logErr) }
     }
 
     revalidatePath("/work-tracker")
@@ -297,6 +307,16 @@ export async function updateTaskStatus(
       data: updateData,
     })
 
+    // Timeline event on completion
+    if (status === "FILED_DONE") {
+      await recordTimelineEvent({
+        clientId: task.clientId,
+        eventType: "TASK_COMPLETED",
+        title: `Task completed: ${task.title}`,
+        performedBy: session.user.id,
+      })
+    }
+
     // Workforce tracking
     if (status === "FILED_DONE") {
       try {
@@ -313,7 +333,7 @@ export async function updateTaskStatus(
             entityName: task.title,
           })
         }
-      } catch {}
+      } catch (logErr) { console.error("activity/notification log failed:", logErr) }
     }
 
     revalidatePath("/work-tracker")

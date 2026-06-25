@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <clipPath id="clip-finsal">
+      <rect width="1920" height="1080"/>
+    </clipPath>
+  </defs>
+  <g id="finsal" clip-path="url(#clip-finsal)">
+    <rect width="1920" height="1080" fill="rgba(255,255,255,0)"/>
+    <path id="Path_1" data-name="Path 1" d="M615.3,435.014c1.652,0,64.973-53.006,64.973-53.006l64.973,53.006-64.973-22.228Z" transform="translate(0.523 -1.434)" fill="#d6c0a0"/>
+    <path id="Path_2" data-name="Path 2" d="M663.4,424.023l18.243-6.081,16.032,6.081-3.87,5.528L693.1,633.4s-3.431,28.373-20.845,52.56-49.582,41.095-49.582,41.095,20.208-20.816,30.97-44.073S667.2,633.4,667.2,633.4l.075-203.845Z" fill="#d6c0a0"/>
+    <path id="Path_3" data-name="Path 3" d="M605.885,447.828,595.048,492.76s9.691-12.951,14.185-18.414,17.68-4.992,17.68-4.992h18.8V456.087s-19.527.447-29.34-1.211S605.885,447.828,605.885,447.828Z" fill="#d6c0a0"/>
+    <path id="Path_4" data-name="Path 4" d="M634.873,447.828l10.837,44.933s-9.691-12.951-14.185-18.414-17.68-4.992-17.68-4.992h-18.8V456.087s19.527.447,29.34-1.211S634.873,447.828,634.873,447.828Z" transform="translate(120)" fill="#d6c0a0"/>
+  </g>
+</svg>

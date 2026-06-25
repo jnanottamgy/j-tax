@@ -1,134 +1,95 @@
-# J-TAX Session Handoff
+# J-TACS Session Handoff
 
 **For:** Next Claude Code session
-**Date of prior session:** 2026-06-10 (Session 12 — Production Launch Hardening, 8-Phase Certification)
+**Date of prior session:** 2026-06-10 (Session 15 — Firm-Branded Email System)
 **Branch:** `main`
-**Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax`
+**Working directory:** `C:\Users\Jnanottam\OneDrive\Documents\j-tax` (rename to `j-tacs` planned)
+
+---
+
+## SESSION 15 SUMMARY
+
+White-labelled the entire outbound email pipeline. Every production sender now reads `firm_settings` per-send via `getFirmSettings()` — no module constants, no env-var fallbacks at runtime, no hardcoded "TaxWise Consultants" / `noreply@taxwiseconsultants.com` left in production paths. Added Phase 8 domain verification: DNS instructions, live `dns/promises` checks, verified-vs-fallback envelope resolver, in-app PARTNER UI, and `/docs/email-setup` admin guide.
+
+**Routes:** 47 (+1)
+**Build / TypeScript / Lint:** all green (0 errors, 255 warnings — baseline)
+**Runtime certification:** 11/11 PASS — see `FIRM_BRANDED_EMAIL_CERTIFICATION.md`
+
+**Pending operator actions:**
+1. Run `prisma/migrations-manual/003_firm_settings_domain.sql` in Supabase SQL editor (idempotent).
+2. Set `PLATFORM_FROM_EMAIL` env var to a Resend-verified address on the platform domain.
+3. PARTNER → `/settings` → configure Firm Details + DNS records for own-domain verification.
 
 ---
 
 ## QUICK STATUS
 
 ```
-Build:      42 routes ✅  (npm run build — ✓ compiled successfully)
+Build:      46 routes ✅  (npm run build — compiled successfully)
 TypeScript: 0 errors  ✅  (npx tsc --noEmit)
-Lint:       0 errors  ✅  (npm run lint) — 250 warnings, all warn-level
-DB:         Synced    ✅  (EXECUTIVE removed; firm_settings table added)
+Lint:       0 errors  ✅  (npm run lint) — 254 warnings, all warn-level
+DB:         Synced    ✅  (no schema changes this session)
+RLS:        36/36     ✅  (SQL certified; pending Supabase activation)
 ```
 
 ```bash
 npm run dev    # → http://localhost:3000
-# Login: admin@jtax.test / JTax@Admin2026!  (PARTNER role)
+# Login: admin@jtacs.test / JTacs@Admin2026!  (PARTNER role)
 ```
 
 ---
 
-## WHAT WAS DONE IN SESSION 12
+## WHAT WAS DONE IN SESSION 14
 
-### Phase 1 — Role Migration Complete
-- All `EXECUTIVE` references in runtime code replaced with `EMPLOYEE` (comments in search.ts, compliance.ts, invoices.ts)
-- `001_rename_executive_to_employee.sql` enhanced: idempotent DO block, enum verification queries
-- `prisma db push --accept-data-loss` applied: `EXECUTIVE` removed from DB `Role` enum; `firm_settings` table created atomically in the same push — no manual SQL step needed for the enum migration
+### Database Security Certification — Row-Level Security (RLS)
 
-### Phase 2 — Email System Certified
-| Component | Before | After |
-|-----------|--------|-------|
-| `FIRM_NAME` source | env var only (stale at module load) | DB `firm_settings` row, read on every send, env-var fallback |
-| `FROM_EMAIL` source | env var only | DB `firm_settings.fromEmail`, dynamic |
-| Reply-To | Not set | DB `firm_settings.replyToEmail`, injected when configured |
-| Sender format | `from@domain` bare address | `Firm Name <from@domain>` |
-| Email templates | Hardcoded `${FIRM_NAME}` at class init | Dynamic per-send via `getFirmSettings()` |
+**Problem:** Session 12 generated RLS for 12 tables, but the database has 36 tables. 24 tables — including payment records, document versions, task comments, workforce data, quotation items, and timeline events — had zero RLS protection. Any direct API/PostgREST call could bypass all application-layer guards.
 
-New files:
-- `lib/firm-settings.ts` — `getFirmSettings()` / `upsertFirmSettings()` with Prisma + env fallback
-- `prisma/migrations-manual/002_rls_policies.sql` — production RLS (see Phase 3)
+**Solution:** Complete rewrite of `002_rls_policies.sql`. Note: helper functions are in the `jtacs_auth` schema — Supabase blocks writes to the `auth` schema (`ERROR: 42501`), so a dedicated schema is required.
 
-Updated files:
-- `lib/messaging/resend-provider.ts` — fully rewritten; async DB read per send
-- `app/actions/settings.ts` — added `saveFirmSettings()` (PARTNER guard) + `loadFirmSettings()`
-- `prisma/schema.prisma` — `FirmSettings` model added
+| Metric | Before (S12) | After (S14) |
+|--------|-------------|-------------|
+| Tables with RLS | 12 / 36 | **36 / 36** |
+| Policies | ~24 | **56** |
+| Helper functions | 2 (plain) | **2 (SECURITY DEFINER)** |
+| Idempotent | No | **Yes** (DROP + re-create) |
+| Transaction-wrapped | No | **Yes** |
+| Verification queries | 2 | **5 + 10 simulations** |
+| Activation guide | None | **Full guide created** |
 
-### Phase 3 — RLS SQL Generated
-`prisma/migrations-manual/002_rls_policies.sql` — run this in Supabase SQL editor to activate:
-- `auth.user_role()` helper reads JWT `app_metadata.role`
-- `auth.employee_id()` helper resolves `employees.id` for the current user
-- Tables covered: `clients`, `tasks`, `invoices`, `documents`, `notifications`, `employees`, `compliance_events`, `messages`, `firm_settings`, `leads`, `quotations`, `activity_logs`, `audit_logs`
-- Policy summary: PARTNER = all; MANAGER = all except audit-only tables; EMPLOYEE = assigned records only; CLIENT = own portal data only
+### Key Security Decisions
 
-### Phase 4 — Settings Page Hardened
-- **PARTNER** sees: Firm Details card (name, sender email, reply-to, phone, GSTIN, PAN, website, address) + Billing card
-- **MANAGER** sees: Read-only email config summary card
-- **EMPLOYEE** sees: Profile + Password + Notifications only
-- `saveFirmSettings()` enforces `requirePartner()` server-side regardless of UI state
+1. **`jtacs_auth` schema** — Helper functions live in a dedicated `jtacs_auth` schema. Supabase's `auth` schema is read-only; attempting `CREATE FUNCTION auth.*` fails with `ERROR: 42501: permission denied for schema auth`. The functions call Supabase built-ins (`auth.jwt()`, `auth.uid()`) internally — those are accessible from any schema.
 
-### Phase 5 — Dev Artifacts Removed
-- `seedEmployeesIfEmpty()` deleted from `lib/clients/queries.ts`
-- All callers removed: `app/actions/clients.ts`, `app/api/clients/route.ts`
-- `test-client-master.ts` deleted
-- 22 stale `*_REPORT.md` files removed from repo root
+2. **EMPLOYEE scoping** — All EMPLOYEE access is scoped through `assignedEmployeeId` on the `clients` table. Child tables (documents, tasks, compliance events, etc.) use `EXISTS` subqueries that join through the parent chain.
 
-### Phase 6 — First Login Flow Verified & Fixed
-Flow is correct and tested:
-```
-Unauthenticated        → /login                     ✅
-CLIENT role            → /client (portal)           ✅
-PARTNER/MANAGER, onboarding incomplete → OnboardingWizard ✅ (FIXED)
-EMPLOYEE, any state    → Dashboard directly          ✅ (FIXED — was showing wizard)
-PARTNER/MANAGER, onboarding complete → Dashboard    ✅
-```
+3. **`jtacs_auth.employee_id()` is SECURITY DEFINER** — Runs as postgres to bypass RLS on the `employees` table when resolving the caller's own Employee.id, preventing a circular dependency.
 
----
+4. **No CLIENT policies** — CLIENT users access data exclusively through the client portal (which uses the service-role key). No direct DB access is permitted.
 
-## THREE STEPS REQUIRED BEFORE FIRST PRODUCTION USER
+5. **Service-role bypass** — The Next.js backend uses `SUPABASE_SERVICE_ROLE_KEY` for all Prisma operations, which bypasses RLS. The policies protect against direct API/PostgREST access only.
 
-### 1. Configure Firm Settings (BLOCKING for email delivery)
-Log in as PARTNER → `/settings` → "Firm Details" card.
-Set at minimum:
-- **Firm Name** (appears in all email headers and PDF quotations)
-- **Sender Email** (must be a Resend-verified domain address)
+### Access Pattern Summary
 
-### 2. Activate RLS (HIGH SECURITY — run in Supabase SQL editor)
-```sql
--- File: prisma/migrations-manual/002_rls_policies.sql
--- Paste entire file into Supabase SQL editor and execute.
--- This enables row-level security on all 12 tables.
-```
+| Pattern | Tables |
+|---------|--------|
+| PARTNER-only | `audit_logs`, `activity_logs` |
+| PARTNER write / staff read | `firm_settings`, `"User"`, `recurring_compliance_templates` |
+| PARTNER+MANAGER only | `invoices`, `payment_receipts`, `follow_ups`, `invoice_reminders`, `leads`, `quotations`, `quotation_items`, `quotation_email_logs`, `quotation_follow_ups`, `task_automations` |
+| PARTNER+MANAGER full / EMPLOYEE scoped read | `clients`, `client_services`, `compliance_schedules`, `documents`, `document_versions`, `document_tags`, `document_activities`, `messages`, `message_logs`, `reminders`, `client_timeline_events` |
+| PARTNER+MANAGER full / EMPLOYEE scoped write | `tasks`, `task_comments`, `task_attachments`, `compliance_events` |
+| Workforce (PARTNER full / MANAGER read / EMPLOYEE own) | `employee_sessions`, `employee_activities`, `attendance_records` |
+| Own-records only | `notifications` |
 
-### 3. Set RESEND_API_KEY in production env
-```
-RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxx
-```
-Email sends fail silently with "Resend API key not configured" until this is set.
+### Files Changed
 
----
-
-## KEY ARCHITECTURAL NOTES (updated)
-
-### Email Configuration Chain (Session 12)
-```
-resendProvider.send() / sendTemplate()
-  → getFirmSettings()                   # reads firm_settings DB row
-    → fallback: process.env.FIRM_NAME   # if row absent
-  → builds "Firm Name <from@email>"     # properly formatted sender
-  → injects reply_to when configured
-  → Resend API POST /emails
-```
-
-### Settings Access Matrix (Session 12)
-```
-Section          PARTNER   MANAGER   EMPLOYEE
-Firm Details     ✏️ Edit   👁 Read    ❌ Hidden
-Email Config     ✏️ Edit   👁 Read    ❌ Hidden
-Profile          ✏️ Edit   ✏️ Edit   ✏️ Edit
-Password         ✏️ Edit   ✏️ Edit   ✏️ Edit
-Notifications    ✏️ Edit   ✏️ Edit   ✏️ Edit
-Billing          ✏️ Edit   ❌ Hidden  ❌ Hidden
-```
-
-### RLS Status (Session 12)
-- SQL script generated and committed: `prisma/migrations-manual/002_rls_policies.sql`
-- **Not yet applied** — must be run in Supabase SQL editor
-- Until applied: application-layer guards protect data; direct Supabase API calls bypass them
+| File | Change |
+|------|--------|
+| `prisma/migrations-manual/002_rls_policies.sql` | **Rewritten** — 36 tables, 56 policies, `jtacs_auth` schema, idempotent |
+| `prisma/migrations-manual/RLS_ACTIVATION_GUIDE.md` | **New** — step-by-step activation, verification, rollback |
+| `PROJECT_STATE.md` | Updated RLS status |
+| `FIX_LOG.md` | Session 14 entries (RLS-001 through RLS-002); RLS-002 documents the `jtacs_auth` schema fix |
+| `SESSION_HANDOFF.md` | This file |
 
 ---
 
@@ -136,8 +97,8 @@ Billing          ✏️ Edit   ❌ Hidden  ❌ Hidden
 
 ### CRITICAL
 1. Configure Firm Settings via `/settings` (PARTNER login required)
-2. Run `002_rls_policies.sql` in Supabase SQL editor
-3. Verify `RESEND_API_KEY` set in Vercel production env
+2. **Run `002_rls_policies.sql` in Supabase SQL editor** — see `RLS_ACTIVATION_GUIDE.md`
+3. Verify `RESEND_API_KEY` set in production env
 
 ### HIGH
 4. Upstash Redis rate limiter (in-memory resets on cold starts)

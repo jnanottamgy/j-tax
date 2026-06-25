@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { LogoFull } from "@/components/ui/logo"
 
 import {
   Sidebar,
@@ -88,10 +89,10 @@ export function ClientSidebar({ client }: ClientSidebarProps) {
     <Sidebar className="border-r bg-card">
       {/* Logo & Brand */}
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <span className="text-sm font-bold">J</span>
-        </div>
-        <span className="font-semibold">J-TAX Portal</span>
+        <LogoFull iconSize={26} />
+        <span className="text-xs font-medium text-muted-foreground tracking-wide ml-1">
+          Portal
+        </span>
       </div>
 
       <SidebarContent>

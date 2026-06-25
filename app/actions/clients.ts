@@ -107,7 +107,7 @@ export async function createClient(
           entityName: client.name,
         })
       }
-    } catch {}
+    } catch (logErr) { console.error("activity log failed:", logErr) }
 
     // Auto-generate compliance events for all assigned services
     const { generateComplianceEventsForClient } = await import("@/app/actions/compliance")
@@ -185,7 +185,7 @@ export async function updateClient(
           entityName: parsed.data.name,
         })
       }
-    } catch {}
+    } catch (logErr) { console.error("activity log failed:", logErr) }
 
     revalidatePath("/clients")
     revalidatePath(`/clients/${id}`)

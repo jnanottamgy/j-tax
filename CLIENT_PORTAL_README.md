@@ -1,8 +1,8 @@
-# J-TAX Client Portal
+# J-TACS Client Portal
 
 ## Overview
 
-The J-TAX Client Portal is a dedicated interface for clients to access their tax-related information, documents, invoices, and communicate with their tax team. Built with a clean, simple, and mobile-friendly design that matches the premium SaaS aesthetic of J-TAX.
+The J-TACS Client Portal is a dedicated interface for clients to access their tax-related information, documents, invoices, and communicate with their tax team. Built with a clean, simple, and mobile-friendly design that matches the premium SaaS aesthetic of J-TACS.
 
 ## Features
 
@@ -53,7 +53,7 @@ The J-TAX Client Portal is a dedicated interface for clients to access their tax
 ## File Structure
 
 ```
-j-tax/
+j-tacs/
 ├── app/
 │   └── (client-portal)/
 │       └── client/
@@ -174,7 +174,7 @@ The client portal routes are protected by:
 1. **Clean** - Minimal, uncluttered interface
 2. **Simple** - Easy to navigate, clear actions
 3. **Mobile-friendly** - Responsive design for all devices
-4. **Premium SaaS** - Consistent with J-TAX brand
+4. **Premium SaaS** - Consistent with J-TACS brand
 
 ### Color Coding
 

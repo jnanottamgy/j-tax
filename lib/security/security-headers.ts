@@ -1,5 +1,5 @@
 /**
- * Security Headers for J-TAX
+ * Security Headers for J-TACS
  * 
  * Implements comprehensive security headers for protection against
  * XSS, clickjacking, MIME sniffing, and other attacks.

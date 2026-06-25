@@ -1,4 +1,4 @@
-# J-TAX Fix Log
+# J-TACS Fix Log
 
 **Last updated:** 2026-06-10 (Session 12 — Production Launch Hardening, 8-Phase Certification)
 **Branch:** `main`
@@ -363,7 +363,7 @@
 
 **Files changed:**
 - `lib/navigation.ts` — added `NavGroup` type + `navigationGroups` (5 categories, role-filtered); `filterGroupsByRole()` helper; all prior flat exports kept
-- `lib/stores/sidebar-store.ts` — new file; Zustand 5 + `persist`; manages favorites (href|title key), recentItems (max 5), collapsedGroups; localStorage key `j-tax-sidebar-state`
+- `lib/stores/sidebar-store.ts` — new file; Zustand 5 + `persist`; manages favorites (href|title key), recentItems (max 5), collapsedGroups; localStorage key `j-tacs-sidebar-state`
 - `components/layout/app-sidebar.tsx` — complete rewrite; 5 sub-components
 - `components/layout/app-shell.tsx` — `defaultOpen` changed `false` → `true`
 
@@ -906,3 +906,486 @@ Replaced all 12 hardcoded instances across payment reminder, compliance reminder
 - ESLint: 0 errors, 250 warnings (down from 260; test file + 22 report deletions) ✅
 - DB: EXECUTIVE enum value removed; `firm_settings` table created ✅
 - RLS SQL: generated, committed, pending Supabase activation ✅
+
+---
+
+## SESSION 13 — CLIENT REQUIREMENT IMPLEMENTATION
+
+Full-spectrum requirement implementation session. 13-phase client spec audited against codebase. All gaps implemented except WhatsApp/SMS automation (intentionally out of scope).
+
+---
+
+### FEAT-011 — Lead CRM Enhancement (3 New Statuses + Detail View)
+
+- **Schema:** Added `QUOTATION_REQUESTED`, `FOLLOW_UP_REQUIRED`, `CLIENT_WILL_REVERT` to `LeadStatus` enum
+- **Lead Pipeline Table:** Updated with all 9 statuses, color-coded badges, "View Details" + "Convert to Client" actions
+- **New page:** `/proposals/leads/[id]` — Lead Detail View with status dropdown, info card, quotation list, timeline events
+- **Sidebar:** New "Sales / CRM" navigation group for PARTNER and MANAGER roles; removed duplicate "Approvals"
+- **PageHeader:** Added `backHref` prop for back navigation
+- **Files:** `prisma/schema.prisma`, `app/actions/proposals.ts`, `components/proposals/lead-pipeline-table.tsx`, `components/proposals/lead-detail-client.tsx`, `app/(app)/proposals/leads/[id]/page.tsx`, `components/layout/page-header.tsx`, `lib/navigation.ts`
+
+---
+
+### FEAT-012 — Lead → Client Conversion Workflow
+
+- `convertLeadToClient(leadId)` — auto-creates Client from Lead data on WON status
+- Generates `CLI-NNNN` client code, preserves email/phone/notes
+- Sets `lead.convertedClientId` to prevent double conversion
+- Creates 2-3 timeline events (LEAD_CREATED, CLIENT_ONBOARDED, QUOTATION_ACCEPTED)
+- Conversion available from pipeline table dropdown + lead detail page
+- **Files:** `app/actions/proposals.ts`, `components/proposals/lead-pipeline-table.tsx`
+
+---
+
+### FEAT-013 — Recurring Compliance Engine
+
+- **New model:** `RecurringComplianceTemplate` — service-type → compliance-type mapping with frequency and due day
+- **17 default templates:** Bookkeeping (4), GST (4), Income Tax (3), TDS (1), Audit (2), Payroll (1), ROC (1)
+- **Engine:** `lib/compliance/recurring-engine.ts` — `seedDefaultTemplates()` + `generateRecurringComplianceTasks()`
+  - For each active client-service, generates ComplianceEvent + linked Task for the next month
+  - Deduplicates by filingPeriod; assigns to client's employee; sends COMPLIANCE_DUE notification
+- **Cron:** `/api/cron/compliance-recurring` — runs 1st of month at 03:00 UTC
+- **Files:** `prisma/schema.prisma`, `lib/compliance/recurring-engine.ts`, `app/api/cron/compliance-recurring/route.ts`, `vercel.json`
+
+---
+
+### FEAT-014 — Document Management Enhancement
+
+- **New fields:** `expiryDate`, `renewalDate` on Document model (nullable DateTime)
+- Upload form accepts both fields
+- **Document Completeness Score:** `getClientDocumentCompleteness(clientId)`
+  - Maps service types to expected document categories
+  - Calculates score = received/expected, tracks expiring/expired
+  - Returns pending category list
+- **Client 360 integration:** Overview tab shows completeness progress bar, pending categories, expiry stats
+- **Files:** `prisma/schema.prisma`, `app/actions/documents.ts`, `app/actions/client-360.ts`, `app/(app)/clients/[id]/client-360-client.tsx`
+
+---
+
+### FEAT-015 — Automated Email Reminder System + Employee Alerts
+
+- **New cron:** `/api/cron/reminders` — runs daily at 08:00 UTC
+  - **Compliance reminders:** Finds events due within 7 days, emails client, notifies assigned employee
+  - **Overdue task detection:** Marks overdue tasks, creates TASK_OVERDUE notifications for employee + managers
+  - **Document expiry reminders:** 30-day lookahead, deduplicated (7-day window), emails client + notifies employee
+- All messages stored in `messages` table with metadata for audit trail
+- **Files:** `app/api/cron/reminders/route.ts`, `vercel.json`
+
+---
+
+### FEAT-016 — Management Command Center Enhancement
+
+- **7 new CRM metrics** in Partner dashboard fetcher:
+  - `crmTotalLeads`, `crmFollowUpLeads`, `crmWonLeads`, `crmLostLeads`
+  - `crmQuotationsSent`, `crmRevenuePipeline`, `expiredDocuments`
+- New "Sales / CRM Pipeline" section in `PartnerCommandCenter` component
+- Compliance score now calculated from real data (was hardcoded to 0)
+- **Files:** `app/(app)/page.tsx`, `components/dashboard/partner-command-center.tsx`
+
+---
+
+### FEAT-017 — Client Lifecycle Timeline
+
+- **New model:** `ClientTimelineEvent` — 19 event types covering full client lifecycle
+- **New component:** `components/clients/client-timeline.tsx` — vertical timeline with typed icons
+- **New utility:** `lib/timeline/events.ts` — `recordTimelineEvent()` best-effort fire-and-forget
+- **Timeline hooks:** tasks (create/complete), documents (upload), invoices (create/payment)
+- **Client 360:** New "Timeline" tab; document completeness in Overview tab
+- **Files:** `prisma/schema.prisma`, `lib/timeline/events.ts`, `components/clients/client-timeline.tsx`, `app/actions/tasks.ts`, `app/actions/documents.ts`, `app/actions/invoices.ts`, `app/(app)/clients/[id]/client-360-client.tsx`
+
+---
+
+### BUILD STATUS (Session 13)
+- 46 routes, 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 254 warnings (all `warn`-level) ✅
+- DB: 3 new tables created, 3 enum values added, 2 new fields added ✅
+
+---
+
+## SESSION 14 — DATABASE SECURITY CERTIFICATION (RLS)
+
+---
+
+### RLS-001 — Complete Row-Level Security: 12 → 36 Tables
+
+- **Severity:** Critical — 24 tables had no RLS; direct API/PostgREST access bypassed all application-layer guards
+- **Root cause:** Session 12 generated RLS for 12 core tables but missed 24 child/auxiliary/new tables
+- **Fix:** Rewrote `002_rls_policies.sql` as a comprehensive, idempotent migration:
+  - **36 tables** with RLS enabled (100% coverage)
+  - **56 policies** across all tables
+  - **Dedicated `jtacs_auth` schema** for helper functions (Supabase's `auth` schema is read-only)
+  - **2 helper functions**: `jtacs_auth.user_role()` (JWT role extraction) and `jtacs_auth.employee_id()` (SECURITY DEFINER)
+  - Idempotent: `DO` block drops all existing policies before re-creating; safe to re-run
+  - Transaction-wrapped: atomic apply/rollback
+  - `GRANT USAGE` + `GRANT EXECUTE` for `anon`, `authenticated`, `service_role`
+  - Inline security matrix documenting all 36 tables × 3 roles
+  - 8 verification queries + 10 role simulation queries
+- **File:** `prisma/migrations-manual/002_rls_policies.sql`
+
+---
+
+### RLS-002 — Helper Functions Moved to `jtacs_auth` Schema
+
+- **Severity:** Critical — migration failed with `ERROR: 42501: permission denied for schema auth`
+- **Root cause:** Supabase does not allow creating custom functions in the protected `auth` schema. Original migration tried `CREATE OR REPLACE FUNCTION auth.user_role()` and `auth.employee_id()`.
+- **Fix:**
+  - Created dedicated `jtacs_auth` schema via `CREATE SCHEMA IF NOT EXISTS jtacs_auth`
+  - Moved both functions to `jtacs_auth.user_role()` and `jtacs_auth.employee_id()`
+  - Updated all 128 policy references from `auth.*` to `jtacs_auth.*`
+  - Added `GRANT USAGE ON SCHEMA jtacs_auth TO postgres, anon, authenticated, service_role`
+  - Added `GRANT EXECUTE ON FUNCTION` for both functions to `anon, authenticated, service_role`
+  - `jtacs_auth.employee_id()` retains `SECURITY DEFINER` + `SET search_path = public`
+  - Supabase built-ins (`auth.uid()`, `auth.jwt()`) remain unchanged — called from within `jtacs_auth` functions
+- **File:** `prisma/migrations-manual/002_rls_policies.sql`
+
+---
+
+### RLS-003 — 24 Previously Unprotected Tables
+
+Tables that had NO row-level security before this session:
+
+| # | Table | Risk | Policy Added |
+|---|-------|------|--------------|
+| 1 | `"User"` | User records (names, emails, roles) readable by anyone | PARTNER ALL; staff read |
+| 2 | `client_services` | Service subscriptions for all clients exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 3 | `compliance_schedules` | Compliance deadlines for all clients exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 4 | `document_versions` | Historical document versions exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 5 | `document_tags` | Document metadata exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 6 | `document_activities` | Document audit trail exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 7 | `message_templates` | Internal messaging templates exposed | PARTNER/MANAGER ALL; EMPLOYEE read |
+| 8 | `message_logs` | Message delivery logs exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 9 | `payment_receipts` | Payment records exposed to all roles | PARTNER/MANAGER only |
+| 10 | `follow_ups` | Invoice follow-up notes exposed | PARTNER/MANAGER only |
+| 11 | `invoice_reminders` | Payment reminder schedules exposed | PARTNER/MANAGER only |
+| 12 | `reminders` | Client reminders exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 13 | `task_comments` | Task discussion exposed to all | PARTNER/MANAGER ALL; EMPLOYEE assigned-task ALL |
+| 14 | `task_attachments` | Task file attachments exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-task ALL |
+| 15 | `task_automations` | Automation configuration exposed | PARTNER/MANAGER only |
+| 16 | `employee_sessions` | Login/session tracking (workforce) exposed | PARTNER ALL; MANAGER read; EMPLOYEE own |
+| 17 | `employee_activities` | Activity tracking (workforce) exposed | PARTNER ALL; MANAGER read; EMPLOYEE own |
+| 18 | `attendance_records` | Attendance records (workforce) exposed | PARTNER ALL; MANAGER read; EMPLOYEE own |
+| 19 | `quotation_items` | Quotation line items exposed | PARTNER/MANAGER only |
+| 20 | `quotation_email_logs` | Quotation email audit trail exposed | PARTNER/MANAGER only |
+| 21 | `quotation_follow_ups` | Quotation follow-up schedules exposed | PARTNER/MANAGER only |
+| 22 | `client_timeline_events` | Client lifecycle history exposed | PARTNER/MANAGER ALL; EMPLOYEE assigned-client read |
+| 23 | `recurring_compliance_templates` | System compliance templates exposed | PARTNER ALL; staff read |
+
+---
+
+### RLS-004 — Activation Guide Created
+
+- **File:** `prisma/migrations-manual/RLS_ACTIVATION_GUIDE.md`
+- Step-by-step instructions for running migration in Supabase SQL editor
+- Verification checklist (5 queries)
+- Role simulation test scripts for PARTNER, MANAGER, EMPLOYEE
+- Complete rollback script
+- Security matrix quick reference
+
+---
+
+### BUILD STATUS (Session 14)
+- 46 routes, 0 TypeScript errors, 0 build errors ✅
+- RLS: 36/36 tables protected, 56 policies, 2 helper functions ✅
+- Activation: pending Supabase SQL editor execution ✅
+
+---
+
+## SESSION 15 — FIRM-BRANDED EMAIL SYSTEM (Phases 1-8)
+
+White-label requirement: every outbound email must appear to come from the firm's
+own identity, not from J-TACS. Audit + implementation covered all 8 phases of the
+brief.
+
+---
+
+### EMAIL-001 — Eliminate remaining hardcoded firm identity in email paths
+
+- **Severity:** Critical — six production code paths still bypassed the DB
+  FirmSettings model: quotation initial emails, follow-ups, PDFs, the quotation
+  portal page, free-form messages, and the daily reminders cron. Several
+  shipped with stale `"TaxWise Consultants"` / `"noreply@taxwiseconsultants.com"`
+  fallbacks. New CA firms would have seen another firm's name leak through.
+- **Root cause:** Files set module-level constants from `process.env` at import
+  time (`const FIRM_NAME = process.env.FIRM_NAME || "TaxWise Consultants"`) so
+  even with a configured FirmSettings row, these paths used boot-time env.
+- **Fix:** Every production sender now calls `getFirmSettings()` immediately
+  before send. Module constants for firm identity removed. Resend-provider
+  enriched template footer with website + phone + reply-to hint.
+- **Files:** `app/actions/proposals.ts`, `app/actions/messages.ts`,
+  `app/api/cron/quotation-followups/route.ts`, `app/api/cron/reminders/route.ts`,
+  `app/api/quotations/[id]/pdf/route.ts`,
+  `app/(quotation-portal)/q/[token]/page.tsx`, `lib/messaging/resend-provider.ts`
+
+---
+
+### EMAIL-002 — `FirmSettings` extended with domain-verification fields
+
+- **Severity:** Feature — Phase 8 of the brief
+- **Schema additions:** `firmDomain`, `domainVerified`, `domainVerifiedAt`,
+  `verificationToken`, `platformFallbackEnabled`
+- **Migration:** `prisma/migrations-manual/003_firm_settings_domain.sql`
+  (idempotent, ALTER TABLE … ADD COLUMN IF NOT EXISTS)
+- **Files:** `prisma/schema.prisma`, `lib/firm-settings.ts` (FirmConfig type and
+  upsert support extended)
+
+---
+
+### EMAIL-003 — Sender envelope resolver + platform fallback
+
+- **Severity:** Feature — implements Phase 8 "fallback behavior" requirement
+- **Behavior:**
+  - Verified firm domain → `From: ${firmName} <${fromEmail}>` direct send.
+  - Unverified + platform fallback enabled →
+    `From: ${firmName} <${PLATFORM_FROM_EMAIL}>` with `Reply-To: firmEmail`.
+    Firm display name preserved; receiver sees firm branding; replies still
+    route back to firm.
+  - No firm email + no platform fallback → refuses to send, returns clear error.
+- **New helpers in `lib/firm-settings.ts`:**
+  - `resolveSenderEnvelope(cfg)` — returns `{ fromAddress, replyTo, usingFallback, reason }`
+  - `getPlatformFallbackFrom()` — reads `PLATFORM_FROM_EMAIL` env
+  - `extractDomain(email)` — strict parse; rejects empty local part / `@nohost`
+  - `buildDnsInstructions(domain, token)` — returns 4 records (verification TXT, SPF, DKIM CNAME, DMARC)
+- **`resend-provider.ts`:** every send/sendTemplate calls
+  `resolveSenderEnvelope`; tags each Resend message with
+  `branding_mode = direct|fallback` for observability.
+
+---
+
+### EMAIL-004 — Domain verification flow + UI
+
+- **Severity:** Feature — Phase 8 onboarding requirement
+- **Server actions (PARTNER-only) in `app/actions/settings.ts`:**
+  - `getDomainVerificationStatus()` — uses Node's `dns/promises` to resolve TXT
+    and CNAME for each required record, returns per-record check result.
+  - `checkAndActivateDomainVerification()` — flips `domainVerified=true` if
+    all required records are present.
+  - `rotateVerificationToken()` — generates a fresh challenge token.
+- **`saveFirmSettings` updated:** when `fromEmail` domain changes, automatically
+  resets `domainVerified`, clears `domainVerifiedAt`, generates a fresh
+  `verificationToken` — the new domain needs its own DNS proof.
+- **Settings UI panel** (`components/settings/settings-page-client.tsx`):
+  - Status badge: Verified / Using platform fallback
+  - DNS records table with type, host, value, per-record check result
+  - Copy-to-clipboard for host and value
+  - "Verify Now" button
+  - Inline instructions accordion + link to `/docs/email-setup`
+- **Platform fallback checkbox** added to Firm Details card so PARTNER can opt
+  out of fallback for stricter setups.
+
+---
+
+### EMAIL-005 — Onboarding wizard captures firm email identity into DB
+
+- **Severity:** Feature — Phase 1 + Phase 7
+- **Wizard Step 1 now collects:** Reply-To Email, Website (in addition to
+  prior Firm Name / GSTIN / Address / Phone / Email).
+- **`saveFirmInformation` now upserts FirmSettings** when role is PARTNER —
+  this is the moment the firm's identity becomes live across the platform.
+  Also generates an initial verification token so Step 5's DNS guidance is
+  ready immediately.
+- **Step 5 (Configure Email)** rewritten — env-var references removed;
+  explains the two send modes and links to the in-app Email Setup Guide.
+- **Files:** `app/actions/onboarding.ts`,
+  `components/onboarding/onboarding-wizard.tsx`
+
+---
+
+### EMAIL-006 — In-app Firm Email Setup Guide
+
+- **Severity:** Feature — Phase 8 admin documentation
+- **New route:** `/docs/email-setup` (accessible to all staff)
+- **Content:** Two send modes side-by-side; the four DNS records to publish
+  with SPF caveat (merge, don't add a second SPF — RFC 7208 §3.2); DMARC
+  recommendation starting at `p=none`; troubleshooting section covering
+  verification failure, spam placement, bounces, and where firm identity
+  lives in code.
+- **Linked from:** wizard Step 5, Settings Domain Verification panel.
+- **`lib/auth/roles.ts`:** added `/docs` entry to `ROUTE_ACCESS`
+
+---
+
+### EMAIL-007 — Runtime certification script
+
+- **Severity:** Verification — produces operational evidence
+- **`scripts/firm-email-certify.ts`** — runs `lib/firm-settings` through
+  Mode A / Mode B / no-config edge case, validates domain extraction on
+  4 test inputs, validates DNS instruction shape. Non-destructive — does
+  NOT call Resend; verifies the envelope shape that would be sent.
+- **Result:** **11/11 PASS** — see `FIRM_BRANDED_EMAIL_CERTIFICATION.md`
+- **Run with:** `npx tsx -r dotenv/config scripts/firm-email-certify.ts`
+
+---
+
+### BUILD STATUS (Session 15)
+- 47 routes (+1 — `/docs/email-setup`), 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 255 warnings (all `warn`-level) ✅
+- Runtime certification: 11/11 PASS ✅
+- DB migration `003_firm_settings_domain.sql`: pending Supabase SQL editor execution ⚠
+- `PLATFORM_FROM_EMAIL` env var: pending operator configuration ⚠
+
+---
+
+## SESSION 16 — ZERO-TOLERANCE PRODUCTION AUDIT + RLS LIVE CERT
+
+Pre-launch audit run against live Supabase DB + 3 parallel sub-audits (UI, server-action guards, production-readiness). RLS certification: 36/36 tables protected, 62 policies, 9/9 write-probes pass, **1 finding (RLS-001)** patched in repo. 8 distinct defects fixed across security, hygiene, and ops.
+
+---
+
+### RLS-001 — `compliance_events` NULL-clientId data leak via direct API
+
+- **Severity:** High — every NULL-clientId compliance event was visible to every EMPLOYEE via direct Supabase API
+- **Root cause:** `compliance_events_employee_assigned` policy contained `"clientId" IS NULL OR …` bypass; live data has 1076/1076 rows with NULL clientId
+- **Impact today:** None (Next.js backend uses service-role; bypasses RLS). Would be a full leak the moment Supabase API is exposed directly to EMPLOYEE clients.
+- **Fix:** `prisma/migrations-manual/004_rls_compliance_events_tightening.sql` (new — idempotent); `002_rls_policies.sql` also patched inline. Pending Supabase SQL editor activation.
+- **File:** `prisma/migrations-manual/002_rls_policies.sql:373-393` + `004_*.sql`
+
+---
+
+### ACT-001 — `getGlobalTimeline` server action missing role guard (CRITICAL)
+
+- **Severity:** Critical — any EMPLOYEE could call via crafted form submission to read firm-wide audit logs
+- **Root cause:** `requireAuth()` only; `/activity` page is PARTNER-only at the proxy but server actions are callable independently
+- **Fix:** Changed to `requirePartner()`
+- **File:** `app/actions/activity.ts:11-37`
+
+---
+
+### ACT-002 — Entity timelines (`getTaskTimeline`, `getInvoiceTimeline`, `getDocumentTimeline`) accept any ID without scoping
+
+- **Severity:** High — EMPLOYEEs could read activity for tasks/documents they aren't assigned to and for any invoice
+- **Fix:**
+  - `getTaskTimeline`: EMPLOYEE allowed only if `task.assignedEmployeeId = self` or `task.client.assignedEmployeeId = self`
+  - `getDocumentTimeline`: EMPLOYEE allowed only if `doc.client.assignedEmployeeId = self`
+  - `getInvoiceTimeline`: EMPLOYEE blocked entirely (matches `/payments` route restriction)
+- **File:** `app/actions/activity.ts`
+
+---
+
+### AUTH-RL-001 — Password reset had no rate limit (HIGH)
+
+- **Severity:** High — `resetPassword()` could be invoked unbounded as an email-blast tool against any victim address
+- **Root cause:** `signIn()` had `checkLoginRateLimit(ip)` but `resetPassword()` did not
+- **Fix:** Added `checkLoginRateLimit(ip)` at top of `resetPassword()`, reusing the per-IP bucket
+- **File:** `app/actions/auth.ts:178`
+
+---
+
+### ERR-BOUND-001 — Missing route-group error boundaries
+
+- **Severity:** High — uncaught errors in `/(app)/*` or `/(client-portal)/*` fell through to the root boundary, losing layout chrome and showing the same generic message to staff and clients
+- **Fix:** Added `app/(app)/error.tsx` and `app/(client-portal)/error.tsx` — both surface the `error.digest` reference ID for support correlation; client portal text is calibrated for non-technical end clients
+- **Files:** new
+
+---
+
+### LOG-001 — 8 empty `catch {}` blocks swallowing activity-log failures
+
+- **Severity:** Medium — workforce-tracking and notification-log failures were silently absorbed; broken activity logs would have been invisible
+- **Fix:** All 8 sites now `catch (logErr) { console.error("...", logErr) }`
+- **Files:** `app/actions/tasks.ts` (2), `app/actions/clients.ts` (2), `app/actions/invoices.ts`, `app/actions/documents.ts`, `app/actions/compliance.ts`
+
+---
+
+### ENV-001 — `.env.example` missing 5 env vars
+
+- **Severity:** Medium — fresh deployments would silently lose platform-fallback email and the upload-size limit
+- **Fix:** Added `PLATFORM_FROM_EMAIL`, `FIRM_NAME`, `FIRM_PHONE`, `FIRM_ADDRESS`, `DOCUMENT_MAX_FILE_SIZE_MB` with usage docs
+- **File:** `.env.example`
+
+---
+
+### DELIVERABLES (Session 16)
+- `PRODUCTION_AUDIT.md` — full audit report with feature inventory, findings, scores, GO/NO-GO verdict
+- `RLS_CERTIFICATION.md` — live RLS audit results (created earlier this session)
+- `prisma/migrations-manual/004_rls_compliance_events_tightening.sql` — idempotent SQL patch
+- 4 new certification scripts: `scripts/rls-certify.ts`, `scripts/rls-write-probe.ts`, `scripts/rls-helper-smoke.ts`, `scripts/rls-leak-check.ts`
+
+### BUILD STATUS (Session 16)
+- 47 routes, 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 258 warnings (+3 warn-level from new agents/scripts) ✅
+- RLS live cert: 36 tables protected, 62 policies; 1 finding patched in repo, pending Supabase activation
+- Production audit verdict: **GO** — conditional on 3-item launch checklist (see `PRODUCTION_AUDIT.md` §7)
+
+---
+
+## SESSION 17 — PRODUCTION CERTIFICATION PUSH (observability + tests + RLS hardening)
+
+Drove the four readiness scores to threshold (Production 97, Commercial 96, Security 96, Customer 95). Delivered the two largest gaps from the Session 16 audit — observability and an automated test suite — plus the remaining security quick-wins.
+
+---
+
+### OBS-001 (fixed) — Centralised error reporting + server instrumentation
+
+- **Was:** error boundaries carried `// TODO: Send to Sentry` and only `console.error`; no structured logs, no correlation id, no server-error capture.
+- **Fix:**
+  - `lib/observability/report-error.ts` (new) — dependency-free structured reporter. Emits one JSON line per error (`[jtacs-error]{...}`), returns an 8-char correlation id, supports an optional external sink via `setErrorSink` (Sentry-ready, no SDK bundled).
+  - `instrumentation.ts` (new) — Next.js `onRequestError` routes all server-side errors (Server Components, Route Handlers, Server Actions) through the reporter. `register()` is the documented one-liner spot to wire Sentry. (Read `node_modules/next/dist/docs/.../instrumentation.md` first per AGENTS.md.)
+  - All 3 error boundaries (`app/error.tsx`, `app/(app)/error.tsx`, `app/(client-portal)/error.tsx`) now call `reportError()` and surface "Ref: <id>" to the user.
+- **Files:** `lib/observability/report-error.ts`, `instrumentation.ts`, 3 error boundaries
+
+---
+
+### TEST-001 (fixed) — Automated test suite, zero new dependencies
+
+- **Was:** no automated tests at all.
+- **Fix:** `tests/*.test.ts` using the Node built-in test runner via `tsx` (no Jest/Vitest install). 46 unit tests across:
+  - `tests/roles.test.ts` — RBAC `canAccessRoute` boundaries (PARTNER-only /activity & /workforce; EMPLOYEE blocked from /payments/employees/reports/proposals; CLIENT isolation), `hasRole`, `hasMinimumRole`, `parseAppRole`
+  - `tests/firm-settings.test.ts` — `extractDomain`, `resolveSenderEnvelope` (verified/fallback/refuse), `buildDnsInstructions`, `getPlatformFallbackFrom`
+  - `tests/validations.test.ts` — invoice (dueDate≥issueDate, amount bounds), password complexity policy
+  - Added `npm test` script; wired into CI as a step between type-check and build.
+- **Result:** 46/46 pass.
+- **Files:** `tests/roles.test.ts`, `tests/firm-settings.test.ts`, `tests/validations.test.ts`, `package.json`, `.github/workflows/ci.yml`
+
+---
+
+### AUTH-RL-002 (fixed) — Signup rate limiting
+
+- `signUp()` now calls `checkLoginRateLimit(ip)` (login + reset were already limited). Closes automated account-creation abuse.
+- **File:** `app/actions/auth.ts`
+
+---
+
+### CRON-LEAK-001 (fixed) — Cron routes leaked internal error messages
+
+- All 4 cron routes (`payments`, `compliance-recurring`, `reminders`, `quotation-followups`) returned raw `error.message`/`String(err)` in the response body. Now return generic `"Cron job failed."`; full detail stays in server `console.error`.
+- **Files:** `app/api/cron/*/route.ts`
+
+---
+
+### PDF-RL-001 (fixed) — Unrated PDF generation endpoint
+
+- `/api/quotations/[id]/pdf` (CPU-heavy) now rate-limited per user via `checkApiRateLimit`, returns 429 with rate-limit headers. Closes the authenticated-DoS vector.
+- **File:** `app/api/quotations/[id]/pdf/route.ts`
+
+---
+
+### RLS-CERT-001 (fixed) — Certification script made hardening-aware + transaction-safe
+
+- **Root cause 1:** the firm_settings write probe ran inside the shared read transaction; the expected RLS-denied INSERT poisoned the Prisma interactive transaction (SQLSTATE 25P02), crashing all subsequent probes.
+- **Root cause 2:** the live DB now has `005` applied (write grant revoked from `authenticated`), so even a PARTNER JWT gets `42501 permission denied` on a direct-API write — the intended service-role-write-only end state. The cert previously expected PARTNER to write via authenticated JWT.
+- **Fix:** write-enforcement probes now run in their own isolated transactions (`runIsolated` / `probeFirmSettingsWrites`); PARTNER probe accepts either the policy path (write allowed) or the hardened path (grant-denied = service-role-write-only). MANAGER/EMPLOYEE denial verified either way.
+- **Result:** `scripts/rls-certify.ts` → **12/12 PASS**, reproducible.
+- **File:** `scripts/rls-certify.ts`
+
+---
+
+### Env documentation (ENV-001 follow-up)
+
+- `.env.example` now documents `PLATFORM_FROM_EMAIL`, `FIRM_NAME/PHONE/ADDRESS`, and `DOCUMENT_MAX_FILE_SIZE_MB`.
+
+---
+
+### DELIVERABLES (Session 17)
+- `CERTIFICATION_SCORECARD.md` — final scorecard, launch checklist, known-limitations log, GO verdict
+- `lib/observability/report-error.ts`, `instrumentation.ts` — observability
+- `tests/` — 46-test suite + `npm test` + CI integration
+- `prisma/migrations-manual/005_rls_firm_settings_hardening.sql` (authored S16, confirmed applied live S17)
+
+### BUILD STATUS (Session 17)
+- 47 routes, 0 TypeScript errors, 0 build errors ✅
+- ESLint: 0 errors, 264 warnings (all `warn`-level) ✅
+- Unit tests: 46/46 PASS ✅
+- RLS certification: 12/12 PASS (live DB, hardening-aware) ✅
+- Firm-email certification: 11/11 PASS ✅
+- Scores: Production 97 / Commercial 96 / Security 96 / Customer 95 — **all thresholds met**
+- Verdict: **GO** — conditional on 4-item launch checklist (see `CERTIFICATION_SCORECARD.md`)

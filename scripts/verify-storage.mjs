@@ -65,7 +65,7 @@ async function _cleanup(paths) {
 
 async function run() {
   console.log("\n══════════════════════════════════════════")
-  console.log("  J-TAX Document Vault — Live Verification")
+  console.log("  J-TACS Document Vault — Live Verification")
   console.log(`  Supabase: ${url}`)
   console.log("══════════════════════════════════════════\n")
 

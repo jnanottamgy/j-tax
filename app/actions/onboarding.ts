@@ -1,8 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { randomBytes } from "crypto"
 import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
+import { upsertFirmSettings, extractDomain } from "@/lib/firm-settings"
 
 export async function getOnboardingStatus() {
   const session = await requireAuth()
@@ -91,10 +93,12 @@ export async function saveFirmInformation(data: {
   address?: string
   phone?: string
   email?: string
+  replyToEmail?: string
+  website?: string
 }) {
   const session = await requireAuth()
 
-  // Persist firm info to Supabase user_metadata (no schema change required)
+  // Persist firm info to Supabase user_metadata for backward compat
   const { createClient } = await import("@/lib/supabase/server")
   const supabase = await createClient()
   await supabase.auth.updateUser({
@@ -106,6 +110,39 @@ export async function saveFirmInformation(data: {
       firm_email: data.email?.trim() || null,
     },
   })
+
+  // ── Firm-Branded Email System: persist to FirmSettings so outbound mail
+  // immediately reflects this firm's identity. PARTNER only — Managers
+  // setting up via the wizard wouldn't have permission to mutate firm config.
+  if (session.user.role === "PARTNER" && data.firmName?.trim()) {
+    try {
+      const fromEmail = data.email?.trim() || ""
+      const firmDomain = extractDomain(fromEmail)
+      await upsertFirmSettings(
+        {
+          firmName: data.firmName.trim(),
+          fromEmail,
+          replyToEmail: data.replyToEmail?.trim() || data.email?.trim() || null,
+          firmPhone: data.phone?.trim() || null,
+          firmAddress: data.address?.trim() || null,
+          gstin: data.gstin?.trim() || null,
+          website: data.website?.trim() || null,
+          firmDomain,
+          // Generate a verification token now so the DNS instructions are
+          // ready to show on the email configuration step.
+          verificationToken: `jtacs-verify=${randomBytes(16).toString("hex")}`,
+          domainVerified: false,
+          domainVerifiedAt: null,
+          platformFallbackEnabled: true,
+        },
+        session.user.id
+      )
+    } catch (e) {
+      // Non-fatal: if firm_settings table isn't migrated yet, we still
+      // proceed with onboarding; PARTNER can re-save from Settings later.
+      console.error("FirmSettings upsert from onboarding failed:", e)
+    }
+  }
 
   await prisma.user.upsert({
     where: { id: session.user.id },

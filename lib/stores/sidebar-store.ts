@@ -63,6 +63,6 @@ export const useSidebarStore = create<SidebarState>()(
 
       isGroupCollapsed: (groupId) => get().collapsedGroups.includes(groupId),
     }),
-    { name: "j-tax-sidebar-state" }
+    { name: "j-tacs-sidebar-state" }
   )
 )
