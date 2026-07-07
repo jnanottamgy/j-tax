@@ -80,10 +80,12 @@ export function TemplateBuilder({
     setContent((prev) => prev + `{{${variableName}}}`)
   }
 
+  const isEdit = Boolean(initialData?.name)
+
   const { submit, getError, isPending } = useValidatedForm({
     schema: templateSchema,
     validationErrorMessage: "Template name and content are required.",
-    successMessage: "Template created successfully",
+    successMessage: isEdit ? "Template updated successfully" : "Template created successfully",
     onSuccess: onCancel,
     onSubmit: async (data) =>
       onSave({
@@ -107,7 +109,9 @@ export function TemplateBuilder({
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <FileText className="h-5 w-5 text-muted-foreground" />
-          <h3 className="text-lg font-semibold">Message Template Builder</h3>
+          <h3 className="text-lg font-semibold">
+            {isEdit ? "Edit Template" : "Email Template Builder"}
+          </h3>
         </div>
         <Button
           variant="ghost"
@@ -264,7 +268,7 @@ export function TemplateBuilder({
           </Button>
           <Button
             type="submit"
-            disabled={!name.trim() || !content.trim() || isSaving || isPending}
+            disabled={isSaving || isPending}
             className="flex-1 btn-glow"
           >
             {isSaving || isPending ? (

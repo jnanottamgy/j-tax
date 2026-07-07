@@ -8,7 +8,6 @@ type Props = {
   token: string
   canRespond: boolean
   currentStatus: string
-  pdfUrl: string | null
 }
 
 export function QuotationResponseClient({ token, canRespond, currentStatus }: Props) {
@@ -51,12 +50,17 @@ export function QuotationResponseClient({ token, canRespond, currentStatus }: Pr
     setIsLoading(true)
     setError(null)
     startTransition(async () => {
-      const result = await respondToQuotation(token, response, response === "REJECTED" ? reason : undefined)
-      setIsLoading(false)
-      if (result.error) {
-        setError(result.error)
-      } else {
-        setDone(response)
+      try {
+        const result = await respondToQuotation(token, response, response === "REJECTED" ? reason : undefined)
+        if (result.error) {
+          setError(result.error)
+        } else {
+          setDone(response)
+        }
+      } catch {
+        setError("Something went wrong — please try again or contact the firm.")
+      } finally {
+        setIsLoading(false)
       }
     })
   }

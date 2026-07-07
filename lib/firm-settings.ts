@@ -13,6 +13,7 @@
  *   firm Reply-To, but envelope-From is the platform).
  */
 import { prisma } from "@/lib/prisma"
+import { currentFirmId } from "@/lib/tenant/context"
 
 export type FirmConfig = {
   firmName: string
@@ -29,6 +30,12 @@ export type FirmConfig = {
   domainVerifiedAt: Date | null
   verificationToken: string | null
   platformFallbackEnabled: boolean
+  // ── Payment collection details (client portal Pay dialog) ────────────────
+  bankAccountName: string | null
+  bankAccountNumber: string | null
+  bankIfsc: string | null
+  bankName: string | null
+  upiId: string | null
 }
 
 const ENV_DEFAULTS: FirmConfig = {
@@ -45,6 +52,11 @@ const ENV_DEFAULTS: FirmConfig = {
   domainVerifiedAt: null,
   verificationToken: null,
   platformFallbackEnabled: true,
+  bankAccountName: null,
+  bankAccountNumber: null,
+  bankIfsc: null,
+  bankName: null,
+  upiId: null,
 }
 
 /**
@@ -68,8 +80,13 @@ export function getPlatformFallbackFrom(): string {
  */
 export async function getFirmSettings(): Promise<FirmConfig> {
   try {
+    // Multi-tenant: settings are per-firm, resolved from the tenant context
+    // (set by requireAuth in requests, or tenantContext.run in cron loops).
+    const firmId = currentFirmId()
+    if (!firmId) return ENV_DEFAULTS
+
     const row = await prisma.firmSettings.findUnique({
-      where: { id: "singleton" },
+      where: { firmId },
     })
     if (!row) return ENV_DEFAULTS
 
@@ -87,6 +104,11 @@ export async function getFirmSettings(): Promise<FirmConfig> {
       domainVerifiedAt: row.domainVerifiedAt ?? null,
       verificationToken: row.verificationToken || null,
       platformFallbackEnabled: row.platformFallbackEnabled ?? true,
+      bankAccountName: row.bankAccountName || null,
+      bankAccountNumber: row.bankAccountNumber || null,
+      bankIfsc: row.bankIfsc || null,
+      bankName: row.bankName || null,
+      upiId: row.upiId || null,
     }
   } catch {
     return ENV_DEFAULTS
@@ -166,14 +188,18 @@ export async function upsertFirmSettings(
   data: Partial<Omit<FirmConfig, never>>,
   updatedBy: string
 ): Promise<FirmConfig> {
+  const firmId = currentFirmId()
+  if (!firmId) {
+    throw new Error("Cannot save firm settings without a tenant context")
+  }
   const row = await prisma.firmSettings.upsert({
-    where: { id: "singleton" },
+    where: { firmId },
     update: {
       ...data,
       updatedBy,
     },
     create: {
-      id: "singleton",
+      firmId,
       firmName: data.firmName || ENV_DEFAULTS.firmName,
       fromEmail: data.fromEmail || ENV_DEFAULTS.fromEmail,
       replyToEmail: data.replyToEmail ?? null,
@@ -187,6 +213,11 @@ export async function upsertFirmSettings(
       domainVerifiedAt: data.domainVerifiedAt ?? null,
       verificationToken: data.verificationToken ?? null,
       platformFallbackEnabled: data.platformFallbackEnabled ?? true,
+      bankAccountName: data.bankAccountName ?? null,
+      bankAccountNumber: data.bankAccountNumber ?? null,
+      bankIfsc: data.bankIfsc ?? null,
+      bankName: data.bankName ?? null,
+      upiId: data.upiId ?? null,
       updatedBy,
     },
   })
@@ -205,6 +236,11 @@ export async function upsertFirmSettings(
     domainVerifiedAt: row.domainVerifiedAt,
     verificationToken: row.verificationToken,
     platformFallbackEnabled: row.platformFallbackEnabled,
+    bankAccountName: row.bankAccountName,
+    bankAccountNumber: row.bankAccountNumber,
+    bankIfsc: row.bankIfsc,
+    bankName: row.bankName,
+    upiId: row.upiId,
   }
 }
 

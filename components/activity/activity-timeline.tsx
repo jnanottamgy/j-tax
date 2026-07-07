@@ -15,6 +15,7 @@ import {
   Search,
   Filter,
   Activity,
+  Loader2,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -34,7 +35,18 @@ interface ActivityTimelineProps {
   logs: any[]
   hasMore?: boolean
   onLoadMore?: () => void
+  /** True while a Load More fetch is in flight — disables the button. */
+  loadingMore?: boolean
   showFilters?: boolean
+  /** Fixed list of entity types for the filter dropdown (falls back to deriving from loaded rows). */
+  entityTypes?: string[]
+  /**
+   * Controlled entity filter. When onEntityFilterChange is provided the parent
+   * owns the filter (and is expected to fetch server-side filtered rows), so no
+   * client-side entity filtering is applied here.
+   */
+  entityFilter?: string
+  onEntityFilterChange?: (entityType: string) => void
 }
 
 const ENTITY_ICONS: Record<string, any> = {
@@ -55,20 +67,38 @@ const ENTITY_COLORS: Record<string, string> = {
   COMPLIANCE: "text-orange-400 bg-orange-500/10",
 }
 
-export function ActivityTimeline({ logs, hasMore, onLoadMore, showFilters = true }: ActivityTimelineProps) {
+export function ActivityTimeline({
+  logs,
+  hasMore,
+  onLoadMore,
+  loadingMore,
+  showFilters = true,
+  entityTypes: providedEntityTypes,
+  entityFilter: controlledEntityFilter,
+  onEntityFilterChange,
+}: ActivityTimelineProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
-  const [entityFilter, setEntityFilter] = useState<string>("ALL")
+  const [internalEntityFilter, setInternalEntityFilter] = useState<string>("ALL")
 
+  const isControlled = onEntityFilterChange !== undefined
+  const entityFilter = isControlled ? (controlledEntityFilter ?? "ALL") : internalEntityFilter
+  const setEntityFilter = isControlled ? onEntityFilterChange : setInternalEntityFilter
+
+  // Search filters the loaded rows client-side; entity filtering is skipped
+  // when controlled because the parent already fetched server-side filtered rows.
   const filteredLogs = logs.filter((log) => {
     const matchesSearch =
       log.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.userName?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesEntity = entityFilter === "ALL" || log.entityType === entityFilter
+    const matchesEntity = isControlled || entityFilter === "ALL" || log.entityType === entityFilter
     return matchesSearch && matchesEntity
   })
 
-  const entityTypes = ["ALL", ...Array.from(new Set(logs.map((log) => log.entityType)))]
+  const entityTypes = [
+    "ALL",
+    ...(providedEntityTypes ?? Array.from(new Set(logs.map((log) => log.entityType)))),
+  ]
 
   return (
     <div className="space-y-6">
@@ -77,7 +107,7 @@ export function ActivityTimeline({ logs, hasMore, onLoadMore, showFilters = true
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
             <Input
-              placeholder="Search activities..."
+              placeholder="Search loaded activities..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 input-premium h-10 rounded-xl"
@@ -217,8 +247,15 @@ export function ActivityTimeline({ logs, hasMore, onLoadMore, showFilters = true
 
       {hasMore && onLoadMore && (
         <div className="flex justify-center">
-          <Button variant="outline" onClick={onLoadMore} className="rounded-xl">
-            Load More
+          <Button variant="outline" onClick={onLoadMore} disabled={loadingMore} className="rounded-xl">
+            {loadingMore ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Loading...
+              </>
+            ) : (
+              "Load More"
+            )}
           </Button>
         </div>
       )}

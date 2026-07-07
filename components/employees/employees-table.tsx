@@ -1,7 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { Building2, Mail, Calendar, MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { Building2, Mail, Calendar, KeyRound, MoreVertical, Pencil, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +13,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Checkbox } from "@/components/ui/checkbox"
 import type { EmployeeListItem } from "@/lib/employees/types"
 
 type EmployeesTableProps = {
@@ -24,6 +22,7 @@ type EmployeesTableProps = {
   onDelete: (employeeId: string) => void
   onDisable: (employeeId: string) => void
   onEnable: (employeeId: string) => void
+  onResetPassword: (employee: EmployeeListItem) => void
 }
 
 export function EmployeesTable({
@@ -33,30 +32,8 @@ export function EmployeesTable({
   onDelete,
   onDisable,
   onEnable,
+  onResetPassword,
 }: EmployeesTableProps) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedIds(new Set(employees.map((e) => e.id)))
-    } else {
-      setSelectedIds(new Set())
-    }
-  }
-
-  const handleSelectOne = (id: string, checked: boolean) => {
-    const newSelected = new Set(selectedIds)
-    if (checked) {
-      newSelected.add(id)
-    } else {
-      newSelected.delete(id)
-    }
-    setSelectedIds(newSelected)
-  }
-
-  const allSelected = employees.length > 0 && selectedIds.size === employees.length
-  const _someSelected = selectedIds.size > 0 && selectedIds.size < employees.length
-
   if (employees.length === 0) {
     return (
       <GlassCard hover={false} className="p-12">
@@ -71,40 +48,13 @@ export function EmployeesTable({
 
   return (
     <GlassCard hover={false} className="overflow-hidden">
-      {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 px-6 py-3 border-b border-white/[0.08] bg-white/[0.02]">
-          <Checkbox
-            checked={allSelected}
-            onCheckedChange={handleSelectAll}
-            className="border-white/[0.2]"
-          />
-          <span className="text-sm text-muted-foreground">
-            {selectedIds.size} employee{selectedIds.size !== 1 ? "s" : ""} selected
-          </span>
-          <div className="flex-1" />
-          <Button
-            variant="outline"
-            size="sm"
-            className="input-premium h-8 rounded-xl border-white/[0.07] bg-transparent"
-            onClick={() => setSelectedIds(new Set())}
-          >
-            Clear selection
-          </Button>
-        </div>
-      )}
 
       <div className="overflow-x-auto">
         <Table>
           <TableHeader className="sticky top-0 bg-background/95 backdrop-blur">
             <TableRow className="border-white/[0.06] hover:bg-transparent">
-              <TableHead className="w-12">
-                <Checkbox
-                  checked={allSelected}
-                  onCheckedChange={handleSelectAll}
-                  className="border-white/[0.2]"
-                />
-              </TableHead>
               <TableHead className="text-muted-foreground font-medium">Employee</TableHead>
+              <TableHead className="text-muted-foreground font-medium">Role</TableHead>
               <TableHead className="text-muted-foreground font-medium">Department</TableHead>
               <TableHead className="text-muted-foreground font-medium">Status</TableHead>
               <TableHead className="text-muted-foreground font-medium">Joined</TableHead>
@@ -118,13 +68,6 @@ export function EmployeesTable({
                 className="border-white/[0.06] hover:bg-white/[0.02] transition-colors"
               >
                 <TableCell>
-                  <Checkbox
-                    checked={selectedIds.has(employee.id)}
-                    onCheckedChange={(checked) => handleSelectOne(employee.id, checked as boolean)}
-                    className="border-white/[0.2]"
-                  />
-                </TableCell>
-                <TableCell>
                   <div className="space-y-1">
                     <p className="font-medium">{employee.name}</p>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -132,6 +75,25 @@ export function EmployeesTable({
                       {employee.email}
                     </div>
                   </div>
+                </TableCell>
+                <TableCell>
+                  {employee.role === "MANAGER" ? (
+                    <Badge variant="outline" className="border-primary/25 bg-primary/10 text-primary">
+                      Manager
+                    </Badge>
+                  ) : employee.role === "EMPLOYEE" ? (
+                    <Badge variant="outline" className="border-white/[0.12] bg-white/[0.02]">
+                      Employee
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/25 bg-amber-500/10 text-amber-400"
+                      title="No login account has been created for this team member yet"
+                    >
+                      No login
+                    </Badge>
+                  )}
                 </TableCell>
                 <TableCell>
                   {employee.department ? (
@@ -173,6 +135,13 @@ export function EmployeesTable({
                           <Pencil className="h-4 w-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
+
+                        {employee.role && (
+                          <DropdownMenuItem onClick={() => onResetPassword(employee)}>
+                            <KeyRound className="h-4 w-4 mr-2" />
+                            Reset password
+                          </DropdownMenuItem>
+                        )}
 
                         {employee.isActive ? (
                           <DropdownMenuItem onClick={() => onDisable(employee.id)}>

@@ -3,17 +3,19 @@ import type { ServiceFrequency, ServiceType } from "@prisma/client"
 import { Badge } from "@/components/ui/badge"
 import {
   SERVICE_FREQUENCY_LABELS,
-  SERVICE_TYPE_LABELS,
+  serviceLabel,
 } from "@/lib/clients/constants"
 import { cn } from "@/lib/utils"
 
 export function ServiceBadge({
   type,
   frequency,
+  customName,
   className,
 }: {
   type: ServiceType
   frequency?: ServiceFrequency
+  customName?: string | null
   className?: string
 }) {
   return (
@@ -24,7 +26,7 @@ export function ServiceBadge({
         className
       )}
     >
-      {SERVICE_TYPE_LABELS[type]}
+      {serviceLabel(type, customName)}
       {frequency && (
         <span className="text-muted-foreground/60">
           {" · "}
@@ -39,7 +41,11 @@ export function ServiceBadgeList({
   services,
   max = 2,
 }: {
-  services: { type: ServiceType; frequency: ServiceFrequency }[]
+  services: {
+    type: ServiceType
+    frequency: ServiceFrequency
+    customName?: string | null
+  }[]
   max?: number
 }) {
   const visible = services.slice(0, max)
@@ -48,7 +54,7 @@ export function ServiceBadgeList({
   return (
     <div className="flex flex-wrap gap-1">
       {visible.map((s) => (
-        <ServiceBadge key={s.type} type={s.type} frequency={s.frequency} />
+        <ServiceBadge key={s.type} type={s.type} frequency={s.frequency} customName={s.customName} />
       ))}
       {remaining > 0 && (
         <Badge

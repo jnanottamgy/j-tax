@@ -1,9 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { LayoutGrid, Table, CheckSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -11,8 +13,8 @@ import { KanbanBoard } from "@/components/work-tracker/kanban-board"
 import { TaskTable } from "@/components/work-tracker/task-table"
 import { TaskDetailDrawer } from "@/components/work-tracker/task-detail-drawer"
 import { TaskFilters } from "@/components/work-tracker/task-filters"
-import { AddTaskDialog } from "@/components/work-tracker/add-task-dialog"
-import { getTasksData, getTaskDetail, updateTaskStatus, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
+import { AddTaskDialog, type EditableTask } from "@/components/work-tracker/add-task-dialog"
+import { getTasksData, getTaskDetail, updateTaskStatus, deleteTask, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -21,6 +23,7 @@ type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DATA_AWAITED" | "UNDER_REVIEW
 type ViewMode = "kanban" | "table"
 
 export function WorkTrackerClient() {
+  const searchParams = useSearchParams()
   const [viewMode, setViewMode] = useState<ViewMode>("kanban")
   const [tasks, setTasks] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
@@ -29,7 +32,13 @@ export function WorkTrackerClient() {
   const [selectedTask, setSelectedTask] = useState<any>(null)
   const [userNameMap, setUserNameMap] = useState<Record<string, string>>({})
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false)
+  // Quick actions deep-link here with ?new=1 (&clientId=...) to open the dialog
+  const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(
+    () => searchParams.get("new") === "1"
+  )
+  const [initialClientId] = useState(() => searchParams.get("clientId") ?? undefined)
+  const [editingTask, setEditingTask] = useState<EditableTask | null>(null)
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState<{
     status?: string
@@ -156,6 +165,43 @@ export function WorkTrackerClient() {
     setAddTaskDialogOpen(true)
   }
 
+  const handleEditTask = (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId)
+    if (!task) return
+    setEditingTask({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      assignedEmployeeId: task.assignedEmployee?.id ?? task.assignedEmployeeId ?? null,
+      priority: task.priority,
+      status: task.status,
+      dueDate: task.dueDate,
+    })
+  }
+
+  const handleDeleteTaskConfirmed = async () => {
+    if (!deletingTaskId) return
+    const result = await deleteTask(deletingTaskId)
+    if (result.success) {
+      toast.success("Task deleted")
+      if (selectedTask?.id === deletingTaskId) setDrawerOpen(false)
+      await loadData()
+    } else {
+      toast.error(result.error || "Failed to delete task")
+    }
+  }
+
+  const handleUploaded = async (taskId: string) => {
+    await loadData()
+    setTasks((freshTasks) => {
+      const updated = freshTasks.find((t) => t.id === taskId)
+      if (updated) setSelectedTask(updated)
+      return freshTasks
+    })
+  }
+
+  const canManage = user?.role === "PARTNER" || user?.role === "MANAGER"
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -221,11 +267,19 @@ export function WorkTrackerClient() {
           <EmptyState
             icon={CheckSquare}
             title="No tasks found"
-            description="Create your first task to start tracking filings and reviews"
-            action={{
-              label: "Create Task",
-              onClick: () => setAddTaskDialogOpen(true),
-            }}
+            description={
+              canManage
+                ? "Create your first task to start tracking filings and reviews"
+                : "Tasks assigned to you by a Manager or Partner will appear here"
+            }
+            action={
+              canManage
+                ? {
+                    label: "Create Task",
+                    onClick: () => setAddTaskDialogOpen(true),
+                  }
+                : undefined
+            }
           />
         </GlassCard>
       ) : viewMode === "kanban" ? (
@@ -233,12 +287,16 @@ export function WorkTrackerClient() {
           tasks={tasks}
           onTaskClick={handleTaskClick}
           onStatusChange={handleStatusChange}
-          onAddTask={handleAddTask}
+          onAddTask={canManage ? handleAddTask : undefined}
+          onEditTask={canManage ? handleEditTask : undefined}
+          onDeleteTask={canManage ? setDeletingTaskId : undefined}
         />
       ) : (
         <TaskTable
           tasks={tasks}
           onTaskClick={handleTaskClick}
+          onEditTask={canManage ? handleEditTask : undefined}
+          onDeleteTask={canManage ? setDeletingTaskId : undefined}
         />
       )}
 
@@ -251,17 +309,35 @@ export function WorkTrackerClient() {
         onAddComment={handleAddComment}
         onDeleteComment={handleDeleteComment}
         onDeleteAttachment={handleDeleteAttachment}
+        onUploaded={handleUploaded}
         currentUser={user}
         userNameMap={userNameMap}
       />
 
-      {/* Add Task Dialog */}
+      {/* Add / Edit Task Dialog — management only (createTask/updateTask are P/M) */}
       <AddTaskDialog
-        open={addTaskDialogOpen}
-        onOpenChange={setAddTaskDialogOpen}
+        open={canManage && (addTaskDialogOpen || editingTask !== null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddTaskDialogOpen(false)
+            setEditingTask(null)
+          }
+        }}
         onSuccess={loadData}
         employees={employees}
         clients={clients}
+        task={editingTask}
+        initialClientId={initialClientId}
+      />
+
+      <ConfirmDialog
+        open={deletingTaskId !== null}
+        onOpenChange={(open) => !open && setDeletingTaskId(null)}
+        title="Delete this task?"
+        description="The task, its comments, and attachments will be permanently removed. This cannot be undone."
+        confirmLabel="Delete task"
+        destructive
+        onConfirm={handleDeleteTaskConfirmed}
       />
     </div>
   )

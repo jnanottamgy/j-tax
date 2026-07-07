@@ -1,7 +1,7 @@
 import type { ClientStatus, Prisma } from "@prisma/client"
 
 import type { AppRole } from "@/lib/auth/types"
-import { buildOnboardingArtifacts } from "@/lib/clients/onboarding"
+import { buildOnboardingArtifacts, calculateNextDueDate } from "@/lib/clients/onboarding"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 import type {
   CreateClientInput,
@@ -47,6 +47,7 @@ function mapClientToListItem(
     services: client.services.map((service) => ({
       type: service.serviceType,
       frequency: service.frequency,
+      customName: service.customName,
     })),
     nextDueDate: nextSchedule?.dueDate.toISOString() ?? null,
     createdAt: client.createdAt.toISOString(),
@@ -144,6 +145,7 @@ export async function createClientWithOnboarding(
       {
         reminderDaysBefore: input.reminderDaysBefore,
         notificationPreferences: input.notificationPreferences,
+        collectedDocuments: input.collectedDocuments,
       }
     )
 
@@ -153,6 +155,9 @@ export async function createClientWithOnboarding(
       data: artifacts.complianceSchedules,
     })
     await tx.reminder.createMany({ data: artifacts.reminders })
+    await tx.clientDocumentChecklistItem.createMany({
+      data: artifacts.documentChecklist,
+    })
 
     return tx.client.findUniqueOrThrow({
       where: { id: created.id },
@@ -192,6 +197,7 @@ export async function getClientDetail(
     where: { id, ...visibility },
     include: {
       services: true,
+      documentChecklist: { orderBy: [{ collected: "asc" }, { createdAt: "asc" }] },
       tasks: { orderBy: { createdAt: "desc" } },
       complianceSchedules: { orderBy: { dueDate: "asc" } },
       documents: { orderBy: { createdAt: "desc" } },
@@ -223,16 +229,58 @@ export async function updateClient(id: string, data: UpdateClientInput) {
     }
   }
 
-  // Remove fields that are not columns on the Client model
-  const { assignedEmployeeId: _assignedEmployeeId, reminderDaysBefore: _reminderDaysBefore, notificationPreferences: _notificationPreferences, ...clientData } = data;
+  // Remove fields that are not scalar columns on the Client model
+  const {
+    assignedEmployeeId: _assignedEmployeeId,
+    reminderDaysBefore: _reminderDaysBefore,
+    notificationPreferences: _notificationPreferences,
+    services,
+    ...clientData
+  } = data;
 
-  return prisma.client.update({
-    where: { id },
-    data: {
-      ...clientData,
-      ...(assignedEmployeeName !== undefined && { assignedEmployeeName }),
-      ...(assignedEmployeeUpdate !== undefined && { assignedEmployee: assignedEmployeeUpdate }),
-    },
+  const clientUpdateData = {
+    ...clientData,
+    ...(assignedEmployeeName !== undefined && { assignedEmployeeName }),
+    ...(assignedEmployeeUpdate !== undefined && { assignedEmployee: assignedEmployeeUpdate }),
+  };
+
+  // No service edits → plain scalar update.
+  if (services === undefined) {
+    return prisma.client.update({ where: { id }, data: clientUpdateData });
+  }
+
+  // Service edits → update scalars + reconcile ClientService rows atomically.
+  // Kept/added services are upserted (frequency + OTHER name, reactivated);
+  // services no longer selected are deactivated (isActive:false) rather than
+  // deleted, so history — and the unique (clientId, serviceType) row — survive.
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.client.update({ where: { id }, data: clientUpdateData });
+
+    for (const svc of services) {
+      const customName = svc.serviceType === "OTHER" ? svc.customName ?? null : null;
+      await tx.clientService.upsert({
+        where: { clientId_serviceType: { clientId: id, serviceType: svc.serviceType } },
+        create: {
+          clientId: id,
+          serviceType: svc.serviceType,
+          customName,
+          frequency: svc.frequency,
+          isActive: true,
+          nextDueDate: svc.nextDueDate
+            ? new Date(svc.nextDueDate)
+            : calculateNextDueDate(svc.frequency),
+        },
+        update: { frequency: svc.frequency, customName, isActive: true },
+      });
+    }
+
+    const keep = services.map((s) => s.serviceType);
+    await tx.clientService.updateMany({
+      where: { clientId: id, isActive: true, serviceType: { notIn: keep } },
+      data: { isActive: false },
+    });
+
+    return updated;
   });
 }
 

@@ -15,10 +15,63 @@ import {
 import type { FormActionState } from "@/lib/forms/types"
 import { prisma } from "@/lib/prisma"
 import { notificationService } from "@/lib/messaging/notification-service"
+import { renderPlainTextEmail } from "@/lib/messaging/email-html"
+import { isWhatsAppConfigured } from "@/lib/messaging/whatsapp-api"
 import { getFirmSettings } from "@/lib/firm-settings"
 import { messageSchema, templateSchema } from "@/lib/validations/message"
 
 export type MessageActionState = FormActionState
+
+export type MessageChannel = "EMAIL" | "WHATSAPP"
+
+const emailFormat = z.string().email()
+
+/** Channel availability for the messaging UI (banner + disabled options). */
+export async function getChannelStatus() {
+  await requireAuth()
+  return {
+    emailConfigured: Boolean(process.env.RESEND_API_KEY),
+    whatsappConfigured: isWhatsAppConfigured(),
+  }
+}
+
+/**
+ * Resolve + validate the recipient for a channel.
+ * Returns { recipient } or { error } with a user-actionable message.
+ */
+function resolveRecipient(
+  client: { email: string | null; whatsapp: string | null; phone: string | null },
+  channel: MessageChannel
+): { recipient?: string; error?: string } {
+  if (channel === "WHATSAPP") {
+    const number = client.whatsapp || client.phone
+    if (!number) {
+      return {
+        error:
+          "This client has no WhatsApp or phone number on file. Add one in the client profile first.",
+      }
+    }
+    if (number.replace(/\D/g, "").length < 10) {
+      return {
+        error: `This client's phone number ("${number}") is too short to be a valid WhatsApp number — fix it in the client profile.`,
+      }
+    }
+    return { recipient: number }
+  }
+
+  if (!client.email) {
+    return {
+      error:
+        "This client has no email address on file. Add one in the client profile first.",
+    }
+  }
+  if (!emailFormat.safeParse(client.email).success) {
+    return {
+      error: `This client's email address ("${client.email}") is invalid — fix it in the client profile, then try again.`,
+    }
+  }
+  return { recipient: client.email }
+}
 
 export async function getMessages(filters?: {
   clientId?: string
@@ -102,15 +155,25 @@ export async function createMessage(
 
     const raw = {
       clientId: formData.get("clientId"),
-      phoneNumber: formData.get("phoneNumber"),
       content: formData.get("content"),
       templateId: formData.get("templateId") || undefined,
+      channel: formData.get("channel") || "EMAIL",
     }
 
     const parsed = messageSchema.safeParse(raw)
 
     if (!parsed.success) {
       return { fieldErrors: parsed.error.flatten().fieldErrors }
+    }
+
+    const channel = parsed.data.channel
+
+    // Fail fast with a clear message instead of a FAILED row + provider error.
+    if (channel === "WHATSAPP" && !isWhatsAppConfigured()) {
+      return {
+        error:
+          "WhatsApp is not configured yet. Add WHATSAPP_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID to enable it.",
+      }
     }
 
     const client = await prisma.client.findUnique({
@@ -125,8 +188,13 @@ export async function createMessage(
       return { error: "You can only send messages to clients assigned to you" }
     }
 
-    // Use email as recipient (fallback to phone number if email not available)
-    const recipient = client.email || parsed.data.phoneNumber
+    // Validate the recipient BEFORE creating a message row — a malformed
+    // address/number can never deliver, so surface it as a field error.
+    const resolved = resolveRecipient(client, channel)
+    if (!resolved.recipient) {
+      return { fieldErrors: { clientId: [resolved.error!] } }
+    }
+    const recipient = resolved.recipient
 
     // Create the DB record first, then attempt delivery
     const message = await prisma.message.create({
@@ -137,7 +205,7 @@ export async function createMessage(
         content: parsed.data.content,
         status: "QUEUED",
         sentBy: session.user.id,
-        metadata: { provider: "EMAIL" },
+        metadata: { provider: channel },
       },
     })
 
@@ -145,22 +213,41 @@ export async function createMessage(
       data: {
         messageId: message.id,
         status: "QUEUED",
-        details: { action: "created", provider: "EMAIL" },
+        details: { action: "created", provider: channel },
       },
     })
 
-    // Dispatch via notification service — use firm name from DB settings
+    // Dispatch via notification service.
+    // Email: escape the plain-text content and wrap it in the branded shell
+    // (raw user text in `html` was an injection vector and broke on < &).
+    // WhatsApp: plain text goes out as-is (no HTML).
     const cfgForSubject = await getFirmSettings()
-    const sendResult = await notificationService.send({
-      channel: "email",
-      to: recipient,
-      subject: `Message from ${cfgForSubject.firmName}`,
-      content: parsed.data.content,
-      metadata: {
-        messageId: message.id,
-        clientId: parsed.data.clientId,
-      },
-    })
+    const sendResult =
+      channel === "WHATSAPP"
+        ? await notificationService.send({
+            channel: "whatsapp",
+            to: recipient,
+            content: parsed.data.content,
+            metadata: {
+              messageId: message.id,
+              clientId: parsed.data.clientId,
+            },
+          })
+        : await notificationService.send({
+            channel: "email",
+            to: recipient,
+            subject: `Message from ${cfgForSubject.firmName}`,
+            content: renderPlainTextEmail({
+              content: parsed.data.content,
+              firmName: cfgForSubject.firmName,
+              firmPhone: cfgForSubject.firmPhone,
+              replyToEmail: cfgForSubject.replyToEmail || cfgForSubject.fromEmail,
+            }),
+            metadata: {
+              messageId: message.id,
+              clientId: parsed.data.clientId,
+            },
+          })
 
     if (sendResult.success) {
       await prisma.message.update({
@@ -168,14 +255,14 @@ export async function createMessage(
         data: {
           status: "SENT",
           sentAt: new Date(),
-          metadata: { externalId: sendResult.messageId },
+          metadata: { provider: channel, externalId: sendResult.messageId },
         },
       })
       await prisma.messageLog.create({
         data: {
           messageId: message.id,
           status: "SENT",
-          details: { externalId: sendResult.messageId },
+          details: { externalId: sendResult.messageId, provider: channel },
         },
       })
     } else {
@@ -202,7 +289,11 @@ export async function createMessage(
     revalidatePath("/messaging")
     revalidatePath(`/clients/${parsed.data.clientId}`)
 
-    return { success: true }
+    return {
+      success: true,
+      message:
+        channel === "WHATSAPP" ? "WhatsApp message sent" : "Email sent successfully",
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { fieldErrors: error.flatten().fieldErrors }
@@ -348,10 +439,18 @@ export async function deleteTemplate(templateId: string): Promise<MessageActionS
 
 export async function sendBulkReminders(
   clientIds: string[],
-  templateId: string
+  templateId: string,
+  channel: MessageChannel = "EMAIL"
 ): Promise<MessageActionState & { count?: number }> {
   try {
     const session = await requirePartnerOrManager()
+
+    if (channel === "WHATSAPP" && !isWhatsAppConfigured()) {
+      return {
+        error:
+          "WhatsApp is not configured yet. Add WHATSAPP_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID to enable it.",
+      }
+    }
 
     const template = await prisma.messageTemplate.findUnique({
       where: { id: templateId },
@@ -361,29 +460,38 @@ export async function sendBulkReminders(
       return { error: "Template not found" }
     }
 
-    const clients = await prisma.client.findMany({
-      where: {
-        id: { in: clientIds },
-        OR: [
-          { email: { not: null } },
-          { phone: { not: null } },
-        ],
-      },
+    // Clients without a usable recipient for the chosen channel are skipped.
+    const candidates = await prisma.client.findMany({
+      where: { id: { in: clientIds } },
     })
+    const clients = candidates.filter(
+      (c) => resolveRecipient(c, channel).recipient
+    )
 
     if (clients.length === 0) {
-      return { error: "No clients with email or phone numbers found." }
+      return {
+        error:
+          channel === "WHATSAPP"
+            ? "None of the selected clients have a WhatsApp/phone number on file."
+            : "None of the selected clients have a valid email address on file.",
+      }
     }
 
     let sentCount = 0
     let failedCount = 0
+    const skippedCount = clientIds.length - clients.length
+
+    const cfgForBulk = await getFirmSettings()
 
     // Dispatch each message via notification service
     for (const client of clients) {
-      const recipient = client.email || client.phone || ""
+      const recipient = resolveRecipient(client, channel).recipient
       if (!recipient) continue
-      
+
+      // Substitute the variables we know at send time; leave others intact.
       const content = template.content
+        .replace(/{{client_name}}/g, client.name)
+        .replace(/{{client_code}}/g, client.clientCode)
 
       const message = await prisma.message.create({
         data: {
@@ -393,22 +501,38 @@ export async function sendBulkReminders(
           content,
           status: "QUEUED",
           sentBy: session.user.id,
-          metadata: { provider: "EMAIL" },
+          metadata: { provider: channel },
         },
       })
 
-      const cfgForTemplateSubject = await getFirmSettings()
-      const sendResult = await notificationService.send({
-        channel: "email",
-        to: recipient,
-        subject: `${template.type.replace(/_/g, " ")} - ${cfgForTemplateSubject.firmName}`,
-        content,
-        metadata: {
-          messageId: message.id,
-          templateId: template.id,
-          clientId: client.id,
-        },
-      })
+      const sendResult =
+        channel === "WHATSAPP"
+          ? await notificationService.send({
+              channel: "whatsapp",
+              to: recipient,
+              content,
+              metadata: {
+                messageId: message.id,
+                templateId: template.id,
+                clientId: client.id,
+              },
+            })
+          : await notificationService.send({
+              channel: "email",
+              to: recipient,
+              subject: `${template.type.replace(/_/g, " ")} - ${cfgForBulk.firmName}`,
+              content: renderPlainTextEmail({
+                content,
+                firmName: cfgForBulk.firmName,
+                firmPhone: cfgForBulk.firmPhone,
+                replyToEmail: cfgForBulk.replyToEmail || cfgForBulk.fromEmail,
+              }),
+              metadata: {
+                messageId: message.id,
+                templateId: template.id,
+                clientId: client.id,
+              },
+            })
 
       if (sendResult.success) {
         await prisma.message.update({
@@ -416,14 +540,14 @@ export async function sendBulkReminders(
           data: {
             status: "SENT",
             sentAt: new Date(),
-            metadata: { externalId: sendResult.messageId },
+            metadata: { provider: channel, externalId: sendResult.messageId },
           },
         })
         await prisma.messageLog.create({
           data: {
             messageId: message.id,
             status: "SENT",
-            details: { action: "bulk_send", externalId: sendResult.messageId },
+            details: { action: "bulk_send", externalId: sendResult.messageId, provider: channel },
           },
         })
         sentCount++
@@ -441,7 +565,7 @@ export async function sendBulkReminders(
           data: {
             messageId: message.id,
             status: "FAILED",
-            details: { action: "bulk_send", error: sendResult.error },
+            details: { action: "bulk_send", error: sendResult.error, provider: channel },
           },
         })
         failedCount++
@@ -454,10 +578,16 @@ export async function sendBulkReminders(
       return { error: `All ${failedCount} messages failed to send.` }
     }
 
+    const skippedNote =
+      skippedCount > 0
+        ? ` (${skippedCount} skipped — no ${channel === "WHATSAPP" ? "WhatsApp number" : "valid email"} on file)`
+        : ""
+
     return {
       success: true,
       count: sentCount,
-      ...(failedCount > 0 && { error: `${sentCount} sent, ${failedCount} failed.` }),
+      message: `${sentCount} reminder${sentCount === 1 ? "" : "s"} sent${skippedNote}.`,
+      ...(failedCount > 0 && { error: `${sentCount} sent, ${failedCount} failed.${skippedNote}` }),
     }
   } catch (error) {
     if (error instanceof Error) {

@@ -23,11 +23,11 @@ export default async function AppLayout({
     redirect("/client")
   }
 
-  // Onboarding wizard is only relevant for PARTNER and MANAGER (firm setup).
-  // EMPLOYEE users have no firm to configure and should go straight to their dashboard.
+  // Firm-setup wizard is PARTNER-only: its first step writes firm settings,
+  // which the server rejects for MANAGERs — showing them the wizard was a
+  // dead end. Managers and employees go straight to their dashboards.
   const needsOnboarding =
-    (session.user.role === "PARTNER" || session.user.role === "MANAGER") &&
-    !(await getOnboardingStatus()).completed
+    session.user.role === "PARTNER" && !(await getOnboardingStatus()).completed
 
   return (
     <AuthProvider user={session.user}>

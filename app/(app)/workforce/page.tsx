@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { requirePartner } from "@/lib/auth/guards"
+import { requirePartnerOrManager } from "@/lib/auth/guards"
 import { getWorkforceDashboard, getPerformanceMetrics, getWorkloadAlerts, getTeamComparisonData } from "@/app/actions/workforce"
 import { WorkforceDashboardClient } from "@/components/workforce/workforce-dashboard-client"
 import { PageHeader } from "@/components/layout/page-header"
@@ -9,7 +9,7 @@ export const metadata = { title: "Workforce Intelligence" }
 
 export default async function WorkforcePage() {
   try {
-    await requirePartner()
+    await requirePartnerOrManager()
   } catch {
     redirect("/unauthorized")
   }

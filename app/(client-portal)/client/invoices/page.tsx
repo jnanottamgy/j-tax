@@ -3,10 +3,13 @@ import { format } from "date-fns"
 import { Receipt, Download, CreditCard, CheckCircle2, AlertCircle, Clock } from "lucide-react"
 
 import { getSession } from "@/lib/auth/session"
+import { getFirmSettings } from "@/lib/firm-settings"
 import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PayInstructionsDialog } from "@/components/client-portal/pay-instructions-dialog"
+import { formatINR } from "@/lib/india/format"
 import { cn } from "@/lib/utils"
 
 export default async function ClientInvoicesPage() {
@@ -23,7 +26,17 @@ export default async function ClientInvoicesPage() {
     redirect("/unauthorized")
   }
 
-  // Fetch invoices and payments for this client
+  // Fetch invoices, payments, and the firm's published payment details
+  const firmSettings = await getFirmSettings()
+  const paymentDetails = {
+    firmName: firmSettings.firmName,
+    bankName: firmSettings.bankName,
+    bankAccountName: firmSettings.bankAccountName,
+    bankAccountNumber: firmSettings.bankAccountNumber,
+    bankIfsc: firmSettings.bankIfsc,
+    upiId: firmSettings.upiId,
+  }
+
   const [invoices, paymentHistory] = await Promise.all([
     prisma.invoice.findMany({
       where: { clientId: clientRecord.id },
@@ -110,7 +123,7 @@ export default async function ClientInvoicesPage() {
 
   function formatCurrency(amount: number | string | { toNumber(): number }): string {
     const num = typeof amount === "object" && "toNumber" in amount ? amount.toNumber() : Number(amount)
-    return `₹${num.toLocaleString("en-IN")}`
+    return formatINR(num)
   }
 
   return (
@@ -234,8 +247,13 @@ export default async function ClientInvoicesPage() {
                         invoice.status === "OVERDUE" && "bg-red-500/5"
                       )}
                     >
-                      <td className="py-3 px-3 font-medium">
-                        #{invoice.invoiceNumber}
+                      <td className="py-3 px-3">
+                        <p className="font-medium">#{invoice.invoiceNumber}</p>
+                        {invoice.serviceDescription && (
+                          <p className="mt-0.5 max-w-[220px] truncate text-xs text-muted-foreground">
+                            {invoice.serviceDescription}
+                          </p>
+                        )}
                       </td>
                       <td className="py-3 px-3 text-sm">
                         {format(new Date(invoice.issueDate), "MMM d, yyyy")}
@@ -264,13 +282,25 @@ export default async function ClientInvoicesPage() {
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-1">
                           {invoice.status !== "PAID" && (
-                            <Button size="sm" variant="outline" className="h-8">
-                              <CreditCard className="size-3.5 mr-1" />
-                              Pay
-                            </Button>
+                            <PayInstructionsDialog
+                              invoiceNumber={invoice.invoiceNumber}
+                              outstandingAmount={Number(invoice.outstandingAmount)}
+                              paymentDetails={paymentDetails}
+                            />
                           )}
-                          <Button size="icon" variant="ghost" className="h-8 w-8">
-                            <Download className="size-4" />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            asChild
+                          >
+                            <a
+                              href={`/api/invoices/${invoice.id}/pdf`}
+                              download
+                              aria-label={`Download invoice ${invoice.invoiceNumber} as PDF`}
+                            >
+                              <Download className="size-4" />
+                            </a>
                           </Button>
                         </div>
                       </td>

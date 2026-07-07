@@ -20,13 +20,13 @@ type Props = {
 
 function ScoreBadge({ score }: { score: number }) {
   if (score >= 80) return <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/20">{score}</Badge>
-  if (score >= 60) return <Badge className="bg-yellow-500/15 text-yellow-600 border-yellow-500/20">{score}</Badge>
+  if (score >= 60) return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/25">{score}</Badge>
   return <Badge className="bg-red-500/15 text-red-500 border-red-500/20">{score}</Badge>
 }
 
 function RateCell({ rate }: { rate: number }) {
   const Icon = rate >= 75 ? TrendingUp : rate >= 50 ? Minus : TrendingDown
-  const color = rate >= 75 ? "text-emerald-500" : rate >= 50 ? "text-yellow-500" : "text-red-500"
+  const color = rate >= 75 ? "text-emerald-400" : rate >= 50 ? "text-amber-400" : "text-red-400"
   return (
     <span className={`flex items-center gap-1 font-medium ${color}`}>
       <Icon className="size-3.5" />

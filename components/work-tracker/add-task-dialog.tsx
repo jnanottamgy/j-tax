@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 
-import { createTask } from "@/app/actions/tasks"
+import { createTask, updateTask } from "@/app/actions/tasks"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
 import { SubmitButton } from "@/components/forms/submit-button"
@@ -18,7 +18,17 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useValidatedForm } from "@/hooks/use-validated-form"
 import type { EmployeeOption } from "@/lib/clients/types"
-import { createTaskSchema } from "@/lib/validations/task"
+import { createTaskSchema, taskBaseSchema } from "@/lib/validations/task"
+
+export type EditableTask = {
+  id: string
+  title: string
+  description?: string | null
+  assignedEmployeeId?: string | null
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT"
+  status: "NOT_STARTED" | "IN_PROGRESS" | "DATA_AWAITED" | "UNDER_REVIEW" | "FILED_DONE" | "ON_HOLD"
+  dueDate?: string | Date | null
+}
 
 type AddTaskDialogProps = {
   open: boolean
@@ -26,6 +36,10 @@ type AddTaskDialogProps = {
   onSuccess?: () => void
   employees: EmployeeOption[]
   clients?: Array<{ id: string; name: string }>
+  /** When set, the dialog edits this task instead of creating a new one */
+  task?: EditableTask | null
+  /** Pre-select a client when opened from a deep link (?clientId=...) */
+  initialClientId?: string
 }
 
 const emptyForm = {
@@ -33,9 +47,21 @@ const emptyForm = {
   description: "",
   clientId: "",
   assignedEmployeeId: "",
-  priority: "MEDIUM" as const,
-  status: "NOT_STARTED" as const,
+  priority: "MEDIUM" as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+  status: "NOT_STARTED" as
+    | "NOT_STARTED"
+    | "IN_PROGRESS"
+    | "DATA_AWAITED"
+    | "UNDER_REVIEW"
+    | "FILED_DONE"
+    | "ON_HOLD",
   dueDate: "",
+}
+
+function toDateInputValue(value?: string | Date | null): string {
+  if (!value) return ""
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10)
 }
 
 export function AddTaskDialog({
@@ -44,12 +70,17 @@ export function AddTaskDialog({
   onSuccess,
   employees,
   clients = [],
+  task = null,
+  initialClientId,
 }: AddTaskDialogProps) {
+  const isEdit = task !== null
   const [formData, setFormData] = useState(emptyForm)
 
   const { submit, getError, isPending, formError, clearErrors } = useValidatedForm({
-    schema: createTaskSchema,
-    successMessage: "Task created successfully",
+    // Edits keep their client — clientId isn't part of the update payload.
+    // (Cast: the two schemas differ only by clientId, which edit mode ignores.)
+    schema: (isEdit ? taskBaseSchema : createTaskSchema) as unknown as typeof createTaskSchema,
+    successMessage: isEdit ? "Task updated successfully" : "Task created successfully",
     onSuccess: () => {
       setFormData(emptyForm)
       onOpenChange(false)
@@ -59,37 +90,53 @@ export function AddTaskDialog({
       const fd = new FormData()
       fd.set("title", data.title)
       fd.set("description", data.description ?? "")
-      fd.set("clientId", data.clientId)
       fd.set("assignedEmployeeId", data.assignedEmployeeId ?? "")
       fd.set("priority", data.priority)
       fd.set("status", data.status)
       fd.set("dueDate", data.dueDate ?? "")
+      if (isEdit && task) {
+        fd.set("id", task.id)
+        return updateTask({}, fd)
+      }
+      fd.set("clientId", data.clientId)
       return createTask({}, fd)
     },
   })
 
   useEffect(() => {
-    if (open) {
-      clearErrors()
-      setFormData(emptyForm)
-    }
-  }, [open, clearErrors])
+    if (!open) return
+    clearErrors()
+    setFormData(
+      task
+        ? {
+            title: task.title,
+            description: task.description ?? "",
+            clientId: "",
+            assignedEmployeeId: task.assignedEmployeeId ?? "",
+            priority: task.priority,
+            status: task.status,
+            dueDate: toDateInputValue(task.dueDate),
+          }
+        : { ...emptyForm, clientId: initialClientId ?? "" }
+    )
+  }, [open, task, initialClientId, clearErrors])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     submit(formData)
   }
 
-  const canSubmit =
-    formData.title.trim().length > 0 && formData.clientId.length > 0
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg border-white/[0.08] bg-popover/95 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl">Create New Task</DialogTitle>
+          <DialogTitle className="text-xl">
+            {isEdit ? "Edit Task" : "Create New Task"}
+          </DialogTitle>
           <DialogDescription>
-            Add a new task to your work tracker and assign it to a team member.
+            {isEdit
+              ? "Update the task's details, assignment, and schedule."
+              : "Add a new task to your work tracker and assign it to a team member."}
           </DialogDescription>
         </DialogHeader>
 
@@ -108,23 +155,25 @@ export function AddTaskDialog({
             />
           </FormField>
 
-          <FormField label="Client" htmlFor="clientId" required error={getError("clientId")}>
-            <select
-              id="clientId"
-              value={formData.clientId}
-              onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-              className="input-premium h-10 w-full rounded-xl px-3 text-sm"
-              disabled={isPending}
-              aria-invalid={!!getError("clientId")}
-            >
-              <option value="">Select a client</option>
-              {clients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
-          </FormField>
+          {!isEdit && (
+            <FormField label="Client" htmlFor="clientId" required error={getError("clientId")}>
+              <select
+                id="clientId"
+                value={formData.clientId}
+                onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
+                className="input-premium h-10 w-full rounded-xl px-3 text-sm"
+                disabled={isPending}
+                aria-invalid={!!getError("clientId")}
+              >
+                <option value="">Select a client</option>
+                {clients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          )}
 
           <FormField label="Description" htmlFor="description" error={getError("description")}>
             <Textarea
@@ -225,10 +274,9 @@ export function AddTaskDialog({
             </Button>
             <SubmitButton
               isPending={isPending}
-              pendingLabel="Creating..."
-              label="Create Task"
+              pendingLabel={isEdit ? "Saving..." : "Creating..."}
+              label={isEdit ? "Save Changes" : "Create Task"}
               className="flex-1"
-              disabled={!canSubmit}
             />
           </div>
         </form>

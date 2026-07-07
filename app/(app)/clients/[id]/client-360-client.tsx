@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { motion, AnimatePresence } from "framer-motion"
 import {
@@ -18,8 +19,25 @@ import {
   Building2,
   AlertCircle,
   TrendingUp,
+  Pencil,
+  ListChecks,
+  Check,
+  Plus,
+  Trash2,
+  Loader2,
+  Sparkles,
 } from "lucide-react"
+import { toast } from "sonner"
 
+import {
+  setDocumentCollected,
+  addChecklistItem,
+  removeChecklistItem,
+  generateChecklistFromServices,
+  getClientChecklist,
+} from "@/app/actions/document-checklist"
+
+import { getEmployeesData } from "@/app/actions/employees"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -32,9 +50,22 @@ import {
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { ClientComplianceTab } from "@/components/compliance/client-compliance-tab"
 import { ClientTimeline } from "@/components/clients/client-timeline"
+import { EditClientDialog } from "@/components/clients/edit-client-dialog"
+import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
+import { serviceLabel } from "@/lib/clients/constants"
 import { cn } from "@/lib/utils"
 
 type TabType = "overview" | "services" | "tasks" | "payments" | "documents" | "compliance" | "activity" | "timeline"
+
+/** Humanize raw Prisma enum values, e.g. ON_HOLD → "On Hold" */
+function humanizeEnum(value?: string | null) {
+  if (!value) return "-"
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ")
+}
 
 interface Client360ClientProps {
   initialData: any
@@ -42,10 +73,62 @@ interface Client360ClientProps {
 }
 
 export function Client360Client({ initialData, clientId }: Client360ClientProps) {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabType>("overview")
   const [data, _setData] = useState(initialData)
+  const [editOpen, setEditOpen] = useState(false)
+  const [employees, setEmployees] = useState<EmployeeOption[] | null>(null)
 
   const canManage = data.user.role === "PARTNER" || data.user.role === "MANAGER"
+
+  // EditClientDialog expects the table-row shape; adapt the 360 payload.
+  const editableClient: ClientListItem = {
+    id: data.client.id,
+    name: data.client.name,
+    code: data.client.clientCode,
+    gstin: data.client.gstin ?? null,
+    pan: data.client.pan ?? null,
+    email: data.client.email ?? null,
+    phone: data.client.phone ?? null,
+    whatsapp: data.client.whatsapp ?? null,
+    address: data.client.address ?? null,
+    notes: data.client.notes ?? null,
+    assignedEmployeeId: data.client.assignedEmployeeId ?? null,
+    assignedEmployee: data.client.assignedEmployee?.name ?? "Unassigned",
+    status: data.client.status,
+    priority: data.client.priority,
+    services: (data.services ?? [])
+      .filter((s: any) => s.isActive)
+      .map((s: any) => ({
+        type: s.serviceType,
+        frequency: s.frequency,
+        customName: s.customName ?? null,
+      })),
+    nextDueDate: null,
+    createdAt:
+      typeof data.client.createdAt === "string"
+        ? data.client.createdAt
+        : new Date(data.client.createdAt).toISOString(),
+  }
+
+  const openEditDialog = async () => {
+    if (employees === null) {
+      try {
+        const result = await getEmployeesData()
+        setEmployees(
+          result.employees.map((e) => ({
+            id: e.id,
+            name: e.name,
+            department: e.department,
+          }))
+        )
+      } catch {
+        toast.error("Couldn't load the employee list — assignment options may be empty.")
+        setEmployees([])
+      }
+    }
+    setEditOpen(true)
+  }
 
   const tabs = [
     { id: "overview" as TabType, label: "Overview", icon: Activity },
@@ -59,10 +142,13 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
   ]
 
   const quickActions = [
-    { label: "Add Task", icon: CheckSquare, href: `/work-tracker?clientId=${clientId}` },
-    { label: "Add Invoice", icon: DollarSign, href: `/invoices/new?clientId=${clientId}` },
-    { label: "Upload Document", icon: Folder, href: `/documents/new?clientId=${clientId}` },
-    { label: "Send Reminder", icon: Phone, href: `/messaging?clientId=${clientId}` },
+    { label: "Add Task", icon: CheckSquare, href: `/work-tracker?clientId=${clientId}&new=1` },
+    // Payments is PARTNER/MANAGER-only — don't show employees a door they can't open
+    ...(canManage
+      ? [{ label: "Add Invoice", icon: DollarSign, href: `/payments/invoices?clientId=${clientId}&new=1` }]
+      : []),
+    { label: "Upload Document", icon: Folder, href: `/documents?clientId=${clientId}&upload=1` },
+    { label: "Send Reminder", icon: Phone, href: `/messaging?clientId=${clientId}&compose=1` },
   ]
 
   const metrics = data.metrics || {}
@@ -94,9 +180,10 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem>Edit Client</DropdownMenuItem>
-                    <DropdownMenuItem>Assign Employee</DropdownMenuItem>
-                    <DropdownMenuItem>Update Status</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void openEditDialog()}>
+                      <Pencil className="h-4 w-4" />
+                      Edit client details
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -114,10 +201,10 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
           {/* Status & Priority */}
           <div className="flex flex-wrap items-center gap-3 mb-6">
             <Badge className="bg-primary/10 text-primary border-primary/20">
-              {data.client.status}
+              {humanizeEnum(data.client.status)}
             </Badge>
             <Badge variant="outline" className="border-white/10 bg-white/[0.04]">
-              {data.client.priority}
+              {humanizeEnum(data.client.priority)}
             </Badge>
             {data.client.assignedEmployee && (
               <div className="flex items-center gap-2">
@@ -152,6 +239,16 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
           </div>
         </div>
       </div>
+
+      {canManage && (
+        <EditClientDialog
+          client={editableClient}
+          employees={employees ?? []}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSuccess={() => router.refresh()}
+        />
+      )}
 
       {/* Overview Cards */}
       <div className="container mx-auto max-w-[1680px] px-4 py-6">
@@ -268,7 +365,11 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
                 exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.2 }}
               >
-                <DocumentsTab documents={data.documents} />
+                <DocumentsTab
+                  documents={data.documents}
+                  checklist={data.documentChecklist ?? []}
+                  clientId={data.client.id}
+                />
               </motion.div>
             )}
             {activeTab === "compliance" && (
@@ -355,7 +456,6 @@ function MetricCard({ label, value, icon: Icon, color }: { label: string; value:
       <GlassCard hover={false} className="p-4">
         <div className="flex items-center justify-between mb-2">
           <Icon className={cn("h-4 w-4", color)} />
-          <TrendingUp className="h-4 w-4 text-muted-foreground/50" />
         </div>
         <p className="text-2xl font-semibold">{value}</p>
         <p className="text-xs text-muted-foreground mt-1">{label}</p>
@@ -380,11 +480,11 @@ function OverviewTab({ data }: { data: any }) {
           </div>
           <div>
             <p className="text-sm text-muted-foreground mb-2">Status</p>
-            <Badge className="bg-primary/10 text-primary border-primary/20">{data.client.status}</Badge>
+            <Badge className="bg-primary/10 text-primary border-primary/20">{humanizeEnum(data.client.status)}</Badge>
           </div>
           <div>
             <p className="text-sm text-muted-foreground mb-2">Priority</p>
-            <Badge variant="outline" className="border-white/10 bg-white/[0.04]">{data.client.priority}</Badge>
+            <Badge variant="outline" className="border-white/10 bg-white/[0.04]">{humanizeEnum(data.client.priority)}</Badge>
           </div>
         </div>
       </GlassCard>
@@ -434,7 +534,7 @@ function OverviewTab({ data }: { data: any }) {
       )}
 
       <GlassCard hover={false} className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
+        <h3 className="text-lg font-semibold mb-4">Recent Tasks</h3>
         <div className="space-y-4">
           {data.tasks.slice(0, 5).map((task: any) => (
             <div key={task.id} className="flex items-start gap-3">
@@ -467,7 +567,7 @@ function ServicesTab({ services }: { services: any[] }) {
           {services.map((service) => (
             <div key={service.id} className="flex items-center justify-between p-4 rounded-lg bg-white/[0.02] border border-white/[0.08]">
               <div>
-                <p className="font-medium">{service.serviceType}</p>
+                <p className="font-medium">{serviceLabel(service.serviceType, service.customName)}</p>
                 <p className="text-sm text-muted-foreground mt-1">{service.status}</p>
               </div>
               <Badge variant="outline">{service.frequency}</Badge>
@@ -555,30 +655,251 @@ function PaymentsTab({ invoices }: { invoices: any[] }) {
   )
 }
 
-function DocumentsTab({ documents }: { documents: any[] }) {
+function DocumentsTab({
+  documents,
+  checklist,
+  clientId,
+}: {
+  documents: any[]
+  checklist: any[]
+  clientId: string
+}) {
+  return (
+    <div className="space-y-6">
+      <DocumentChecklistCard checklist={checklist} clientId={clientId} />
+      <GlassCard hover={false} className="p-6">
+        <h3 className="text-lg font-semibold mb-4">Uploaded documents</h3>
+        {documents.length === 0 ? (
+          <p className="text-muted-foreground">No documents found</p>
+        ) : (
+          <div className="space-y-3">
+            {documents.map((doc) => (
+              <div key={doc.id} className="flex items-start gap-3 p-4 rounded-lg bg-white/[0.02] border border-white/[0.08]">
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <Folder className="h-4 w-4 text-purple-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">{doc.title}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{doc.type}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Uploaded: {format(new Date(doc.createdAt), "MMM d, yyyy")}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  )
+}
+
+type ChecklistItem = {
+  id: string
+  label: string
+  collected: boolean
+  collectedAt: string | Date | null
+}
+
+function DocumentChecklistCard({
+  checklist,
+  clientId,
+}: {
+  checklist: ChecklistItem[]
+  clientId: string
+}) {
+  // Local source of truth — the parent's data prop is frozen at mount
+  // (useState(initialData)), so we refetch this list after each mutation.
+  const [items, setItems] = useState<ChecklistItem[]>(checklist)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [newLabel, setNewLabel] = useState("")
+  const [pending, setPending] = useState(false)
+
+  const collected = items.filter((c) => c.collected).length
+  const total = items.length
+  const pct = total > 0 ? Math.round((collected / total) * 100) : 0
+
+  async function refresh() {
+    setItems((await getClientChecklist(clientId)) as ChecklistItem[])
+  }
+
+  async function toggle(item: ChecklistItem) {
+    setBusyId(item.id)
+    try {
+      const res = await setDocumentCollected(item.id, !item.collected)
+      if (res.error) toast.error(res.error)
+      else await refresh()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function remove(item: ChecklistItem) {
+    setBusyId(item.id)
+    try {
+      const res = await removeChecklistItem(item.id)
+      if (res.error) toast.error(res.error)
+      else {
+        toast.success("Removed from checklist.")
+        await refresh()
+      }
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function add() {
+    if (!newLabel.trim()) return
+    setPending(true)
+    try {
+      const res = await addChecklistItem(clientId, newLabel)
+      if (res.error) {
+        toast.error(res.error)
+        return
+      }
+      setNewLabel("")
+      setAdding(false)
+      await refresh()
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function generate() {
+    setPending(true)
+    try {
+      const res = await generateChecklistFromServices(clientId)
+      if (res.error) {
+        toast.error(res.error)
+        return
+      }
+      toast.success(res.added ? `Added ${res.added} document${res.added === 1 ? "" : "s"}.` : "Checklist is already up to date.")
+      await refresh()
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <GlassCard hover={false} className="p-6">
-      <h3 className="text-lg font-semibold mb-4">Documents</h3>
-      {documents.length === 0 ? (
-        <p className="text-muted-foreground">No documents found</p>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <ListChecks className="h-5 w-5 text-primary" />
+          <h3 className="text-lg font-semibold">Document checklist</h3>
+        </div>
+        {total > 0 && (
+          <span className="text-sm text-muted-foreground">
+            {collected} of {total} collected
+          </span>
+        )}
+      </div>
+
+      {total > 0 && (
+        <div className="mb-4 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      {total === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            No document checklist yet. Generate one from this client&apos;s services.
+          </p>
+          <Button size="sm" className="btn-glow gap-1.5 rounded-xl" disabled={pending} onClick={() => void generate()}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            Generate from services
+          </Button>
+        </div>
       ) : (
-        <div className="space-y-3">
-          {documents.map((doc) => (
-            <div key={doc.id} className="flex items-start gap-3 p-4 rounded-lg bg-white/[0.02] border border-white/[0.08]">
-              <div className="p-2 rounded-lg bg-purple-500/10">
-                <Folder className="h-4 w-4 text-purple-400" />
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className={cn(
+                "group flex items-center gap-3 rounded-lg border p-3 transition-colors",
+                item.collected
+                  ? "border-emerald-500/25 bg-emerald-500/[0.06]"
+                  : "border-white/[0.08] bg-white/[0.02]"
+              )}
+            >
+              <button
+                type="button"
+                disabled={busyId === item.id}
+                onClick={() => void toggle(item)}
+                aria-pressed={item.collected}
+                aria-label={item.collected ? `Mark ${item.label} as not collected` : `Mark ${item.label} as collected`}
+                className={cn(
+                  "flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                  item.collected
+                    ? "border-emerald-500/40 bg-emerald-500 text-white"
+                    : "border-white/[0.2] bg-white/[0.03] hover:border-primary/50"
+                )}
+              >
+                {busyId === item.id ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : item.collected ? (
+                  <Check className="size-3.5" />
+                ) : null}
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className={cn("text-sm", item.collected && "text-emerald-100")}>{item.label}</p>
+                {item.collected && item.collectedAt && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Collected {format(new Date(item.collectedAt), "MMM d, yyyy")}
+                  </p>
+                )}
               </div>
-              <div className="flex-1">
-                <p className="font-medium">{doc.title}</p>
-                <p className="text-sm text-muted-foreground mt-1">{doc.type}</p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Uploaded: {format(new Date(doc.createdAt), "MMM d, yyyy")}
-                </p>
-              </div>
+              <button
+                type="button"
+                disabled={busyId === item.id}
+                onClick={() => void remove(item)}
+                aria-label={`Remove ${item.label}`}
+                className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
             </div>
           ))}
         </div>
       )}
+
+      {/* Add a custom document */}
+      <div className="mt-4">
+        {adding ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void add()
+                if (e.key === "Escape") { setAdding(false); setNewLabel("") }
+              }}
+              placeholder="e.g. Board resolution, Rent agreement"
+              maxLength={200}
+              className="input-premium h-9 flex-1 rounded-lg bg-transparent px-3 text-sm"
+            />
+            <Button size="sm" className="btn-glow rounded-lg" disabled={pending || !newLabel.trim()} onClick={() => void add()}>
+              {pending ? <Loader2 className="size-4 animate-spin" /> : "Add"}
+            </Button>
+            <Button variant="ghost" size="sm" className="rounded-lg" onClick={() => { setAdding(false); setNewLabel("") }}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Plus className="size-3.5" /> Add a document
+          </button>
+        )}
+      </div>
     </GlassCard>
   )
 }
@@ -586,7 +907,7 @@ function DocumentsTab({ documents }: { documents: any[] }) {
 function ActivityTab({ data }: { data: any }) {
   return (
     <GlassCard hover={false} className="p-6">
-      <h3 className="text-lg font-semibold mb-4">Activity Timeline</h3>
+      <h3 className="text-lg font-semibold mb-4">Tasks</h3>
       <div className="space-y-4">
         {data.tasks.slice(0, 10).map((task: any) => (
           <div key={task.id} className="flex items-start gap-3">

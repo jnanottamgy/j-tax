@@ -1,12 +1,14 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { Download } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
 
 import { AddClientDialog } from "@/components/clients/add-client-dialog"
+import {
+  ImportClientsDialog,
+  ExportClientsButton,
+} from "@/components/clients/import-clients-dialog"
 import { ClientsTable } from "@/components/clients/clients-table"
 import { PageHeader } from "@/components/layout/page-header"
-import { Button } from "@/components/ui/button"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 
 type ClientsPageClientProps = {
@@ -21,34 +23,9 @@ export function ClientsPageClient({
   canManage,
 }: ClientsPageClientProps) {
   const router = useRouter()
-
-  const handleExportClients = () => {
-    const headers = ["Name", "GSTIN", "PAN", "Email", "Phone", "Priority", "Status"]
-    const rows = initialClients.map(client => [
-      client.name,
-      client.gstin || "",
-      client.pan || "",
-      client.email || "",
-      client.phone || "",
-      client.priority || "",
-      client.status || ""
-    ])
-    
-    const csvContent = [
-      headers.join(","),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
-    ].join("\n")
-    
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-    const url = URL.createObjectURL(blob)
-    link.setAttribute("href", url)
-    link.setAttribute("download", `clients-${new Date().toISOString().split("T")[0]}.csv`)
-    link.style.visibility = "hidden"
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
+  const searchParams = useSearchParams()
+  // Sidebar "New Client" quick action deep-links here with ?new=1
+  const openWizardOnLoad = searchParams.get("new") === "1"
 
   return (
     <>
@@ -57,23 +34,17 @@ export function ClientsPageClient({
         title="Clients"
         description="Master client records powering tasks, payments, documents, and compliance across J-TACS."
         action={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="input-premium h-9 gap-1.5 rounded-xl border-white/[0.07] bg-transparent"
-              onClick={handleExportClients}
-            >
-              <Download className="size-3.5" />
-              Export
-            </Button>
-            {canManage && (
+          canManage ? (
+            <div className="flex items-center gap-2">
+              <ExportClientsButton />
+              <ImportClientsDialog onSuccess={() => router.refresh()} />
               <AddClientDialog
                 employees={employees}
                 onSuccess={() => router.refresh()}
+                defaultOpen={openWizardOnLoad}
               />
-            )}
-          </>
+            </div>
+          ) : undefined
         }
       />
 

@@ -75,11 +75,14 @@ export async function globalSearch(query: string) {
   // Resolve the employee ID once, used for all EMPLOYEE scope filters below
   const executiveEmployeeId = await getExecutiveEmployeeId(session)
 
-  // Log search analytics (LOW-02: truncate before storing)
+  // Search runs on every (debounced) keystroke, so DO NOT block the read path
+  // on an analytics write — that's write-amplification against activity_logs
+  // and adds a round-trip to every query. Fire-and-forget instead; committed
+  // searches are persisted separately via saveSearchHistory on selection.
   if (query.length >= 2) {
     const safeQuery = query.slice(0, MAX_QUERY_LENGTH)
-    try {
-      await prisma.activityLog.create({
+    void prisma.activityLog
+      .create({
         data: {
           entityType: "SEARCH",
           entityId: safeQuery,
@@ -90,9 +93,7 @@ export async function globalSearch(query: string) {
           metadata: { role, timestamp: new Date().toISOString() },
         },
       })
-    } catch {
-      // Don't fail search if analytics fails
-    }
+      .catch(() => {})
   }
 
   if (query.length < 2) return { results, user }

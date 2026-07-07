@@ -6,4 +6,6 @@ export interface EmployeeListItem {
   isActive: boolean
   createdAt: Date
   updatedAt: Date
+  /** Role of the linked login account (null when no login exists yet) */
+  role?: "EMPLOYEE" | "MANAGER" | null
 }

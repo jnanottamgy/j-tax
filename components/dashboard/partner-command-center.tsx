@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { formatINRCompact } from "@/lib/india/format"
 
 interface PartnerCommandCenterProps {
   stats: {
@@ -112,10 +113,7 @@ export function PartnerCommandCenter({
   highRiskClients,
   crmMetrics,
 }: PartnerCommandCenterProps) {
-  const formatCurrency = (n: number) =>
-    n >= 100000
-      ? `₹${(n / 100000).toFixed(1)}L`
-      : `₹${n.toLocaleString("en-IN")}`
+  const formatCurrency = formatINRCompact
 
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
@@ -138,7 +136,6 @@ export function PartnerCommandCenter({
             icon={DollarSign}
             color="bg-green-500/10 text-green-400"
             href="/payments"
-            trend="up"
           />
           <MetricTile
             label="Outstanding"

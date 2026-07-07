@@ -10,6 +10,7 @@ import {
   Clock,
   FileText,
   Mail,
+  Pencil,
   Phone,
   Plus,
   UserPlus,
@@ -25,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { updateLeadStatus, convertLeadToClient } from "@/app/actions/proposals"
+import { EditLeadDialog } from "@/components/proposals/edit-lead-dialog"
 
 const STATUS_LABELS: Record<string, string> = {
   NEW_LEAD: "New Lead",
@@ -100,6 +102,7 @@ interface Props {
 export function LeadDetailClient({ lead, employees }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState(lead.status)
+  const [editOpen, setEditOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   function handleStatusChange(newStatus: string) {
@@ -134,6 +137,11 @@ export function LeadDetailClient({ lead, employees }: Props) {
             ))}
           </SelectContent>
         </Select>
+
+        <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+          <Pencil className="size-3.5 mr-1" />
+          Edit
+        </Button>
 
         <Button size="sm" variant="outline" asChild>
           <Link href={`/proposals/quotations/new?leadId=${lead.id}`}>
@@ -292,6 +300,15 @@ export function LeadDetailClient({ lead, employees }: Props) {
           </Card>
         </div>
       </div>
+
+      <EditLeadDialog
+        lead={lead}
+        open={editOpen}
+        onClose={() => {
+          setEditOpen(false)
+          router.refresh()
+        }}
+      />
     </div>
   )
 }

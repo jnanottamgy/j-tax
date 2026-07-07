@@ -1,14 +1,23 @@
 "use client"
 
-import { useActionState, useEffect, useState } from "react"
+import { useActionState, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
-import { Loader2, Pencil } from "lucide-react"
+import { Check, Loader2, Pencil } from "lucide-react"
 import { toast } from "sonner"
+import type { ServiceFrequency, ServiceType } from "@prisma/client"
 
 import {
   updateClient,
   type ClientActionState,
 } from "@/app/actions/clients"
+import {
+  createGroup,
+  getClientMasterData,
+  listGroups,
+  updateClientMasterData,
+  type GroupListItem,
+  type MasterDataInput,
+} from "@/app/actions/contacts"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -24,13 +33,23 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   ALL_CLIENT_PRIORITIES,
   ALL_CLIENT_STATUSES,
+  ALL_SERVICE_TYPES,
   CLIENT_PRIORITY_LABELS,
   CLIENT_STATUS_LABELS,
+  SERVICE_FREQUENCY_LABELS,
+  SERVICE_TYPE_LABELS,
 } from "@/lib/clients/constants"
+import {
+  ENTITY_TYPES,
+  ENTITY_TYPE_LABELS,
+} from "@/lib/clients/master-data"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 import { cn } from "@/lib/utils"
 
 const initialState: ClientActionState = {}
+
+type ServiceCfg = { frequency: ServiceFrequency; customName: string }
+const FREQUENCIES = Object.keys(SERVICE_FREQUENCY_LABELS) as ServiceFrequency[]
 
 type EditClientDialogProps = {
   client: ClientListItem
@@ -56,6 +75,49 @@ export function EditClientDialog({
     updateClient,
     initialState
   )
+
+  // Editable services — seeded from the client's current service mix.
+  const [services, setServices] = useState<Partial<Record<ServiceType, ServiceCfg>>>(
+    () =>
+      Object.fromEntries(
+        (client.services ?? []).map((s) => [
+          s.type,
+          { frequency: s.frequency, customName: s.customName ?? "" },
+        ])
+      )
+  )
+  const toggleService = (t: ServiceType) =>
+    setServices((prev) => {
+      const next = { ...prev }
+      if (next[t]) delete next[t]
+      else next[t] = { frequency: "MONTHLY", customName: "" }
+      return next
+    })
+  const setServiceCfg = (t: ServiceType, patch: Partial<ServiceCfg>) =>
+    setServices((prev) => ({
+      ...prev,
+      [t]: {
+        frequency: prev[t]?.frequency ?? "MONTHLY",
+        customName: prev[t]?.customName ?? "",
+        ...patch,
+      },
+    }))
+
+  const servicesPayload = useMemo(
+    () =>
+      (Object.entries(services) as [ServiceType, ServiceCfg][]).map(
+        ([serviceType, c]) => ({
+          serviceType,
+          frequency: c.frequency,
+          customName:
+            serviceType === "OTHER" ? c.customName.trim() || undefined : undefined,
+        })
+      ),
+    [services]
+  )
+  const servicesJson = JSON.stringify(servicesPayload)
+  const selectedCount = servicesPayload.length
+  const otherMissingName = Boolean(services.OTHER && !services.OTHER.customName.trim())
 
   useEffect(() => {
     if (!state.success && !state.error) return
@@ -101,8 +163,23 @@ export function EditClientDialog({
           </DialogHeader>
         </div>
 
-        <form action={formAction} className="overflow-y-auto px-6 py-5">
+        <form
+          action={formAction}
+          onSubmit={(e) => {
+            if (selectedCount === 0) {
+              e.preventDefault()
+              toast.error("Select at least one service.")
+              return
+            }
+            if (otherMissingName) {
+              e.preventDefault()
+              toast.error('Name the "Other" service before saving.')
+            }
+          }}
+          className="overflow-y-auto px-6 py-5"
+        >
           <input type="hidden" name="id" value={client.id} />
+          <input type="hidden" name="services" value={servicesJson} />
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -245,6 +322,102 @@ export function EditClientDialog({
                   ))}
                 </select>
               </Field>
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="label-premium">Services</h3>
+                <span className="text-xs text-muted-foreground">
+                  {selectedCount} selected
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Toggle the services this client subscribes to and set each filing cycle.
+                Adding a service starts its compliance tracking; removing one stops it.
+              </p>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                {ALL_SERVICE_TYPES.map((serviceType) => {
+                  const cfg = services[serviceType]
+                  const on = Boolean(cfg)
+                  return (
+                    <div
+                      key={serviceType}
+                      className={cn(
+                        "rounded-xl border p-3 transition-colors",
+                        on
+                          ? "border-primary/30 bg-primary/[0.07]"
+                          : "border-white/[0.08] bg-white/[0.02]"
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleService(serviceType)}
+                        disabled={isPending}
+                        aria-pressed={on}
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <span className="text-sm font-medium">
+                          {SERVICE_TYPE_LABELS[serviceType]}
+                        </span>
+                        <span
+                          className={cn(
+                            "flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                            on
+                              ? "border-primary/40 bg-primary text-primary-foreground"
+                              : "border-white/[0.15] bg-white/[0.03]"
+                          )}
+                        >
+                          {on && <Check className="size-3.5" />}
+                        </span>
+                      </button>
+
+                      {on && (
+                        <div className="mt-3 space-y-2">
+                          {serviceType === "OTHER" && (
+                            <Input
+                              value={cfg?.customName ?? ""}
+                              onChange={(e) =>
+                                setServiceCfg("OTHER", { customName: e.target.value })
+                              }
+                              placeholder="Name the service (e.g. Trademark filing)"
+                              maxLength={120}
+                              disabled={isPending}
+                              aria-invalid={!cfg?.customName?.trim()}
+                              className="input-premium h-9 rounded-lg text-sm"
+                            />
+                          )}
+                          <select
+                            value={cfg?.frequency ?? "MONTHLY"}
+                            onChange={(e) =>
+                              setServiceCfg(serviceType, {
+                                frequency: e.target.value as ServiceFrequency,
+                              })
+                            }
+                            disabled={isPending}
+                            className="input-premium h-9 w-full rounded-lg px-3 text-sm"
+                          >
+                            {FREQUENCIES.map((f) => (
+                              <option key={f} value={f}>
+                                {SERVICE_FREQUENCY_LABELS[f]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              {selectedCount === 0 && (
+                <p className="text-xs text-amber-400">
+                  Select at least one service to keep compliance tracking active.
+                </p>
+              )}
+              {otherMissingName && (
+                <p className="text-xs text-amber-400">
+                  Enter a name for the &quot;Other&quot; service.
+                </p>
+              )}
             </section>
 
             <section className="space-y-4">

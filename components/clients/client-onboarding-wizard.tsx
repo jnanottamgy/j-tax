@@ -43,6 +43,7 @@ import {
   CLIENT_PRIORITY_LABELS,
   SERVICE_FREQUENCY_LABELS,
   SERVICE_TYPE_LABELS,
+  serviceLabel,
 } from "@/lib/clients/constants"
 import { buildDocumentChecklist } from "@/lib/clients/onboarding"
 import {
@@ -50,6 +51,7 @@ import {
   type OnboardingServiceConfig,
 } from "@/lib/clients/onboarding-store"
 import type { EmployeeOption } from "@/lib/clients/types"
+import { validateGSTIN, validatePAN, gstinPanMismatch } from "@/lib/india/validators"
 import { cn } from "@/lib/utils"
 
 const initialState: ClientActionState = {}
@@ -74,13 +76,16 @@ const steps = [
 type ClientOnboardingWizardProps = {
   employees: EmployeeOption[]
   onSuccess?: () => void
+  /** Open the wizard immediately (deep links like /clients?new=1) */
+  defaultOpen?: boolean
 }
 
 export function ClientOnboardingWizard({
   employees,
   onSuccess,
+  defaultOpen = false,
 }: ClientOnboardingWizardProps) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [showDraftSaved, setShowDraftSaved] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
 
@@ -92,6 +97,7 @@ export function ClientOnboardingWizard({
     step,
     basic,
     services,
+    collectedDocuments,
     assignedEmployeeId,
     priority,
     compliance,
@@ -100,6 +106,7 @@ export function ClientOnboardingWizard({
     updateBasic,
     toggleService,
     updateService,
+    toggleCollectedDocument,
     updateAssignment,
     updateCompliance,
     updateChecklistReview,
@@ -126,6 +133,8 @@ export function ClientOnboardingWizard({
           serviceType,
           frequency: config.frequency,
           nextDueDate: config.nextDueDate || undefined,
+          customName:
+            serviceType === "OTHER" ? config.customName?.trim() || undefined : undefined,
         })),
     [services]
   )
@@ -135,12 +144,22 @@ export function ClientOnboardingWizard({
     [selectedServices]
   )
 
+  // Only submit collected labels that are still part of the current checklist
+  // (services may have changed after some were ticked).
+  const collectedJson = useMemo(
+    () => JSON.stringify(collectedDocuments.filter((label) => checklist.includes(label))),
+    [collectedDocuments, checklist]
+  )
+
   const servicesJson = JSON.stringify(selectedServices)
   const stepChecks = {
     hasName: basic.name.trim().length >= 2,
     hasService: selectedServices.length > 0,
     hasConfiguredServices: selectedServices.every(
-      (service) => services[service.serviceType]?.frequency
+      (service) =>
+        services[service.serviceType]?.frequency &&
+        (service.serviceType !== "OTHER" ||
+          Boolean(services.OTHER?.customName?.trim()))
     ),
     hasChecklistReviewed: checklistReview.reviewed,
   }
@@ -243,6 +262,7 @@ export function ClientOnboardingWizard({
             }}
           >
             <input type="hidden" name="services" value={servicesJson} />
+            <input type="hidden" name="collectedDocuments" value={collectedJson} />
             <input type="hidden" name="name" value={basic.name} />
             <input type="hidden" name="gstin" value={basic.gstin} />
             <input type="hidden" name="pan" value={basic.pan} />
@@ -378,6 +398,8 @@ export function ClientOnboardingWizard({
                       <ChecklistStep
                         selectedServices={selectedServices}
                         checklist={checklist}
+                        collectedDocuments={collectedDocuments}
+                        toggleCollectedDocument={toggleCollectedDocument}
                         checklistReview={checklistReview}
                         updateChecklistReview={updateChecklistReview}
                       />
@@ -496,6 +518,13 @@ function BasicInfoStep({
   errors?: Record<string, string[]>
   updateBasic: (data: Partial<typeof basic>) => void
 }) {
+  // Live statutory feedback — only once the field reaches full length, so we
+  // don't nag mid-typing. Checksum + state decode happen fully offline.
+  const gstinCheck = basic.gstin.trim().length >= 15 ? validateGSTIN(basic.gstin) : null
+  const panCheck = basic.pan.trim().length >= 10 ? validatePAN(basic.pan) : null
+  const crossCheck =
+    gstinCheck?.valid && panCheck?.valid ? gstinPanMismatch(basic.gstin, basic.pan) : null
+
   return (
     <StepFrame
       title="Basic Information"
@@ -513,10 +542,29 @@ function BasicInfoStep({
         <Field label="GSTIN" error={errors?.gstin?.[0]}>
           <Input
             value={basic.gstin}
-            onChange={(event) => updateBasic({ gstin: event.target.value.toUpperCase() })}
+            onChange={(event) => {
+              const gstin = event.target.value.toUpperCase()
+              const next: Record<string, string> = { gstin }
+              // Auto-fill PAN from the GSTIN's embedded PAN (chars 3–12)
+              const r = validateGSTIN(gstin)
+              if (r.valid && !basic.pan.trim()) next.pan = r.pan
+              updateBasic(next)
+            }}
             placeholder="27AABCU9603R1ZM"
             className="input-premium h-10 rounded-xl font-mono text-sm uppercase"
           />
+          {gstinCheck && (
+            <p
+              className={cn(
+                "mt-1.5 text-xs",
+                gstinCheck.valid ? "text-emerald-400" : "text-amber-400"
+              )}
+            >
+              {gstinCheck.valid
+                ? `✓ Valid — ${gstinCheck.stateName} (${gstinCheck.stateCode})`
+                : gstinCheck.error}
+            </p>
+          )}
         </Field>
         <Field label="PAN" error={errors?.pan?.[0]}>
           <Input
@@ -525,6 +573,20 @@ function BasicInfoStep({
             placeholder="AABCU9603R"
             className="input-premium h-10 rounded-xl font-mono text-sm uppercase"
           />
+          {(panCheck || crossCheck) && (
+            <p
+              className={cn(
+                "mt-1.5 text-xs",
+                panCheck?.valid && !crossCheck ? "text-emerald-400" : "text-amber-400"
+              )}
+            >
+              {crossCheck
+                ? crossCheck
+                : panCheck?.valid
+                  ? `✓ ${panCheck.entityType}`
+                  : panCheck?.error}
+            </p>
+          )}
         </Field>
         <Field label="Email" error={errors?.email?.[0]}>
           <Input
@@ -698,12 +760,32 @@ function ConfigurationStep({
               key={serviceType}
               className="surface-elevated grid gap-4 rounded-xl p-4 md:grid-cols-[1fr_160px_180px]"
             >
-              <div>
-                <p className="font-medium">{SERVICE_TYPE_LABELS[serviceType]}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Initial tasks and schedules will be generated automatically.
-                </p>
-              </div>
+              {serviceType === "OTHER" ? (
+                <Field label="Specify the service *">
+                  <Input
+                    value={config?.customName ?? ""}
+                    onChange={(event) =>
+                      updateService("OTHER", { customName: event.target.value })
+                    }
+                    placeholder="e.g. Trademark registration, ROC filing"
+                    maxLength={120}
+                    aria-invalid={!config?.customName?.trim()}
+                    className="input-premium h-10 rounded-xl"
+                  />
+                  {!config?.customName?.trim() && (
+                    <p className="mt-1 text-xs text-amber-400">
+                      Name the service so it&apos;s clear on tasks, invoices, and reports.
+                    </p>
+                  )}
+                </Field>
+              ) : (
+                <div>
+                  <p className="font-medium">{SERVICE_TYPE_LABELS[serviceType]}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Initial tasks and schedules will be generated automatically.
+                  </p>
+                </div>
+              )}
               <Field label="Frequency">
                 <select
                   value={config?.frequency ?? "MONTHLY"}
@@ -744,37 +826,68 @@ function ConfigurationStep({
 function ChecklistStep({
   selectedServices,
   checklist,
+  collectedDocuments,
+  toggleCollectedDocument,
   checklistReview,
   updateChecklistReview,
 }: {
-  selectedServices: { serviceType: ServiceType }[]
+  selectedServices: { serviceType: ServiceType; customName?: string }[]
   checklist: string[]
+  collectedDocuments: string[]
+  toggleCollectedDocument: (label: string) => void
   checklistReview: { reviewed: boolean }
   updateChecklistReview: (data: Partial<{ reviewed: boolean }>) => void
 }) {
+  const collectedCount = checklist.filter((item) => collectedDocuments.includes(item)).length
   return (
     <StepFrame
       title="Document Checklist"
-      description="Checklist records are generated from the selected service mix."
+      description="Generated from the selected services. Tick the documents you've already collected — the rest are tracked on the client's profile."
     >
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="mb-5 flex flex-wrap items-center gap-2">
         {selectedServices.map((service) => (
           <Badge
             key={service.serviceType}
             variant="outline"
             className="border-primary/25 bg-primary/10 text-primary"
           >
-            {SERVICE_TYPE_LABELS[service.serviceType]}
+            {serviceLabel(service.serviceType, service.customName)}
           </Badge>
         ))}
+        {checklist.length > 0 && (
+          <span className="ml-auto text-xs text-muted-foreground">
+            {collectedCount} of {checklist.length} collected
+          </span>
+        )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {checklist.map((item) => (
-          <div key={item} className="surface-elevated flex items-start gap-3 rounded-xl p-4">
-            <FileCheck2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
-            <span className="text-sm">{item}</span>
-          </div>
-        ))}
+        {checklist.map((item) => {
+          const collected = collectedDocuments.includes(item)
+          return (
+            <button
+              key={item}
+              type="button"
+              onClick={() => toggleCollectedDocument(item)}
+              aria-pressed={collected}
+              className={cn(
+                "surface-elevated flex items-start gap-3 rounded-xl p-4 text-left transition-all duration-200",
+                collected && "border-emerald-500/30 bg-emerald-500/10 ring-1 ring-emerald-500/20"
+              )}
+            >
+              <span
+                className={cn(
+                  "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                  collected
+                    ? "border-emerald-500/40 bg-emerald-500 text-white"
+                    : "border-white/[0.15] bg-white/[0.03]"
+                )}
+              >
+                {collected ? <Check className="size-3.5" /> : <FileCheck2 className="size-3 text-muted-foreground" />}
+              </span>
+              <span className={cn("text-sm", collected && "text-emerald-100")}>{item}</span>
+            </button>
+          )
+        })}
       </div>
       <div className="mt-6 surface-elevated flex items-center gap-3 rounded-xl p-4">
         <input
@@ -785,7 +898,7 @@ function ChecklistStep({
           className="size-4 rounded border-white/20 accent-primary"
         />
         <label htmlFor="checklist-review" className="text-sm font-medium cursor-pointer">
-          I have reviewed the document checklist and confirm all required documents will be collected
+          I have reviewed the document checklist and confirm the remaining documents will be collected
         </label>
       </div>
     </StepFrame>

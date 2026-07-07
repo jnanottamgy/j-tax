@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { AlertTriangle, RefreshCw } from "lucide-react"
 
+import { reportError } from "@/lib/observability/report-error"
+
 interface Props {
   children: ReactNode
   fallback?: ReactNode
@@ -27,7 +29,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: any) {
     console.error("Error caught by boundary:", error, errorInfo)
-    // TODO: Send to error logging service (Sentry, LogRocket, etc.)
+    // Same observability path as the route-level error.tsx boundaries —
+    // client render crashes were previously invisible to monitoring.
+    reportError(error, {
+      source: "class-error-boundary",
+      extra: { componentStack: errorInfo?.componentStack },
+    })
   }
 
   render() {

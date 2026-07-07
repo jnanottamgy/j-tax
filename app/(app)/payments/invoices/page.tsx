@@ -4,5 +4,11 @@ import { getInvoicesData } from "@/app/actions/invoices"
 export default async function InvoicesPage() {
   const data = await getInvoicesData()
   
-  return <InvoicesPageClient initialInvoices={data.invoices} clients={data.clients} />
+  return (
+    <InvoicesPageClient
+      initialInvoices={data.invoices}
+      clients={data.clients}
+      firmState={data.firmState}
+    />
+  )
 }

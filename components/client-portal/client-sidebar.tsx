@@ -4,15 +4,17 @@ import {
   LayoutDashboard,
   FileText,
   Upload,
+  ClipboardList,
   Receipt,
   MessageSquare,
   Calendar,
-  Settings,
   HelpCircle,
   LogOut,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+
+import { signOut } from "@/app/actions/auth"
 import { LogoFull } from "@/components/ui/logo"
 
 import {
@@ -45,6 +47,11 @@ const mainNavItems = [
     icon: Upload,
   },
   {
+    title: "Document Requests",
+    href: "/client/requests",
+    icon: ClipboardList,
+  },
+  {
     title: "Invoices",
     href: "/client/invoices",
     icon: Receipt,
@@ -62,11 +69,6 @@ const mainNavItems = [
 ]
 
 const footerNavItems = [
-  {
-    title: "Settings",
-    href: "/client/settings",
-    icon: Settings,
-  },
   {
     title: "Help & Support",
     href: "/client/help",
@@ -156,13 +158,15 @@ export function ClientSidebar({ client }: ClientSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter className="border-t p-4">
-        <button
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-          onClick={() => window.location.href = "/api/auth/signout"}
-        >
-          <LogOut className="size-4" />
-          <span>Sign Out</span>
-        </button>
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            <LogOut className="size-4" />
+            <span>Sign Out</span>
+          </button>
+        </form>
       </SidebarFooter>
     </Sidebar>
   )

@@ -44,11 +44,13 @@ const statusConfig: Record<string, { label: string; variant: "default" | "succes
   RETRYING: { label: "Retrying", variant: "warning" },
 }
 
+// Lighter -300/-400 foregrounds + slightly stronger fills so small uppercase
+// badge text clears WCAG AA on the dark theme (the old -500 on 10% failed).
 const variantStyles = {
-  default: "bg-muted/50 text-muted-foreground border-muted-foreground/20",
-  success: "bg-green-500/10 text-green-500 border-green-500/20",
-  warning: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-  destructive: "bg-red-500/10 text-red-500 border-red-500/20",
+  default: "bg-muted/60 text-foreground/90 border-white/15",
+  success: "bg-emerald-500/12 text-emerald-300 border-emerald-500/25",
+  warning: "bg-amber-500/12 text-amber-300 border-amber-500/25",
+  destructive: "bg-red-500/12 text-red-300 border-red-500/25",
 }
 
 export function StatusBadge({ status, icon: Icon, className }: StatusBadgeProps) {

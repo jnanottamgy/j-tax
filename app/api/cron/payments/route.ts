@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "crypto"
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { tenantContext } from "@/lib/tenant/context"
 
 // HIGH-05: constant-time comparison to prevent timing attacks on the cron secret
 function safeCompare(a: string, b: string): boolean {
@@ -26,6 +27,13 @@ export async function GET(request: Request) {
     }
 
     const now = new Date()
+
+    // Multi-tenant: mark overdue + notify inside each firm's own context so
+    // invoice queries and Partner/Manager lookups never cross firms.
+    const firms = await prisma.firm.findMany({ where: { status: "ACTIVE" }, select: { id: true } })
+    let totalOverdue = 0
+    for (const firm of firms) {
+      await tenantContext.run({ firmId: firm.id }, async () => {
 
     // 1. Find all unpaid invoices past their due date that aren't already marked OVERDUE (or DISPUTED/WAIVED)
     const overdueInvoices = await prisma.invoice.findMany({
@@ -72,9 +80,13 @@ export async function GET(request: Request) {
       }
     }
 
+    totalOverdue += overdueInvoices.length
+      }) // tenantContext.run
+    } // firms loop
+
     return NextResponse.json({
       success: true,
-      message: `Processed ${overdueInvoices.length} newly overdue invoices.`,
+      message: `Processed ${totalOverdue} newly overdue invoices across ${firms.length} firm(s).`,
     })
   } catch (error: unknown) {
     // Log full detail server-side; return a generic message so internal

@@ -39,7 +39,10 @@ export async function getSession(): Promise<SessionInfo | null> {
   const mapped = mapSupabaseUser(user)
   if (!mapped) return null
 
-  return { user: mapped }
+  return {
+    user: mapped,
+    mustChangePassword: Boolean(user.user_metadata?.must_change_password),
+  }
 }
 
 export async function requireSession(): Promise<SessionInfo> {

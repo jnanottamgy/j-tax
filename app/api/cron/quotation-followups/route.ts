@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { notificationService } from "@/lib/messaging/notification-service"
 import { followUpEmailHTML, followUpSubject } from "@/lib/quotations/email-templates"
 import { getFirmSettings } from "@/lib/firm-settings"
+import { tenantContext } from "@/lib/tenant/context"
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 
@@ -29,10 +30,12 @@ export async function GET(request: Request) {
   let sent = 0
   let skipped = 0
 
-  // Resolve firm identity once per cron tick — used for every email this run.
-  const cfg = await getFirmSettings()
-
   try {
+    // Multi-tenant: each firm's follow-ups go out with that firm's branding.
+    const firms = await prisma.firm.findMany({ where: { status: "ACTIVE" }, select: { id: true } })
+    for (const firm of firms) {
+      await tenantContext.run({ firmId: firm.id }, async () => {
+    const cfg = await getFirmSettings()
     // Find pending follow-ups where scheduledAt has passed
     const dueFollowUps = await prisma.quotationFollowUp.findMany({
       where: {
@@ -109,6 +112,9 @@ export async function GET(request: Request) {
       if (result.success) sent++
       else skipped++
     }
+
+      }) // tenantContext.run
+    } // firms loop
 
     return NextResponse.json({ success: true, sent, skipped })
   } catch (err) {

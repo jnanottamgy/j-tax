@@ -2,19 +2,20 @@ import { redirect } from "next/navigation"
 
 import { EmployeesPageClient } from "@/components/employees/employees-page-client"
 import { PageContainer } from "@/components/layout/page-container"
-import { PageHeader } from "@/components/layout/page-header"
 import { Breadcrumb } from "@/components/navigation/breadcrumb"
 import { getEmployeesData } from "@/app/actions/employees"
 
 export default async function EmployeesPage() {
   let employees: Awaited<ReturnType<typeof getEmployeesData>>["employees"] = []
   let canManage = false
+  let viewerRole: "PARTNER" | "MANAGER" | "EMPLOYEE" | "CLIENT" = "EMPLOYEE"
   let error: string | null = null
 
   try {
     const data = await getEmployeesData()
     employees = data.employees
     canManage = data.user.role === "PARTNER" || data.user.role === "MANAGER"
+    viewerRole = data.user.role
   } catch (e) {
     if (e instanceof Error && e.message.includes("Forbidden")) {
       redirect("/unauthorized")
@@ -28,11 +29,8 @@ export default async function EmployeesPage() {
   return (
     <PageContainer className="space-y-6">
       <Breadcrumb items={[{ label: "Employees" }]} />
-      <PageHeader
-        label="Team management"
-        title="Employees"
-        description="Manage your team members and their access permissions."
-      />
+      {/* Header is rendered inside EmployeesPageClient (it carries the
+          Export / Add-employee actions) — avoid a duplicate PageHeader. */}
       {error ? (
         <div
           role="alert"
@@ -44,6 +42,7 @@ export default async function EmployeesPage() {
         <EmployeesPageClient
           initialEmployees={employees}
           canManage={canManage}
+          viewerRole={viewerRole}
         />
       )}
     </PageContainer>

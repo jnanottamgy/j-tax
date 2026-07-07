@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
-import { Toaster } from "sonner";
 import "./globals.css";
+import { ThemeProvider } from "@/components/theme/theme-provider";
+import { ThemedToaster } from "@/components/theme/themed-toaster";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
@@ -48,10 +49,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // suppressHydrationWarning: next-themes applies the stored theme class to
+    // <html> before hydration — the server can't know the user's preference.
     <html
       lang="en"
+      suppressHydrationWarning
       className={cn(
-        "dark h-full",
+        "h-full",
         "antialiased",
         geistSans.variable,
         geistMono.variable,
@@ -60,17 +64,10 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-svh flex flex-col selection:bg-primary/25">
-        {children}
-        <Toaster
-          theme="dark"
-          position="bottom-right"
-          toastOptions={{
-            classNames: {
-              toast:
-                "border border-white/[0.08] bg-popover/95 text-foreground backdrop-blur-xl shadow-xl",
-            },
-          }}
-        />
+        <ThemeProvider>
+          {children}
+          <ThemedToaster />
+        </ThemeProvider>
       </body>
     </html>
   );

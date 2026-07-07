@@ -14,24 +14,26 @@ interface ComplianceEvent {
   status: string
 }
 
+// There is no per-event progress data, so the bar is a full-width status tint
+// rather than a percentage.
 const statusConfig = {
   PENDING: {
     label: "Pending",
     icon: Clock,
     className: "text-amber-400",
-    bar: "bg-amber-500",
+    bar: "bg-amber-500/25",
   },
   OVERDUE: {
     label: "Overdue",
     icon: AlertTriangle,
     className: "text-red-400",
-    bar: "bg-red-500",
+    bar: "bg-red-500/30",
   },
   COMPLETED: {
     label: "Completed",
     icon: CheckCircle2,
     className: "text-emerald-400",
-    bar: "bg-emerald-500",
+    bar: "bg-emerald-500/30",
   },
 }
 
@@ -96,22 +98,12 @@ export function ComplianceOverview({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-500",
-                        config.bar
-                      )}
-                      style={{
-                        width:
-                          event.status === "COMPLETED"
-                            ? "100%"
-                            : event.status === "OVERDUE"
-                            ? "100%"
-                            : "40%",
-                      }}
-                    />
-                  </div>
+                  <div
+                    className={cn(
+                      "h-1.5 flex-1 rounded-full transition-colors duration-500",
+                      config.bar
+                    )}
+                  />
                   <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground capitalize">
                     {config.label}
                   </span>

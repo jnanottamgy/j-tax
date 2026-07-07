@@ -1,9 +1,16 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowUpDown, MoreHorizontal } from "lucide-react"
+import { ArrowUpDown, Eye, Lock, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TaskStatusBadge } from "./task-status-badge"
 import { TaskPriorityBadge } from "./task-priority-badge"
@@ -29,6 +36,7 @@ interface Task {
     id: string
     name: string
   } | null
+  blockedBy?: Array<{ blocker: { id: string; title: string; status: string } }>
   _count: {
     comments: number
     attachments: number
@@ -38,6 +46,9 @@ interface Task {
 interface TaskTableProps {
   tasks: Task[]
   onTaskClick?: (taskId: string) => void
+  onEditTask?: (taskId: string) => void
+  /** Only passed for PARTNER/MANAGER — hides the delete item otherwise */
+  onDeleteTask?: (taskId: string) => void
 }
 
 type SortField = "title" | "status" | "priority" | "dueDate" | "client"
@@ -54,7 +65,7 @@ function SortIcon({ active }: { active: boolean }) {
   )
 }
 
-export function TaskTable({ tasks, onTaskClick }: TaskTableProps) {
+export function TaskTable({ tasks, onTaskClick, onEditTask, onDeleteTask }: TaskTableProps) {
   const [sortField, setSortField] = useState<SortField>("dueDate")
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc")
 
@@ -170,7 +181,20 @@ export function TaskTable({ tasks, onTaskClick }: TaskTableProps) {
                 </TableCell>
                 <TableCell className="text-sm">{task.client.name}</TableCell>
                 <TableCell>
-                  <TaskStatusBadge status={task.status} />
+                  <div className="flex items-center gap-1.5">
+                    <TaskStatusBadge status={task.status} />
+                    {(task.blockedBy ?? []).some((d) => d.blocker.status !== "FILED_DONE") && (
+                      <span
+                        title={`Waiting on: ${(task.blockedBy ?? [])
+                          .filter((d) => d.blocker.status !== "FILED_DONE")
+                          .map((d) => d.blocker.title)
+                          .join(", ")}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-400"
+                      >
+                        <Lock className="h-3 w-3" /> Blocked
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <TaskPriorityBadge priority={task.priority} />
@@ -201,14 +225,43 @@ export function TaskTable({ tasks, onTaskClick }: TaskTableProps) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="h-7 w-7"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-7 w-7"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Actions for ${task.title}`}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onSelect={() => onTaskClick?.(task.id)}>
+                        <Eye className="size-3.5" />
+                        View details
+                      </DropdownMenuItem>
+                      {onEditTask && (
+                        <DropdownMenuItem onSelect={() => onEditTask(task.id)}>
+                          <Pencil className="size-3.5" />
+                          Edit task
+                        </DropdownMenuItem>
+                      )}
+                      {onDeleteTask && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                            onSelect={() => onDeleteTask(task.id)}
+                          >
+                            <Trash2 className="size-3.5" />
+                            Delete task
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))}

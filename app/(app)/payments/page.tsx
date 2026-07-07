@@ -33,7 +33,12 @@ export default async function PaymentsPage() {
   // Simple ageing buckets logic in memory for now
   const allInvoices = await prisma.invoice.findMany({
     where: { outstandingAmount: { gt: 0 } },
-    select: { dueDate: true, outstandingAmount: true }
+    select: {
+      dueDate: true,
+      outstandingAmount: true,
+      clientId: true,
+      client: { select: { name: true } },
+    }
   })
 
   // Serialize Decimal objects to numbers for client components
@@ -47,6 +52,7 @@ export default async function PaymentsPage() {
   let bucket60 = 0
   let bucket90 = 0
   let bucket90Plus = 0
+  const overdueByClient = new Map<string, { name: string; amount: number }>()
 
   serializedInvoices.forEach(inv => {
     const daysOverdue = Math.floor((now.getTime() - inv.dueDate.getTime()) / (1000 * 3600 * 24))
@@ -56,7 +62,20 @@ export default async function PaymentsPage() {
     else if (daysOverdue <= 60) bucket60 += amt
     else if (daysOverdue <= 90) bucket90 += amt
     else bucket90Plus += amt
+
+    const existing = overdueByClient.get(inv.clientId)
+    if (existing) existing.amount += amt
+    else overdueByClient.set(inv.clientId, { name: inv.client.name, amount: amt })
   })
+
+  // Bar heights must be proportional to the buckets themselves, not the
+  // OVERDUE-status total (which excludes past-due SENT/PARTIALLY_PAID invoices)
+  const bucketTotal = bucket30 + bucket60 + bucket90 + bucket90Plus
+
+  const topOverdueClients = Array.from(overdueByClient.entries())
+    .map(([id, c]) => ({ id, ...c }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5)
 
   const totalOutstanding = Number(totalInvoicesResult._sum.outstandingAmount || 0)
   const totalCollected = Number(totalInvoicesResult._sum.paidAmount || 0)
@@ -153,22 +172,22 @@ export default async function PaymentsPage() {
           </div>
           <div className="flex h-[200px] items-end justify-around space-x-2 pb-4">
             <div className="group relative flex w-1/4 flex-col items-center justify-end">
-              <div className="w-full bg-blue-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket30 / (totalOverdue || 1)) * 100)}%` }} />
+              <div className="w-full bg-blue-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket30 / (bucketTotal || 1)) * 100)}%` }} />
               <span className="mt-2 text-xs text-muted-foreground">0-30 Days</span>
               <span className="absolute -top-6 text-xs font-semibold">₹{bucket30.toLocaleString()}</span>
             </div>
             <div className="group relative flex w-1/4 flex-col items-center justify-end">
-              <div className="w-full bg-yellow-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket60 / (totalOverdue || 1)) * 100)}%` }} />
+              <div className="w-full bg-yellow-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket60 / (bucketTotal || 1)) * 100)}%` }} />
               <span className="mt-2 text-xs text-muted-foreground">31-60 Days</span>
               <span className="absolute -top-6 text-xs font-semibold">₹{bucket60.toLocaleString()}</span>
             </div>
             <div className="group relative flex w-1/4 flex-col items-center justify-end">
-              <div className="w-full bg-orange-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket90 / (totalOverdue || 1)) * 100)}%` }} />
+              <div className="w-full bg-orange-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket90 / (bucketTotal || 1)) * 100)}%` }} />
               <span className="mt-2 text-xs text-muted-foreground">61-90 Days</span>
               <span className="absolute -top-6 text-xs font-semibold">₹{bucket90.toLocaleString()}</span>
             </div>
             <div className="group relative flex w-1/4 flex-col items-center justify-end">
-              <div className="w-full bg-red-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket90Plus / (totalOverdue || 1)) * 100)}%` }} />
+              <div className="w-full bg-red-500 rounded-t-md transition-all duration-300" style={{ height: `${Math.max(10, (bucket90Plus / (bucketTotal || 1)) * 100)}%` }} />
               <span className="mt-2 text-xs text-muted-foreground">&gt;90 Days</span>
               <span className="absolute -top-6 text-xs text-destructive font-semibold">₹{bucket90Plus.toLocaleString()}</span>
             </div>
@@ -180,12 +199,23 @@ export default async function PaymentsPage() {
             <p className="text-sm text-muted-foreground">Top overdue clients</p>
           </div>
           <div className="space-y-4">
-            <div className="flex items-center">
-              <div className="ml-4 space-y-1">
-                <p className="text-sm font-medium leading-none">No overdue clients yet.</p>
-                <p className="text-sm text-muted-foreground">Keep up the good work!</p>
+            {topOverdueClients.length === 0 ? (
+              <div className="flex items-center">
+                <div className="ml-4 space-y-1">
+                  <p className="text-sm font-medium leading-none">No overdue clients yet.</p>
+                  <p className="text-sm text-muted-foreground">Keep up the good work!</p>
+                </div>
               </div>
-            </div>
+            ) : (
+              topOverdueClients.map((client) => (
+                <div key={client.id} className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-medium leading-none">{client.name}</p>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums text-destructive">
+                    ₹{client.amount.toLocaleString()}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         </GlassCard>
       </div>

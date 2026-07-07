@@ -2,18 +2,27 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Download, Plus, Search } from "lucide-react"
+import { Copy, Download, KeyRound, MailCheck, Plus, Search } from "lucide-react"
 
 import { AddEmployeeDialog } from "@/components/employees/add-employee-dialog"
 import { EmployeesTable } from "@/components/employees/employees-table"
 import { PageHeader } from "@/components/layout/page-header"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   deleteEmployee,
   disableEmployee,
   enableEmployee,
   listEmployeesData,
+  resetEmployeePassword,
 } from "@/app/actions/employees"
 import { toast } from "sonner"
 import type { EmployeeListItem } from "@/lib/employees/types"
@@ -21,11 +30,13 @@ import type { EmployeeListItem } from "@/lib/employees/types"
 type EmployeesPageClientProps = {
   initialEmployees: EmployeeListItem[]
   canManage: boolean
+  viewerRole?: "PARTNER" | "MANAGER" | "EMPLOYEE" | "CLIENT"
 }
 
 export function EmployeesPageClient({
   initialEmployees,
   canManage,
+  viewerRole = "MANAGER",
 }: EmployeesPageClientProps) {
   const _router = useRouter()
 
@@ -77,25 +88,69 @@ export function EmployeesPageClient({
     fetchEmployees()
   }
 
-  const handleDeleteEmployee = async (employeeId: string) => {
-    if (!confirm("Are you sure you want to delete this employee?")) return
+  const [pendingAction, setPendingAction] = useState<{
+    kind: "delete" | "disable"
+    employeeId: string
+  } | null>(null)
 
-    const result = await deleteEmployee(employeeId)
-    if (result.success) {
-      toast.success("Employee deleted successfully")
-      fetchEmployees()
+  // Password reset: confirm target, then reveal the one-time temp password.
+  const [resetTarget, setResetTarget] = useState<EmployeeListItem | null>(null)
+  const [resetResult, setResetResult] = useState<{ email: string; tempPassword: string } | null>(null)
+
+  const handleResetPassword = (employee: EmployeeListItem) => {
+    setResetTarget(employee)
+  }
+
+  const handleResetConfirmed = async () => {
+    const target = resetTarget
+    if (!target) return
+    const result = await resetEmployeePassword(target.id)
+    if (result.success && result.tempPassword) {
+      setResetResult({ email: result.email ?? target.email, tempPassword: result.tempPassword })
+      toast.success("Password reset. Share the temporary password below.")
     } else {
-      toast.error(result.error || "Failed to delete employee")
+      toast.error(result.error ?? "Failed to reset password")
     }
   }
 
-  const handleDisableEmployee = async (employeeId: string) => {
-    const result = await disableEmployee(employeeId)
+  const copyTempPassword = async () => {
+    if (!resetResult) return
+    try {
+      await navigator.clipboard.writeText(resetResult.tempPassword)
+      toast.success("Temporary password copied")
+    } catch {
+      toast.error("Couldn't copy — select and copy manually.")
+    }
+  }
+
+  const handleDeleteEmployee = (employeeId: string) => {
+    setPendingAction({ kind: "delete", employeeId })
+  }
+
+  const handleDisableEmployee = (employeeId: string) => {
+    // Disabling now also locks the person out of their login — confirm first.
+    setPendingAction({ kind: "disable", employeeId })
+  }
+
+  const handleConfirmedAction = async () => {
+    const action = pendingAction
+    if (!action) return
+    const result =
+      action.kind === "delete"
+        ? await deleteEmployee(action.employeeId)
+        : await disableEmployee(action.employeeId)
     if (result.success) {
-      toast.success("Employee disabled successfully")
+      toast.success(
+        action.kind === "delete"
+          ? "Employee deleted successfully"
+          : "Employee disabled — their login is now blocked"
+      )
       fetchEmployees()
     } else {
-      toast.error(result.error || "Failed to disable employee")
+      toast.error(
+        result.error ||
+          (action.kind === "delete" ? "Failed to delete employee" : "Failed to disable employee")
+      )
     }
   }
 
@@ -240,6 +295,7 @@ export function EmployeesPageClient({
         onDelete={handleDeleteEmployee}
         onDisable={handleDisableEmployee}
         onEnable={handleEnableEmployee}
+        onResetPassword={handleResetPassword}
       />
 
       <div className="flex items-center justify-between pt-4">
@@ -276,6 +332,7 @@ export function EmployeesPageClient({
           open={addDialogOpen}
           onOpenChange={setAddDialogOpen}
           onSuccess={handleEmployeeSaved}
+          viewerRole={viewerRole}
         />
       )}
 
@@ -289,8 +346,83 @@ export function EmployeesPageClient({
           onSuccess={handleEmployeeSaved}
           employee={editingEmployee}
           isEdit
+          viewerRole={viewerRole}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => !open && setPendingAction(null)}
+        title={
+          pendingAction?.kind === "delete" ? "Delete this employee?" : "Disable this employee?"
+        }
+        description={
+          pendingAction?.kind === "delete"
+            ? "The employee record will be permanently removed. Employees with assigned clients or open tasks cannot be deleted."
+            : "They will be marked inactive and will no longer be able to sign in until re-enabled."
+        }
+        confirmLabel={pendingAction?.kind === "delete" ? "Delete employee" : "Disable"}
+        destructive
+        onConfirm={handleConfirmedAction}
+      />
+
+      <ConfirmDialog
+        open={resetTarget !== null}
+        onOpenChange={(open) => !open && setResetTarget(null)}
+        title={`Reset ${resetTarget?.name ?? ""}'s password?`}
+        description="A new temporary password will be issued and they'll be required to set their own at next sign-in. Their current password stops working immediately."
+        confirmLabel="Reset password"
+        onConfirm={handleResetConfirmed}
+      />
+
+      {/* One-time temporary-password reveal (mirrors the create-employee flow) */}
+      <Dialog open={resetResult !== null} onOpenChange={(open) => !open && setResetResult(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="size-5 text-primary" aria-hidden />
+              Temporary password
+            </DialogTitle>
+            <DialogDescription>
+              Share this with the team member securely. It&apos;s shown only once, and
+              they&apos;ll choose their own password at next sign-in.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">Login email</span>
+                <span className="font-medium">{resetResult?.email}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">Temporary password</span>
+                <span className="flex items-center gap-2">
+                  <code className="rounded bg-white/[0.06] px-2 py-1 font-mono text-[13px]">
+                    {resetResult?.tempPassword}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={copyTempPassword}
+                    aria-label="Copy temporary password"
+                  >
+                    <Copy className="size-4" />
+                  </Button>
+                </span>
+              </div>
+            </div>
+            <p className="flex items-start gap-2 text-xs text-muted-foreground">
+              <MailCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              Send this over a secure channel — it is not emailed automatically.
+            </p>
+            <Button className="h-10 w-full rounded-xl" onClick={() => setResetResult(null)}>
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

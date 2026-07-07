@@ -43,6 +43,23 @@ export const ALL_SERVICE_TYPES = Object.keys(
   SERVICE_TYPE_LABELS
 ) as ServiceType[]
 
+/**
+ * Display name for a service. For OTHER, use the client-supplied custom name
+ * (e.g. "Trademark filing") when present; otherwise fall back to the enum
+ * label. Use this everywhere a service is shown so "OTHER" never renders as a
+ * bare, meaningless "Other".
+ */
+export function serviceLabel(
+  serviceType: ServiceType,
+  customName?: string | null
+): string {
+  if (serviceType === "OTHER") {
+    const trimmed = customName?.trim()
+    if (trimmed) return trimmed
+  }
+  return SERVICE_TYPE_LABELS[serviceType]
+}
+
 export const ALL_CLIENT_STATUSES = Object.keys(
   CLIENT_STATUS_LABELS
 ) as ClientStatus[]

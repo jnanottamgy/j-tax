@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { LayoutGrid, List, Upload, FolderOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -26,13 +27,15 @@ import { cn } from "@/lib/utils"
 type ViewMode = "grid" | "list"
 
 export function DocumentVaultClient() {
+  const searchParams = useSearchParams()
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
   const [documents, setDocuments] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [user, setUser] = useState<any>(null)
   const [selectedDocument, setSelectedDocument] = useState<any>(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [uploadOpen, setUploadOpen] = useState(false)
+  // Quick actions deep-link here with ?upload=1 (&clientId=...) to open the uploader.
+  const [uploadOpen, setUploadOpen] = useState(() => searchParams.get("upload") === "1")
   const [isUploading, setIsUploading] = useState(false)
   const [_uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -40,7 +43,10 @@ export function DocumentVaultClient() {
     clientId?: string
     category?: string
     search?: string
-  }>({})
+  }>(() => {
+    const clientId = searchParams.get("clientId")
+    return clientId ? { clientId } : {}
+  })
 
   const loadData = useCallback(async () => {
     try {

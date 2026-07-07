@@ -27,6 +27,11 @@ function makeConfig(overrides: Partial<FirmConfig> = {}): FirmConfig {
     domainVerifiedAt: null,
     verificationToken: "jtacs-verify=abc123",
     platformFallbackEnabled: true,
+    bankAccountName: null,
+    bankAccountNumber: null,
+    bankIfsc: null,
+    bankName: null,
+    upiId: null,
     ...overrides,
   }
 }

@@ -6,7 +6,7 @@ import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { NewMessageDialog } from "@/components/client-portal/new-message-dialog"
 import { cn } from "@/lib/utils"
 
 export default async function ClientMessagesPage() {
@@ -92,10 +92,7 @@ export default async function ClientMessagesPage() {
                 Have a question? Reach out to your tax team.
               </p>
             </div>
-            <Button>
-              <Send className="size-4 mr-2" />
-              New Message
-            </Button>
+            <NewMessageDialog />
           </div>
         </CardContent>
       </Card>
@@ -126,34 +123,37 @@ export default async function ClientMessagesPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "p-4 rounded-lg border hover:shadow-md transition-shadow",
-                    message.status === "FAILED" && "border-red-500/30 bg-red-500/5"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="text-sm leading-relaxed">{message.content}</p>
-                      <div className="flex items-center gap-3 mt-3">
-                        {getStatusBadge(message.status)}
-                        <span className="text-xs text-muted-foreground">
-                          {format(new Date(message.createdAt), "MMM d, yyyy h:mm a")}
-                        </span>
+              {messages.map((message) => {
+                const isFromYou =
+                  typeof message.metadata === "object" &&
+                  message.metadata !== null &&
+                  (message.metadata as Record<string, unknown>).direction === "INBOUND"
+                return (
+                  <div
+                    key={message.id}
+                    className={cn(
+                      "p-4 rounded-lg border hover:shadow-md transition-shadow",
+                      message.status === "FAILED" && "border-red-500/30 bg-red-500/5",
+                      isFromYou && "border-primary/20 bg-primary/5"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <p className="mb-1 text-xs font-medium text-muted-foreground">
+                          {isFromYou ? "You" : "Your tax team"}
+                        </p>
+                        <p className="text-sm leading-relaxed">{message.content}</p>
+                        <div className="flex items-center gap-3 mt-3">
+                          {getStatusBadge(message.status)}
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(message.createdAt), "MMM d, yyyy h:mm a")}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-1 shrink-0">
-                      {message.status === "FAILED" && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs">
-                          Retry
-                        </Button>
-                      )}
-                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>

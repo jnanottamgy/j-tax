@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -11,10 +11,12 @@ import {
   ShieldAlert,
   Loader2,
   Plus,
+  Pencil,
 } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
@@ -34,7 +36,9 @@ import {
 } from "@/app/actions/invoices"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
+import { EditInvoiceDialog } from "@/components/payments/edit-invoice-dialog"
 import { useValidatedForm } from "@/hooks/use-validated-form"
+import { stateName } from "@/lib/invoices/gst"
 import { followUpSchema, recordPaymentSchema } from "@/lib/validations/invoice"
 
 interface Payment {
@@ -55,12 +59,27 @@ interface FollowUp {
 interface Invoice {
   id: string
   invoiceNumber: string
+  clientId: string
   amount: number
   paidAmount: number
   outstandingAmount: number
   status: string
   issueDate: string
   dueDate: string
+  // Service-based billing (older invoices pre-date the fee/GST split)
+  serviceDescription?: string | null
+  serviceType?: string | null
+  professionalFee?: number | null
+  taxRate?: number | null
+  taxAmount?: number | null
+  // GST tax-invoice fields (null on legacy invoices → plain "GST @ x%" fallback)
+  clientGstin?: string | null
+  placeOfSupply?: string | null
+  hsnSac?: string | null
+  cgstAmount?: number | null
+  sgstAmount?: number | null
+  igstAmount?: number | null
+  remarks?: string | null
   client: { name: string }
   payments: Payment[]
   followUps: FollowUp[]
@@ -76,9 +95,18 @@ const STATUS_VARIANT: Record<string, "default" | "destructive" | "secondary" | "
   WAIVED: "outline",
 }
 
-export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) {
+export function InvoiceDetailClient({
+  invoice: initial,
+  firmState = null,
+}: {
+  invoice: Invoice
+  firmState?: string | null
+}) {
   const router = useRouter()
   const [invoice, _setInvoice] = useState(initial)
+
+  // Edit dialog (DRAFT invoices only)
+  const [editOpen, setEditOpen] = useState(false)
 
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -90,7 +118,6 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
   const [followUpNotes, setFollowUpNotes] = useState("")
 
   // Status actions
-  const [isUpdatingStatus, startStatusUpdate] = useTransition()
 
   const paymentForm = useValidatedForm({
     schema: recordPaymentSchema,
@@ -151,18 +178,24 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
     followUpForm.submit({ notes: followUpNotes })
   }
 
+  const [pendingStatus, setPendingStatus] = useState<"DISPUTED" | "WAIVED" | null>(null)
+
   const handleStatusChange = (status: "DISPUTED" | "WAIVED") => {
+    // Confirmation happens in the themed dialog below (pending state included).
+    setPendingStatus(status)
+  }
+
+  const handleStatusConfirmed = async () => {
+    const status = pendingStatus
+    if (!status) return
     const label = status === "DISPUTED" ? "disputed" : "waived"
-    if (!confirm(`Mark this invoice as ${label}? This cannot be undone easily.`)) return
-    startStatusUpdate(async () => {
-      const result = await updateInvoiceStatus(invoice.id, status)
-      if (result.success) {
-        toast.success(`Invoice marked as ${label}`)
-        router.refresh()
-      } else {
-        toast.error(result.error ?? `Failed to mark as ${label}`)
-      }
-    })
+    const result = await updateInvoiceStatus(invoice.id, status)
+    if (result.success) {
+      toast.success(`Invoice marked as ${label}`)
+      router.refresh()
+    } else {
+      toast.error(result.error ?? `Failed to mark as ${label}`)
+    }
   }
 
   const canAct =
@@ -186,6 +219,12 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
           <p className="text-muted-foreground">{invoice.client.name}</p>
         </div>
         <div className="flex items-center gap-2">
+          {invoice.status === "DRAFT" && (
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => setFollowUpOpen(true)}
@@ -207,9 +246,12 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="col-span-2">
           <CardHeader>
-            <CardTitle>Invoice Details</CardTitle>
+            <CardTitle>Engagement & Billing</CardTitle>
+            {invoice.serviceDescription && (
+              <CardDescription>{invoice.serviceDescription}</CardDescription>
+            )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Status</p>
@@ -219,26 +261,14 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
                   </Badge>
                 </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Amount</p>
-                <p className="text-2xl font-bold">
-                  ₹{invoice.amount.toLocaleString("en-IN")}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Paid Amount</p>
-                <p className="text-lg text-emerald-400">
-                  ₹{invoice.paidAmount.toLocaleString("en-IN")}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Outstanding Amount
-                </p>
-                <p className="text-lg font-bold text-destructive">
-                  ₹{invoice.outstandingAmount.toLocaleString("en-IN")}
-                </p>
-              </div>
+              {invoice.serviceType && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Service Type</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {String(invoice.serviceType).replace(/_/g, " ")}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Issue Date</p>
                 <p>{new Date(invoice.issueDate).toLocaleDateString("en-IN")}</p>
@@ -249,7 +279,101 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
                   {new Date(invoice.dueDate).toLocaleDateString("en-IN")}
                 </p>
               </div>
+              {invoice.clientGstin && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Recipient GSTIN</p>
+                  <p className="mt-1 text-sm font-medium tabular-nums">{invoice.clientGstin}</p>
+                </div>
+              )}
+              {invoice.placeOfSupply && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Place of Supply</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {stateName(invoice.placeOfSupply) ?? invoice.placeOfSupply} (
+                    {invoice.placeOfSupply})
+                  </p>
+                </div>
+              )}
+              {invoice.hsnSac && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">HSN/SAC</p>
+                  <p className="mt-1 text-sm font-medium tabular-nums">{invoice.hsnSac}</p>
+                </div>
+              )}
             </div>
+
+            {/* Fee → GST → total breakdown (older invoices may pre-date the split) */}
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-sm space-y-1.5">
+              {invoice.professionalFee !== null && invoice.professionalFee !== undefined ? (
+                <>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Professional Fee</span>
+                    <span className="tabular-nums">
+                      ₹{Number(invoice.professionalFee).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {/* CGST/SGST (intra-state) or IGST (inter-state); legacy invoices
+                      with null splits keep the plain "GST @ x%" line. */}
+                  {invoice.cgstAmount != null && invoice.sgstAmount != null ? (
+                    <>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>
+                          CGST{invoice.taxRate != null ? ` (${Number(invoice.taxRate) / 2}%)` : ""}
+                        </span>
+                        <span className="tabular-nums">
+                          ₹{Number(invoice.cgstAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>
+                          SGST{invoice.taxRate != null ? ` (${Number(invoice.taxRate) / 2}%)` : ""}
+                        </span>
+                        <span className="tabular-nums">
+                          ₹{Number(invoice.sgstAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </>
+                  ) : invoice.igstAmount != null ? (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>
+                        IGST{invoice.taxRate != null ? ` (${Number(invoice.taxRate)}%)` : ""}
+                      </span>
+                      <span className="tabular-nums">
+                        ₹{Number(invoice.igstAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>GST{invoice.taxRate !== null ? ` @ ${Number(invoice.taxRate)}%` : ""}</span>
+                      <span className="tabular-nums">
+                        ₹{Number(invoice.taxAmount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : null}
+              <div className="flex justify-between font-semibold text-base border-t border-white/[0.08] pt-1.5">
+                <span>Total Payable</span>
+                <span className="tabular-nums">₹{invoice.amount.toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between text-emerald-400">
+                <span>Paid</span>
+                <span className="tabular-nums">₹{invoice.paidAmount.toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between font-bold text-destructive">
+                <span>Balance Due</span>
+                <span className="tabular-nums">₹{invoice.outstandingAmount.toLocaleString("en-IN")}</span>
+              </div>
+            </div>
+
+            {invoice.remarks && (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Remarks</p>
+                <p className="mt-1 text-sm text-muted-foreground/90 whitespace-pre-line">
+                  {invoice.remarks}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -261,27 +385,19 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
             <Button
               variant="outline"
               className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
-              disabled={!canAct || isUpdatingStatus}
+              disabled={!canAct}
               onClick={() => handleStatusChange("DISPUTED")}
             >
-              {isUpdatingStatus ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <ShieldAlert className="mr-2 h-4 w-4" />
-              )}
+              <ShieldAlert className="mr-2 h-4 w-4" />
               Mark as Disputed
             </Button>
             <Button
               variant="outline"
               className="w-full justify-start text-muted-foreground"
-              disabled={!canAct || isUpdatingStatus}
+              disabled={!canAct}
               onClick={() => handleStatusChange("WAIVED")}
             >
-              {isUpdatingStatus ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Clock className="mr-2 h-4 w-4" />
-              )}
+              <Clock className="mr-2 h-4 w-4" />
               Waive Invoice
             </Button>
           </CardContent>
@@ -496,6 +612,34 @@ export function InvoiceDetailClient({ invoice: initial }: { invoice: Invoice }) 
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={pendingStatus !== null}
+        onOpenChange={(open) => !open && setPendingStatus(null)}
+        title={
+          pendingStatus === "DISPUTED"
+            ? "Mark this invoice as disputed?"
+            : "Waive this invoice?"
+        }
+        description={
+          pendingStatus === "DISPUTED"
+            ? "The invoice will be flagged as disputed and excluded from normal collection flows. This cannot be undone easily."
+            : "The outstanding balance will be written off. This cannot be undone easily."
+        }
+        confirmLabel={pendingStatus === "DISPUTED" ? "Mark as disputed" : "Waive invoice"}
+        destructive
+        onConfirm={handleStatusConfirmed}
+      />
+
+      <EditInvoiceDialog
+        invoice={invoice}
+        firmState={firmState}
+        open={editOpen}
+        onClose={() => {
+          setEditOpen(false)
+          router.refresh()
+        }}
+      />
     </div>
   )
 }

@@ -15,6 +15,8 @@ export type AuthActionState = {
   fieldErrors?: Record<string, string[]>
   success?: boolean
   message?: string
+  /** Optional structured payload for the caller's UI (e.g. confirm-email flag). */
+  data?: Record<string, unknown>
 }
 
 // CRIT-01: Only allow same-origin relative paths — rejects //evil.com and absolute URLs
@@ -103,6 +105,12 @@ export async function signIn(
     }
   }
 
+  // Provisioned accounts must set their own password before using the app
+  if (data.user?.user_metadata?.must_change_password) {
+    revalidatePath("/", "layout")
+    redirect("/auth/set-password")
+  }
+
   // CLIENT users must always go to the client portal, never the staff app
   const userRole =
     parseAppRole(data.user?.app_metadata?.role) ??
@@ -124,6 +132,12 @@ export async function signIn(
   redirect(destination)
 }
 
+/**
+ * SaaS signup — every registration creates a brand-new FIRM (tenant) with the
+ * registrant as its founding Partner on a 14-day trial. Staff inside a firm
+ * are still provisioned from the Employees page and inherit that firm; data
+ * isolation between firms is enforced centrally in lib/prisma.ts.
+ */
 export async function signUp(
   _prevState: AuthActionState,
   formData: FormData
@@ -141,6 +155,7 @@ export async function signUp(
     email: formData.get("email"),
     password: formData.get("password"),
     name: formData.get("name"),
+    firmName: formData.get("firmName"),
     confirmPassword: formData.get("confirmPassword"),
   }
 
@@ -160,12 +175,15 @@ export async function signUp(
     (await headers()).get("origin") ||
     "http://localhost:3000"
 
-  const { data: _data, error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
       data: {
         name: parsed.data.name,
+        // Public signup is for firm owners — team members are provisioned by
+        // the Partner from the Employees page and get EMPLOYEE/MANAGER roles.
+        role: "PARTNER",
       },
       emailRedirectTo: `${appUrl}/auth/callback`,
     },
@@ -178,9 +196,54 @@ export async function signUp(
     return { error: "Sign up failed. Please try again." }
   }
 
+  // Provision the tenant: new Firm (14-day trial) + its settings row + the
+  // founding Partner's user record, atomically. If this fails, the auth user
+  // exists but has no firm — requireAuth rejects such sessions, so the
+  // account can't limp into a half-provisioned state.
+  if (data.user) {
+    try {
+      const { prisma } = await import("@/lib/prisma")
+      const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+      await prisma.$transaction(async (tx) => {
+        const firm = await tx.firm.create({
+          data: {
+            name: parsed.data.firmName.trim(),
+            plan: "TRIAL",
+            status: "ACTIVE",
+            trialEndsAt,
+          },
+        })
+        await tx.user.upsert({
+          where: { email: parsed.data.email },
+          update: { name: parsed.data.name, role: "PARTNER", firmId: firm.id },
+          create: {
+            id: data.user!.id,
+            email: parsed.data.email,
+            name: parsed.data.name,
+            role: "PARTNER",
+            firmId: firm.id,
+          },
+        })
+        await tx.firmSettings.create({
+          data: { firmId: firm.id, firmName: parsed.data.firmName.trim() },
+        })
+      })
+    } catch (err) {
+      console.error("[signup] firm provisioning failed:", err)
+      return { error: "Sign up failed while setting up your firm. Please try again." }
+    }
+  }
+
+  // Supabase only sends a confirmation email when it's enabled for the
+  // project; detect that case so the UI can tell the user the right next step.
+  const needsEmailConfirm = !data.session
+
   return {
     success: true,
-    message: "Account created successfully! Please check your email to verify your account.",
+    message: needsEmailConfirm
+      ? "Account created! Check your email and click the confirmation link before signing in."
+      : "Account created successfully! You can sign in now.",
+    data: { needsEmailConfirm },
   }
 }
 
@@ -253,6 +316,8 @@ export async function updatePassword(
 
   const { error } = await supabase.auth.updateUser({
     password: parsed.data.password,
+    // Clear the first-login flag set by staff provisioning (no-op otherwise).
+    data: { must_change_password: false },
   })
 
   if (error) {

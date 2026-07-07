@@ -1,16 +1,21 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { format } from "date-fns"
+import { toast } from "sonner"
 import {
   Download, Send, CheckCircle2, XCircle, Clock, Eye,
-  Copy, ExternalLink, FileText, Mail, AlertCircle,
+  Copy, ExternalLink, FileText, Mail, AlertCircle, Loader2,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import {
+  QuotationDocument,
+  type QuotationDocumentFirm,
+} from "@/components/proposals/quotation-document"
 import { approveAndSendQuotation, deleteQuotation, type getQuotationById } from "@/app/actions/proposals"
 
 type Quotation = NonNullable<Awaited<ReturnType<typeof getQuotationById>>>
@@ -29,15 +34,18 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cl
 export function QuotationDetailClient({
   quotation,
   isPartner,
+  firm,
 }: {
   quotation: Quotation
   isPartner: boolean
+  firm: QuotationDocumentFirm
 }) {
   const router = useRouter()
-  const [, startTransition] = useTransition()
-  const [isSending, setIsSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [copiedLink, setCopiedLink] = useState(false)
+  const [confirmingSend, setConfirmingSend] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   const _APP_URL = process.env.NEXT_PUBLIC_APP_URL || ""
   const publicUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/q/${quotation.token}`
@@ -49,33 +57,58 @@ export function QuotationDetailClient({
   const canApproveAndSend = isPartner && ["PENDING_APPROVAL", "APPROVED", "DRAFT"].includes(quotation.status) && !isExpired
 
   async function handleApproveAndSend() {
-    setIsSending(true)
     setSendError(null)
-    startTransition(async () => {
-      const result = await approveAndSendQuotation(quotation.id)
-      setIsSending(false)
-      if (result.error) setSendError(result.error)
-      else router.refresh()
-    })
+    const result = await approveAndSendQuotation(quotation.id)
+    if (result.error) {
+      setSendError(result.error)
+    } else {
+      toast.success(`Quotation sent to ${quotation.clientEmail}`)
+      router.refresh()
+    }
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this quotation? This cannot be undone.")) return
-    startTransition(async () => {
-      const result = await deleteQuotation(quotation.id)
-      if (result.error) alert(result.error)
-      else router.push("/proposals")
-    })
+    const result = await deleteQuotation(quotation.id)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      router.push("/proposals")
+    }
+  }
+
+  async function handleDownloadPdf() {
+    if (isDownloading) return
+    setIsDownloading(true)
+    try {
+      const res = await fetch(`/api/quotations/${quotation.id}/pdf`)
+      if (!res.ok) {
+        toast.error(
+          res.status === 429
+            ? "Too many downloads — wait a minute"
+            : "Failed to download PDF — please try again."
+        )
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Quotation-${quotation.quotationNumber}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error("Failed to download PDF — please try again.")
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   function copyLink() {
     navigator.clipboard.writeText(publicUrl)
     setCopiedLink(true)
     setTimeout(() => setCopiedLink(false), 2000)
-  }
-
-  function formatCurrency(n: number) {
-    return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   return (
@@ -102,25 +135,46 @@ export function QuotationDetailClient({
               </a>
             </Button>
           )}
-          <Button size="sm" variant="outline" asChild>
-            <a href={`/api/quotations/${quotation.id}/pdf`} download>
+          <Button size="sm" variant="outline" onClick={handleDownloadPdf} disabled={isDownloading}>
+            {isDownloading ? (
+              <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+            ) : (
               <Download className="size-3.5 mr-1.5" />
-              Download PDF
-            </a>
+            )}
+            Download PDF
           </Button>
           {canApproveAndSend && (
-            <Button size="sm" onClick={handleApproveAndSend} disabled={isSending}>
+            <Button size="sm" onClick={() => setConfirmingSend(true)}>
               <Send className="size-3.5 mr-1.5" />
-              {isSending ? "Sending…" : "Approve & Send"}
+              Approve & Send
             </Button>
           )}
           {["DRAFT", "PENDING_APPROVAL"].includes(quotation.status) && (
-            <Button size="sm" variant="ghost" className="text-destructive" onClick={handleDelete}>
+            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setConfirmingDelete(true)}>
               Delete
             </Button>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmingSend}
+        onOpenChange={setConfirmingSend}
+        title="Approve & send quotation?"
+        description={`Send this quotation to ${quotation.clientEmail}? The client is emailed immediately and the quotation is locked.`}
+        confirmLabel="Approve & Send"
+        onConfirm={handleApproveAndSend}
+      />
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Delete quotation?"
+        description="Delete this quotation? This cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDelete}
+      />
 
       {sendError && (
         <div className="px-4 py-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
@@ -155,85 +209,49 @@ export function QuotationDetailClient({
       )}
 
       <div className="grid gap-5 lg:grid-cols-3">
-        {/* Left: quotation content */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Client + meta */}
-          <Card>
-            <CardContent className="grid grid-cols-2 gap-4 p-5">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Bill To</p>
-                <p className="font-semibold">{quotation.clientCompany || quotation.clientName}</p>
-                <p className="text-sm text-muted-foreground">{quotation.clientName}</p>
-                <p className="text-sm text-muted-foreground">{quotation.clientEmail}</p>
-                {quotation.clientPhone && <p className="text-sm text-muted-foreground">{quotation.clientPhone}</p>}
-              </div>
-              <div className="space-y-2 text-sm">
-                <Row label="Issued" value={format(new Date(quotation.createdAt), "dd MMM yyyy")} />
-                <Row label="Valid Until" value={format(new Date(quotation.validUntil), "dd MMM yyyy")} />
-                {quotation.sentAt && <Row label="Sent" value={format(new Date(quotation.sentAt), "dd MMM yyyy HH:mm")} />}
-                {quotation.viewedAt && <Row label="Viewed" value={format(new Date(quotation.viewedAt), "dd MMM yyyy HH:mm")} />}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Items */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Line Items</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06]">
-                      <th className="text-left text-xs text-muted-foreground font-medium px-4 py-2.5">Description</th>
-                      <th className="text-center text-xs text-muted-foreground font-medium px-3 py-2.5 w-16">Qty</th>
-                      <th className="text-right text-xs text-muted-foreground font-medium px-3 py-2.5 w-28">Unit Price</th>
-                      <th className="text-right text-xs text-muted-foreground font-medium px-3 py-2.5 w-20">GST</th>
-                      <th className="text-right text-xs text-muted-foreground font-medium px-4 py-2.5 w-28">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {quotation.items.map((item) => (
-                      <tr key={item.id} className="border-b border-white/[0.04]">
-                        <td className="px-4 py-3">
-                          <p className="font-medium">{item.description}</p>
-                          {item.serviceType && <p className="text-xs text-muted-foreground">{item.serviceType}</p>}
-                        </td>
-                        <td className="px-3 py-3 text-center text-muted-foreground">{item.quantity}</td>
-                        <td className="px-3 py-3 text-right text-muted-foreground">{formatCurrency(Number(item.unitPrice))}</td>
-                        <td className="px-3 py-3 text-right text-muted-foreground text-xs">{Number(item.taxRate)}%</td>
-                        <td className="px-4 py-3 text-right font-semibold">{formatCurrency(Number(item.total))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="px-4 py-4 border-t border-white/[0.06] space-y-1.5">
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(Number(quotation.subtotal))}</span>
-                </div>
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>GST / Tax</span>
-                  <span>{formatCurrency(Number(quotation.taxAmount))}</span>
-                </div>
-                <Separator className="my-2 bg-white/[0.06]" />
-                <div className="flex justify-between font-bold text-base text-primary">
-                  <span>Total</span>
-                  <span>{formatCurrency(Number(quotation.total))}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Notes */}
-          {quotation.notes && (
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Notes</CardTitle></CardHeader>
-              <CardContent><p className="text-sm text-muted-foreground">{quotation.notes}</p></CardContent>
-            </Card>
-          )}
+        {/* Left: the client-ready document exactly as the client sees it */}
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              Client-ready preview — this is exactly what {quotation.clientName} sees.
+            </span>
+            <span className="hidden sm:flex items-center gap-3">
+              {quotation.sentAt && <span>Sent {format(new Date(quotation.sentAt), "dd MMM HH:mm")}</span>}
+              {quotation.viewedAt && <span>Viewed {format(new Date(quotation.viewedAt), "dd MMM HH:mm")}</span>}
+            </span>
+          </div>
+          <QuotationDocument
+            firm={firm}
+            quotation={{
+              number: quotation.quotationNumber,
+              issuedAt: quotation.createdAt,
+              validUntil: quotation.validUntil,
+              clientName: quotation.clientName,
+              clientCompany: quotation.clientCompany,
+              clientEmail: quotation.clientEmail,
+              clientPhone: quotation.clientPhone,
+              items: quotation.items.map((item) => ({
+                id: item.id,
+                description: item.description,
+                serviceType: item.serviceType,
+                fee: Number(item.unitPrice) * item.quantity,
+                taxRate: Number(item.taxRate),
+                taxAmount: Number(item.taxAmount),
+                total: Number(item.total),
+              })),
+              subtotal: Number(quotation.subtotal),
+              taxAmount: Number(quotation.taxAmount),
+              total: Number(quotation.total),
+              notes: quotation.notes,
+              terms: quotation.terms,
+              acceptance: ["ACCEPTED", "REJECTED"].includes(quotation.status)
+                ? {
+                    status: quotation.status as "ACCEPTED" | "REJECTED",
+                    respondedAt: quotation.respondedAt,
+                  }
+                : null,
+            }}
+          />
         </div>
 
         {/* Right: timeline + follow-ups */}
@@ -310,15 +328,6 @@ export function QuotationDetailClient({
           )}
         </div>
       </div>
-    </div>
-  )
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
     </div>
   )
 }

@@ -93,7 +93,8 @@ function NotificationDropdown({ onClose }: NotificationDropdownProps) {
     await archive(id)
   }
 
-  // Close on outside click
+  // Close on outside click + Escape; move focus into the panel on open so
+  // keyboard users land in it (WCAG 2.1.1 / 2.4.3).
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -103,17 +104,30 @@ function NotificationDropdown({ onClose }: NotificationDropdownProps) {
         onClose()
       }
     }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation()
+        onClose()
+      }
+    }
 
+    dropdownRef.current?.focus()
     document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
   }, [onClose])
 
   return (
     <div
       ref={dropdownRef}
-      className="absolute right-0 top-full mt-2 w-[380px] max-w-[calc(100vw-2rem)] rounded-2xl border border-white/[0.08] bg-[#0A0A0E]/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden"
-      role="menu"
+      tabIndex={-1}
+      className="absolute right-0 top-full mt-2 w-[380px] max-w-[calc(100vw-2rem)] rounded-2xl border border-white/[0.08] bg-[#0A0A0E]/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden outline-none"
+      role="dialog"
       aria-label="Notifications"
+      aria-modal="false"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
@@ -240,10 +254,13 @@ function NotificationDropdown({ onClose }: NotificationDropdownProps) {
                         markRead(notification.id)
                       }}
                       title="Mark as read"
+                      aria-label="Mark notification as read"
                     >
                       <Check className="size-3.5" />
                     </Button>
                   )}
+                  {/* Archive IS the per-item dismiss — the old X here
+                      misleadingly closed the whole panel instead. */}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -253,20 +270,9 @@ function NotificationDropdown({ onClose }: NotificationDropdownProps) {
                       handleArchive(notification.id)
                     }}
                     title="Archive"
+                    aria-label="Archive notification"
                   >
                     <Archive className="size-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onClose()
-                    }}
-                    title="Dismiss"
-                  >
-                    <X className="size-3.5" />
                   </Button>
                 </div>
               </div>
@@ -308,10 +314,18 @@ function NotificationDropdown({ onClose }: NotificationDropdownProps) {
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false)
   const { unreadCount } = useNotifications()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  // Restore focus to the bell when the panel closes (WCAG 2.4.3).
+  const handleClose = () => {
+    setIsOpen(false)
+    triggerRef.current?.focus()
+  }
 
   return (
     <div className="relative">
       <Button
+        ref={triggerRef}
         variant="ghost"
         size="icon-sm"
         className={cn(
@@ -319,9 +333,9 @@ export function NotificationBell() {
           isOpen && "bg-white/[0.05] text-foreground"
         )}
         onClick={() => setIsOpen(!isOpen)}
-        aria-label="View notifications"
+        aria-label={unreadCount > 0 ? `View notifications, ${unreadCount} unread` : "View notifications"}
         aria-expanded={isOpen}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
       >
         <Bell className="size-4" />
         {unreadCount > 0 && (
@@ -341,7 +355,7 @@ export function NotificationBell() {
         )}
       </Button>
 
-      {isOpen && <NotificationDropdown onClose={() => setIsOpen(false)} />}
+      {isOpen && <NotificationDropdown onClose={handleClose} />}
     </div>
   )
 }

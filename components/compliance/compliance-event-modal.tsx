@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { format } from "date-fns"
 import {
   X, Calendar, Clock, CheckCircle2,
@@ -18,6 +18,7 @@ import {
 } from "./compliance-type-badge"
 import { EditComplianceEventDialog } from "./edit-compliance-event-dialog"
 import { updateComplianceWorkflowStatus } from "@/app/actions/compliance"
+import { getClientsData } from "@/app/actions/clients"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -36,6 +37,7 @@ interface ComplianceEvent {
   filingPeriod?: string | null
   notes?: string | null
   client?: { id: string; name: string } | null
+  clientId?: string | null
   taskId?: string | null
   completedAt?: Date | null
 }
@@ -44,7 +46,14 @@ interface ComplianceEventModalProps {
   event: ComplianceEvent | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * @deprecated No longer invoked by the modal — the server action already
+   * persists status changes, so a second write here would be redundant.
+   * Kept for backward compatibility with existing callers; use onRefresh.
+   */
   onStatusUpdate?: (eventId: string, status: ComplianceEventStatus) => void
+  /** Called after a successful workflow change or edit so the parent can reload data. */
+  onRefresh?: () => void
   onDelete?: (eventId: string) => void
   currentUser?: { id: string; name: string; role: string }
 }
@@ -60,14 +69,28 @@ export function ComplianceEventModal({
   event,
   open,
   onOpenChange,
-  onStatusUpdate,
+  onRefresh,
   onDelete,
   currentUser,
 }: ComplianceEventModalProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [isUpdating, startUpdate] = useTransition()
+  const [clients, setClients] = useState<Array<{ id: string; name: string }>>([])
 
   const canModify = currentUser?.role === "PARTNER" || currentUser?.role === "MANAGER"
+
+  // Fetch clients once when the edit dialog opens so the client can be reassigned.
+  // The action scopes the list automatically for employee users.
+  useEffect(() => {
+    if (!editOpen || clients.length > 0) return
+    getClientsData()
+      .then(({ clients: list }) =>
+        setClients(list.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })))
+      )
+      .catch(() => {
+        // Non-critical — the edit dialog simply hides the client selector.
+      })
+  }, [editOpen, clients.length])
 
   const handleWorkflowChange = (wfStatus: string) => {
     if (!event) return
@@ -76,11 +99,8 @@ export function ComplianceEventModal({
       if (result.success) {
         toast.success(`Status updated to ${wfStatus.replace(/_/g, " ")}`)
         onOpenChange(false)
-        // Trigger parent refresh via onStatusUpdate with derived outer status
-        const outerStatus: ComplianceEventStatus =
-          wfStatus === "COMPLETED" || wfStatus === "FILED" ? "COMPLETED" :
-          wfStatus === "OVERDUE" ? "OVERDUE" : "PENDING"
-        onStatusUpdate?.(event.id, outerStatus)
+        // The server action already synced status — parent only needs to reload.
+        onRefresh?.()
       } else {
         toast.error(result.error ?? "Failed to update status")
       }
@@ -253,9 +273,10 @@ export function ComplianceEventModal({
           event={event}
           open={editOpen}
           onOpenChange={setEditOpen}
+          clients={clients}
           onSuccess={() => {
             setEditOpen(false)
-            onStatusUpdate?.(event.id, event.status)
+            onRefresh?.()
           }}
         />
       )}

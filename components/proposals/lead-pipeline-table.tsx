@@ -4,9 +4,12 @@ import { useState, useTransition } from "react"
 import { format } from "date-fns"
 import { MoreHorizontal, TrendingUp, ChevronDown, Trash2, FileText, Eye, UserPlus } from "lucide-react"
 import Link from "next/link"
+import { toast } from "sonner"
+
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,18 +42,36 @@ const STATUS_COLORS: Record<string, string> = {
 export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
   const [leads, setLeads] = useState(initialLeads)
   const [filter, setFilter] = useState("ALL")
+  const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null)
   const [, startTransition] = useTransition()
 
   const filtered = filter === "ALL" ? leads : leads.filter((l) => l.status === filter)
 
   function handleStatusChange(leadId: string, status: string) {
+    const previous = leads
+    // Optimistic — but roll back and tell the user if the server rejects it.
     setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status: status as Lead["status"] } : l))
-    startTransition(async () => { await updateLeadStatus(leadId, status) })
+    startTransition(async () => {
+      const result = await updateLeadStatus(leadId, status)
+      if (result.error) {
+        setLeads(previous)
+        toast.error(result.error)
+      } else {
+        toast.success(`Lead moved to ${STATUS_LABELS[status] ?? status}`)
+      }
+    })
   }
 
-  function handleDelete(leadId: string) {
-    setLeads((prev) => prev.filter((l) => l.id !== leadId))
-    startTransition(async () => { await deleteLead(leadId) })
+  async function handleDeleteConfirmed() {
+    const target = deleteTarget
+    if (!target) return
+    const result = await deleteLead(target.id)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      setLeads((prev) => prev.filter((l) => l.id !== target.id))
+      toast.success(`Lead "${target.name}" deleted`)
+    }
   }
 
   function handleConvert(leadId: string) {
@@ -58,6 +79,9 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
       const result = await convertLeadToClient(leadId)
       if (result.success && result.clientId) {
         setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, convertedClientId: result.clientId! } as Lead : l))
+        toast.success("Lead converted to client")
+      } else if (result.error) {
+        toast.error(result.error)
       }
     })
   }
@@ -125,7 +149,12 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-7 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0"
+                      aria-label={`More actions for ${lead.name}`}
+                    >
                       <MoreHorizontal className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -154,7 +183,7 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-destructive"
-                      onClick={() => handleDelete(lead.id)}
+                      onClick={() => setDeleteTarget(lead)}
                     >
                       <Trash2 className="size-3.5 mr-2" />
                       Delete Lead
@@ -166,6 +195,20 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete this lead?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" and all of its quotations will be permanently deleted. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete lead"
+        destructive
+        onConfirm={handleDeleteConfirmed}
+      />
     </div>
   )
 }

@@ -1,5 +1,8 @@
 import PDFDocument from "pdfkit"
 
+import { amountInWords, DEFAULT_QUOTATION_TERMS } from "@/lib/quotations/terms"
+import { formatIndianNumber } from "@/lib/india/format"
+
 export interface QuotationPDFData {
   quotationNumber: string
   createdAt: Date
@@ -35,7 +38,7 @@ const DARK = "#111827"
 const BORDER = "#e5e7eb"
 
 function formatCurrency(amount: number): string {
-  return `₹${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `₹${formatIndianNumber(amount, { paise: true })}`
 }
 
 function formatDate(d: Date): string {
@@ -129,15 +132,17 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
       doc.text(data.clientPhone, 70, billY + 52)
     }
 
-    // ── Items Table Header ─────────────────────────────────────────────────────
+    // ── Professional services table ───────────────────────────────────────────
+    // Service-based billing: no quantity column — each line is an engagement
+    // with a professional fee.
     const tableY = 290
-    const colWidths = { desc: 220, qty: 50, price: 90, tax: 70, total: 85 }
+    const colWidths = { num: 24, desc: 246, fee: 100, tax: 55, total: 95 }
     const colX = {
-      desc: 50,
-      qty: 270,
-      price: 320,
-      tax: 410,
-      total: 480,
+      num: 50,
+      desc: 74,
+      fee: 320,
+      tax: 420,
+      total: 475,
     }
 
     doc.rect(50, tableY, pageWidth, 20).fill(BRAND)
@@ -146,42 +151,50 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
       .fillColor("white")
       .fontSize(9)
       .font("Helvetica-Bold")
-      .text("DESCRIPTION", colX.desc + 4, tableY + 6)
-      .text("QTY", colX.qty, tableY + 6, { width: colWidths.qty, align: "center" })
-      .text("UNIT PRICE", colX.price, tableY + 6, { width: colWidths.price, align: "right" })
+      .text("#", colX.num + 4, tableY + 6)
+      .text("PROFESSIONAL SERVICES", colX.desc, tableY + 6)
+      .text("FEE", colX.fee, tableY + 6, { width: colWidths.fee, align: "right" })
       .text("GST", colX.tax, tableY + 6, { width: colWidths.tax, align: "right" })
-      .text("TOTAL", colX.total, tableY + 6, { width: colWidths.total, align: "right" })
+      .text("AMOUNT", colX.total, tableY + 6, { width: colWidths.total, align: "right" })
 
     // ── Items ─────────────────────────────────────────────────────────────────
     let rowY = tableY + 20
     data.items.forEach((item, i) => {
       const rowBg = i % 2 === 0 ? "#ffffff" : "#f9fafb"
-      const estimatedRowH = 32
+      const descH = doc.heightOfString(item.description, { width: colWidths.desc - 8 })
+      const estimatedRowH = Math.max(32, descH + (item.serviceType ? 24 : 14))
+      const fee = item.quantity * item.unitPrice
 
       doc.rect(50, rowY, pageWidth, estimatedRowH).fill(rowBg)
+
+      doc
+        .fillColor(GRAY)
+        .fontSize(9)
+        .font("Helvetica")
+        .text(String(i + 1), colX.num + 4, rowY + 8)
 
       doc
         .fillColor(DARK)
         .fontSize(9)
         .font("Helvetica-Bold")
-        .text(item.description, colX.desc + 4, rowY + 6, { width: colWidths.desc - 8 })
+        .text(item.description, colX.desc, rowY + 8, { width: colWidths.desc - 8 })
 
       if (item.serviceType) {
         doc
           .fillColor(GRAY)
           .fontSize(8)
           .font("Helvetica")
-          .text(item.serviceType, colX.desc + 4, rowY + 18, { width: colWidths.desc - 8 })
+          .text(item.serviceType, colX.desc, rowY + 8 + descH + 2, { width: colWidths.desc - 8 })
       }
 
       doc
         .fillColor(DARK)
         .fontSize(9)
         .font("Helvetica")
-        .text(String(item.quantity), colX.qty, rowY + 12, { width: colWidths.qty, align: "center" })
-        .text(formatCurrency(item.unitPrice), colX.price, rowY + 12, { width: colWidths.price, align: "right" })
-        .text(`${item.taxRate}%`, colX.tax, rowY + 12, { width: colWidths.tax, align: "right" })
-        .text(formatCurrency(item.total), colX.total, rowY + 12, { width: colWidths.total, align: "right" })
+        .text(formatCurrency(fee), colX.fee, rowY + 8, { width: colWidths.fee, align: "right" })
+        .text(`${item.taxRate}%`, colX.tax, rowY + 8, { width: colWidths.tax, align: "right" })
+        .font("Helvetica-Bold")
+        .text(formatCurrency(item.total), colX.total, rowY + 8, { width: colWidths.total, align: "right" })
 
       // bottom border
       doc.moveTo(50, rowY + estimatedRowH).lineTo(50 + pageWidth, rowY + estimatedRowH).strokeColor(BORDER).lineWidth(0.5).stroke()
@@ -190,7 +203,7 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
     })
 
     // ── Totals ────────────────────────────────────────────────────────────────
-    const totalsX = 390
+    const totalsX = 370
     const totalsW = pageWidth + 50 - totalsX
     rowY += 10
 
@@ -198,14 +211,14 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
       .fillColor(GRAY)
       .fontSize(9)
       .font("Helvetica")
-      .text("Subtotal", totalsX, rowY, { width: totalsW - 80 })
+      .text("Professional Fees", totalsX, rowY, { width: totalsW - 100 })
       .fillColor(DARK)
       .text(formatCurrency(data.subtotal), totalsX, rowY, { width: totalsW, align: "right" })
 
     rowY += 16
     doc
       .fillColor(GRAY)
-      .text("GST / Tax", totalsX, rowY, { width: totalsW - 80 })
+      .text("GST", totalsX, rowY, { width: totalsW - 100 })
       .fillColor(DARK)
       .text(formatCurrency(data.taxAmount), totalsX, rowY, { width: totalsW, align: "right" })
 
@@ -218,10 +231,19 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
       .fillColor("white")
       .fontSize(11)
       .font("Helvetica-Bold")
-      .text("TOTAL", totalsX, rowY + 8, { width: totalsW - 80 })
+      .text("TOTAL", totalsX, rowY + 8, { width: totalsW - 100 })
       .text(formatCurrency(data.total), totalsX, rowY + 8, { width: totalsW, align: "right" })
 
-    rowY += 50
+    rowY += 32
+
+    // Amount in words — standard on Indian engagement documents
+    doc
+      .fillColor(GRAY)
+      .fontSize(8)
+      .font("Helvetica-Oblique")
+      .text(amountInWords(data.total), 50, rowY, { width: pageWidth, align: "right" })
+
+    rowY += 24
 
     // ── Notes ─────────────────────────────────────────────────────────────────
     if (data.notes) {
@@ -239,11 +261,7 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
     }
 
     // ── Terms ─────────────────────────────────────────────────────────────────
-    const defaultTerms = data.terms ||
-      "1. This quotation is valid for 30 days from the date of issue.\n" +
-      "2. 50% advance payment required to commence services.\n" +
-      "3. Prices are exclusive of GST unless stated.\n" +
-      "4. Work commences upon receipt of signed acceptance."
+    const termsText = data.terms || DEFAULT_QUOTATION_TERMS
 
     doc
       .fillColor(BRAND)
@@ -254,7 +272,52 @@ export async function generateQuotationPDF(data: QuotationPDFData): Promise<Buff
       .fillColor(GRAY)
       .fontSize(8)
       .font("Helvetica")
-      .text(defaultTerms, 50, rowY + 14, { width: pageWidth })
+      .text(termsText, 50, rowY + 14, { width: pageWidth })
+
+    rowY += 14 + doc.heightOfString(termsText, { width: pageWidth }) + 24
+
+    // ── Signatures ────────────────────────────────────────────────────────────
+    // Keep both blocks above the footer; push to footer zone if content is short.
+    const signY = Math.min(Math.max(rowY, doc.page.height - 180), doc.page.height - 180)
+
+    // Client acceptance (left)
+    doc
+      .strokeColor(DARK)
+      .lineWidth(0.75)
+      .moveTo(50, signY + 48)
+      .lineTo(230, signY + 48)
+      .stroke()
+    doc
+      .fillColor(DARK)
+      .fontSize(8)
+      .font("Helvetica-Bold")
+      .text("Client Acceptance", 50, signY + 54)
+    doc
+      .fillColor(GRAY)
+      .font("Helvetica")
+      .text("Signature & Date", 50, signY + 64)
+
+    // Authorised signatory (right)
+    doc
+      .fillColor(DARK)
+      .fontSize(9)
+      .font("Helvetica-Bold")
+      .text(`For ${data.firmName}`, 50 + pageWidth - 200, signY - 6, { width: 200, align: "right" })
+    doc
+      .strokeColor(DARK)
+      .lineWidth(0.75)
+      .moveTo(50 + pageWidth - 180, signY + 48)
+      .lineTo(50 + pageWidth, signY + 48)
+      .stroke()
+    doc
+      .fillColor(DARK)
+      .fontSize(8)
+      .font("Helvetica-Bold")
+      .text("Authorised Signatory", 50 + pageWidth - 200, signY + 54, { width: 200, align: "right" })
+    doc
+      .fillColor(GRAY)
+      .font("Helvetica")
+      .text("Name, Signature & Seal", 50 + pageWidth - 200, signY + 64, { width: 200, align: "right" })
 
     // ── Footer ────────────────────────────────────────────────────────────────
     const footerY = doc.page.height - 60

@@ -1,16 +1,10 @@
 "use client"
 
 import { motion } from "framer-motion"
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  Users,
-  Receipt,
-  Shield,
-  Wallet,
-} from "lucide-react"
+import { Users, Receipt, Shield, Wallet } from "lucide-react"
 
 import { GlassCard } from "@/components/dashboard/glass-card"
+import { formatINRCompact } from "@/lib/india/format"
 import { cn } from "@/lib/utils"
 
 interface KpiData {
@@ -31,19 +25,16 @@ const accentGradients = [
   "from-violet-500/20 to-violet-500/5",
 ]
 
-function formatCurrency(n: number) {
-  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(1)}Cr`
-  if (n >= 100_000) return `₹${(n / 100_000).toFixed(1)}L`
-  return `₹${n.toLocaleString("en-IN")}`
-}
+const formatCurrency = formatINRCompact
 
 export function KpiCards({ data }: { data: KpiData }) {
+  // No period-over-period data is available, so no trend arrows are shown —
+  // the badge colour reflects current status only.
   const metrics = [
     {
       title: "Active Clients",
       value: `${data.activeClients}`,
       sub: `${data.totalClients} total`,
-      trend: "up" as const,
       icon: Users,
       positive: true,
     },
@@ -51,7 +42,6 @@ export function KpiCards({ data }: { data: KpiData }) {
       title: "Outstanding Balance",
       value: formatCurrency(data.totalOutstanding),
       sub: `${data.overdueCount} overdue`,
-      trend: data.totalOverdue > 0 ? ("up" as const) : ("down" as const),
       icon: Receipt,
       positive: data.totalOverdue === 0,
     },
@@ -59,7 +49,6 @@ export function KpiCards({ data }: { data: KpiData }) {
       title: "Compliance Score",
       value: `${data.complianceScore}%`,
       sub: `${data.pendingComplianceCount} pending`,
-      trend: data.complianceScore >= 80 ? ("up" as const) : ("down" as const),
       icon: Shield,
       positive: data.complianceScore >= 80,
     },
@@ -67,7 +56,6 @@ export function KpiCards({ data }: { data: KpiData }) {
       title: "Total Collected",
       value: formatCurrency(data.totalCollected),
       sub: "lifetime",
-      trend: "up" as const,
       icon: Wallet,
       positive: true,
     },
@@ -116,11 +104,6 @@ export function KpiCards({ data }: { data: KpiData }) {
                       : "bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/15"
                   )}
                 >
-                  {metric.trend === "up" ? (
-                    <ArrowUpRight className="size-3" />
-                  ) : (
-                    <ArrowDownRight className="size-3" />
-                  )}
                   {metric.sub}
                 </span>
               </div>

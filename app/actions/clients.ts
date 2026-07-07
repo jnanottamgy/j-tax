@@ -56,6 +56,16 @@ export async function createClient(
       }
     }
 
+    const collectedRaw = formData.get("collectedDocuments")
+    let collectedDocuments: unknown[] = []
+    if (typeof collectedRaw === "string" && collectedRaw) {
+      try {
+        collectedDocuments = JSON.parse(collectedRaw)
+      } catch {
+        collectedDocuments = []
+      }
+    }
+
     const raw = {
       name: formData.get("name"),
       gstin: formData.get("gstin") || undefined,
@@ -70,6 +80,7 @@ export async function createClient(
       reminderDaysBefore: formData.get("reminderDaysBefore") || 7,
       notificationPreferences: formData.getAll("notificationPreferences"),
       services,
+      collectedDocuments,
     }
 
     const parsed = createClientSchema.safeParse(raw)
@@ -138,6 +149,18 @@ export async function updateClient(
       return { error: "Missing client id" }
     }
 
+    // Services are optional — only parsed/synced when the form sends them.
+    const servicesRaw = formData.get("services")
+    let services: unknown[] | undefined = undefined
+    if (typeof servicesRaw === "string" && servicesRaw) {
+      try {
+        const parsedServices = JSON.parse(servicesRaw)
+        if (Array.isArray(parsedServices)) services = parsedServices
+      } catch {
+        return { error: "Invalid services data" }
+      }
+    }
+
     const parsed = updateClientSchema.safeParse({
       name: formData.get("name"),
       gstin: formData.get("gstin") || undefined,
@@ -150,6 +173,7 @@ export async function updateClient(
       status: formData.get("status"),
       priority: formData.get("priority") || "MEDIUM",
       assignedEmployeeId: formData.get("assignedEmployeeId") || undefined,
+      ...(services !== undefined ? { services } : {}),
     })
 
     if (!parsed.success) {
@@ -159,6 +183,20 @@ export async function updateClient(
     }
 
     await updateClientRecord(id, parsed.data)
+
+    // Newly-added services should start being tracked. Generation is dedup-safe
+    // (canonical titles), so existing events are never duplicated.
+    if (parsed.data.services && parsed.data.services.length > 0) {
+      try {
+        const { generateComplianceEventsForClient } = await import("@/app/actions/compliance")
+        await generateComplianceEventsForClient(
+          id,
+          parsed.data.services.map((s) => s.serviceType)
+        )
+      } catch (genErr) {
+        console.error("compliance generation on client update failed:", genErr)
+      }
+    }
     
     // Log activity
     await logClientActivity(
@@ -223,12 +261,32 @@ export async function deleteClient(clientId: string): Promise<ClientActionState>
     const client = await prisma.client.findUnique({ where: { id: clientId } })
     if (!client) return { error: "Client not found." }
 
-    await prisma.client.delete({ where: { id: clientId } })
+    // Soft delete → recycle bin. Restore/purge live in app/actions/trash.ts.
+    await prisma.client.update({
+      where: { id: clientId },
+      data: { deletedAt: new Date() },
+    })
+
+    // Partners hear when a Manager bins a client (restorable, but reportable).
+    if (session.user.role === "MANAGER") {
+      const { notifyRoles } = await import("@/lib/notifications/notify")
+      await notifyRoles(
+        ["PARTNER"],
+        {
+          title: `Client moved to recycle bin: ${client.name}`,
+          message: `${session.user.name} deleted client "${client.name}" (${client.clientCode}). It can be restored from the Recycle Bin.`,
+          type: "WARNING",
+          entityType: "CLIENT",
+          entityId: clientId,
+        },
+        { excludeUserId: session.user.id }
+      )
+    }
 
     await logClientActivity(
       clientId,
       "DELETED",
-      `Client "${client.name}" was deleted`,
+      `Client "${client.name}" was moved to the recycle bin`,
       session.user.id,
       session.user.name
     )

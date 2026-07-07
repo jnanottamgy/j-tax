@@ -1,16 +1,15 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Search,
   Book,
   HelpCircle,
-  PlayCircle,
-  MessageCircle,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
+  Mail,
   X,
 } from "lucide-react"
 
@@ -23,43 +22,51 @@ import { cn } from "@/lib/utils"
 const FAQS = [
   {
     question: "How do I add a new client?",
-    answer: "Go to the Clients page and click 'Add Client'. Fill in the required information including name, email, PAN, and GSTIN. You can also import multiple clients via CSV by clicking the 'Import' button.",
+    answer:
+      "Go to the Clients page and click 'Add Client'. The onboarding wizard walks you through the basics — name, GSTIN, PAN, contact details — then services and compliance setup.",
     category: "clients",
   },
   {
     question: "How do I create a new filing task?",
-    answer: "Navigate to the Work Tracker page and click 'New Filing'. Select the client, filing type, and due date. Assign it to a team member and set the priority level.",
+    answer:
+      "Click 'New Filing' in the top bar (or go to Compliance → Add Filing) to create a compliance filing. For general work items, use the Work Tracker's Create Task button.",
     category: "tasks",
   },
   {
     question: "How do I send an invoice to a client?",
-    answer: "Go to the Payments page, click 'New Invoice', select the client, add line items, and click 'Send'. The invoice will be emailed to the client with a payment link.",
+    answer:
+      "Go to Payments → Invoices and click 'New Invoice'. Clients see their invoices (with bank/UPI payment instructions and a PDF download) in their client portal.",
     category: "payments",
   },
   {
     question: "How do compliance reminders work?",
-    answer: "J-TACS automatically sends reminders based on due dates. You can configure reminder timing in Settings > Notifications. Reminders are sent via email, SMS, and WhatsApp.",
+    answer:
+      "J-TACS automatically emails clients when a filing enters its reminder window (set per filing). Staff get in-app notifications for overdue tasks and approaching deadlines.",
     category: "compliance",
   },
   {
-    question: "Can I import data from other software?",
-    answer: "Yes! J-TACS supports CSV import for clients, tasks, and historical data. Go to Settings > Import to get started. We also offer migration assistance for large datasets.",
+    question: "How do team members get their logins?",
+    answer:
+      "When a Partner adds an employee or manager on the Employees page, a login is created automatically — the new hire gets an invite email with a temporary password, and the Partner also sees the password once as a backup. They choose their own password at first sign-in.",
     category: "general",
   },
   {
     question: "How do I track GST filings?",
-    answer: "Use the Compliance page to view all GST-related filings. Filter by type (GSTR-1, GSTR-3B, GSTR-9) and status. Each filing shows its current workflow stage.",
+    answer:
+      "Use the Compliance page to view all GST-related filings. Filter by type (GSTR-1, GSTR-3B, GSTR-9) and status. Each filing shows its current workflow stage.",
     category: "compliance",
   },
   {
     question: "How do I generate reports?",
-    answer: "Go to the Reports page to access various reports including revenue, filing status, and client analytics. Reports can be exported as PDF or Excel.",
+    answer:
+      "Go to the Reports page to access revenue, filing status, and client analytics. Reports export as PDF, Excel, or CSV.",
     category: "reports",
   },
   {
-    question: "How secure is my data?",
-    answer: "J-TACS uses enterprise-grade encryption and is hosted on secure cloud infrastructure. All data is backed up daily and we comply with Indian data protection regulations.",
-    category: "security",
+    question: "How do I set up branded email sending?",
+    answer:
+      "Settings → Firm Details holds your firm name and sender email; the Domain Verification card walks you through the DNS records. Until your domain is verified, emails go out via the platform address with your firm's name and reply-to.",
+    category: "general",
   },
 ]
 
@@ -68,88 +75,53 @@ const GUIDES = [
     id: "getting-started",
     title: "Getting Started with J-TACS",
     description: "Learn the basics of setting up your firm and managing clients.",
-    duration: "10 min read",
     category: "basics",
     sections: [
-      "Creating your firm profile",
-      "Adding team members",
-      "Importing clients",
-      "Setting up notifications",
+      "Set your firm profile in Settings → Firm Details (name, sender email, payment details).",
+      "Add team members from the Employees page — logins and invite emails are created automatically.",
+      "Add clients via Clients → Add Client; the wizard covers services and compliance setup.",
+      "Check the dashboard's setup checklist to see what's left.",
     ],
   },
   {
     id: "client-management",
-    title: "Client Management Guide",
-    description: "Master client onboarding, document management, and communication.",
-    duration: "15 min read",
+    title: "Client Management",
+    description: "Client onboarding, document management, and communication.",
     category: "clients",
     sections: [
-      "Adding and organizing clients",
-      "Client profiles and details",
-      "Document management",
-      "Client communication",
+      "Each client's 360 page (click a client) shows tasks, invoices, documents, compliance, and timeline.",
+      "Upload documents from the Documents vault or the client's quick actions.",
+      "Email a client from Messaging (or 'Send Reminder' on the client row).",
+      "Clients with an email on their record can log into the client portal.",
     ],
   },
   {
     id: "compliance-workflow",
     title: "Compliance Workflow",
-    description: "Complete guide to managing GST, TDS, and ROC filings.",
-    duration: "20 min read",
+    description: "Managing GST, TDS, ITR, and ROC filings.",
     category: "compliance",
     sections: [
-      "Understanding compliance types",
-      "Creating filing tasks",
-      "Tracking progress",
-      "Handling overdue filings",
+      "Create filings manually (New Filing) or let the recurring engine generate statutory ones monthly.",
+      "Each filing tracks a workflow: Not Started → Documents Awaited → In Progress → Under Review → Filed.",
+      "The Calendar page shows everything by month; Compliance shows status and scores.",
+      "Clients are emailed automatically when a filing enters its reminder window.",
     ],
   },
   {
     id: "billing-invoices",
     title: "Billing & Invoicing",
-    description: "Set up invoicing, track payments, and manage outstanding amounts.",
-    duration: "12 min read",
+    description: "Invoicing, payment tracking, and outstanding amounts.",
     category: "payments",
     sections: [
-      "Creating invoices",
-      "Payment tracking",
-      "Handling overdue payments",
-      "Generating billing reports",
+      "Create invoices from Payments → Invoices → New Invoice.",
+      "Record payments and follow-ups from the invoice's detail page.",
+      "Clients see invoices, payment instructions (your bank/UPI from Settings), and PDFs in their portal.",
+      "The Payments dashboard shows ageing buckets and the top overdue clients.",
     ],
   },
 ]
 
-const TUTORIALS = [
-  {
-    id: "quick-start",
-    title: "Quick Start Video",
-    description: "5-minute overview of J-TACS key features.",
-    duration: "5:00",
-    thumbnail: "quick-start",
-  },
-  {
-    id: "client-onboarding",
-    title: "Client Onboarding Workflow",
-    description: "Step-by-step guide to adding and managing clients.",
-    duration: "8:30",
-    thumbnail: "client-onboarding",
-  },
-  {
-    id: "filing-tasks",
-    title: "Creating Filing Tasks",
-    description: "How to create, assign, and track compliance tasks.",
-    duration: "6:45",
-    thumbnail: "filing-tasks",
-  },
-  {
-    id: "invoice-management",
-    title: "Invoice Management",
-    description: "Creating and managing invoices effectively.",
-    duration: "7:20",
-    thumbnail: "invoice-management",
-  },
-]
-
-type TabType = "guides" | "faq" | "tutorials"
+type TabType = "guides" | "faq"
 
 interface HelpCenterProps {
   open?: boolean
@@ -160,6 +132,7 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
   const [activeTab, setActiveTab] = useState<TabType>("guides")
   const [searchQuery, setSearchQuery] = useState("")
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null)
+  const [expandedGuide, setExpandedGuide] = useState<string | null>(null)
 
   const filteredFaqs = useMemo(() => {
     if (!searchQuery) return FAQS
@@ -188,6 +161,9 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
       exit={{ opacity: 0, scale: 0.95 }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Help Center"
     >
       <Card
         className="w-full max-w-3xl max-h-[80vh] bg-background overflow-hidden"
@@ -199,7 +175,7 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
             <HelpCircle className="size-5 text-primary" />
             <h2 className="font-semibold">Help Center</h2>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close help center">
             <X className="size-4" />
           </Button>
         </div>
@@ -213,6 +189,7 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
+              aria-label="Search help articles"
             />
           </div>
         </div>
@@ -243,18 +220,6 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
             <HelpCircle className="size-4 inline mr-1.5" />
             FAQ
           </button>
-          <button
-            className={cn(
-              "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
-              activeTab === "tutorials"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-            onClick={() => setActiveTab("tutorials")}
-          >
-            <PlayCircle className="size-4 inline mr-1.5" />
-            Tutorials
-          </button>
         </div>
 
         {/* Content */}
@@ -276,20 +241,43 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
                   filteredGuides.map((guide) => (
                     <Card
                       key={guide.id}
-                      className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+                      className={cn(
+                        "overflow-hidden transition-all",
+                        expandedGuide === guide.id && "border-primary"
+                      )}
                     >
-                      <div className="flex items-start justify-between">
+                      <button
+                        className="w-full flex items-start justify-between p-4 text-left"
+                        onClick={() =>
+                          setExpandedGuide(expandedGuide === guide.id ? null : guide.id)
+                        }
+                        aria-expanded={expandedGuide === guide.id}
+                      >
                         <div>
                           <h3 className="font-medium">{guide.title}</h3>
                           <p className="text-sm text-muted-foreground mt-1">
                             {guide.description}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            {guide.duration}
-                          </p>
                         </div>
-                        <ExternalLink className="size-4 text-muted-foreground" />
-                      </div>
+                        {expandedGuide === guide.id ? (
+                          <ChevronDown className="size-4 shrink-0 mt-1" />
+                        ) : (
+                          <ChevronRight className="size-4 shrink-0 mt-1" />
+                        )}
+                      </button>
+                      {expandedGuide === guide.id && (
+                        <motion.ol
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          className="px-4 pb-4 space-y-2 list-decimal list-inside"
+                        >
+                          {guide.sections.map((section) => (
+                            <li key={section} className="text-sm text-muted-foreground">
+                              {section}
+                            </li>
+                          ))}
+                        </motion.ol>
+                      )}
                     </Card>
                   ))
                 )}
@@ -320,6 +308,7 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
                       <button
                         className="w-full flex items-center justify-between p-4 text-left"
                         onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
+                        aria-expanded={expandedFaq === idx}
                       >
                         <span className="font-medium text-sm pr-4">{faq.question}</span>
                         {expandedFaq === idx ? (
@@ -344,47 +333,19 @@ export function HelpCenter({ open = true, onClose }: HelpCenterProps) {
                 )}
               </motion.div>
             )}
-
-            {activeTab === "tutorials" && (
-              <motion.div
-                key="tutorials"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="grid grid-cols-2 gap-4"
-              >
-                {TUTORIALS.map((tutorial) => (
-                  <Card
-                    key={tutorial.id}
-                    className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                  >
-                    <div className="aspect-video bg-muted flex items-center justify-center">
-                      <PlayCircle className="size-10 text-muted-foreground" />
-                    </div>
-                    <div className="p-3">
-                      <h3 className="font-medium text-sm">{tutorial.title}</h3>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {tutorial.description}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {tutorial.duration}
-                      </p>
-                    </div>
-                  </Card>
-                ))}
-              </motion.div>
-            )}
           </AnimatePresence>
         </div>
 
         {/* Footer */}
         <div className="p-4 border-t flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
-            Can&apos;t find what you&apos;re looking for?
+            Setting up branded email?
           </p>
-          <Button variant="outline" size="sm">
-            <MessageCircle className="size-3.5 mr-1.5" />
-            Contact Support
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/docs/email-setup" onClick={onClose}>
+              <Mail className="size-3.5 mr-1.5" />
+              Email Setup Guide
+            </Link>
           </Button>
         </div>
       </Card>
@@ -400,6 +361,7 @@ export function HelpButton({ onClick }: { onClick: () => void }) {
       size="icon"
       onClick={onClick}
       title="Help Center"
+      aria-label="Open help center"
     >
       <HelpCircle className="size-4" />
     </Button>

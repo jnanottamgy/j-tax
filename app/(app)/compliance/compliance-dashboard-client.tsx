@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { format, differenceInDays } from "date-fns"
 import {
   ShieldCheck, AlertTriangle, CheckCircle2, Clock,
@@ -18,10 +18,7 @@ import { Progress } from "@/components/ui/progress"
 import { ComplianceTypeBadge } from "@/components/compliance/compliance-type-badge"
 import { ComplianceEventModal } from "@/components/compliance/compliance-event-modal"
 import { AddComplianceEventDialog } from "@/components/compliance/add-compliance-event-dialog"
-import {
-  updateComplianceEventStatus,
-  deleteComplianceEvent,
-} from "@/app/actions/compliance"
+import { deleteComplianceEvent } from "@/app/actions/compliance"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -84,27 +81,19 @@ function urgencyLabel(dueDate: Date) {
 
 export function ComplianceDashboardClient({ data }: { data: DashboardData }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { stats, upcomingEvents, recentlyCompleted, byType, user } = data
   const canManage = user.role === "PARTNER" || user.role === "MANAGER"
 
   const [selectedEvent, setSelectedEvent] = useState<any>(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
+  // The global "New Filing" header button deep-links here with ?new=1
+  const [addOpen, setAddOpen] = useState(() => searchParams.get("new") === "1")
   const [isRefreshing, startRefresh] = useTransition()
 
   const handleEventClick = (event: any) => {
     setSelectedEvent(event)
     setModalOpen(true)
-  }
-
-  const handleStatusUpdate = async (eventId: string, status: any) => {
-    const result = await updateComplianceEventStatus(eventId, status)
-    if (result.success) {
-      toast.success("Status updated")
-      router.refresh()
-    } else {
-      toast.error(result.error ?? "Failed to update status")
-    }
   }
 
   const handleDelete = async (eventId: string) => {
@@ -317,7 +306,7 @@ export function ComplianceDashboardClient({ data }: { data: DashboardData }) {
         event={selectedEvent}
         open={modalOpen}
         onOpenChange={setModalOpen}
-        onStatusUpdate={handleStatusUpdate}
+        onRefresh={() => router.refresh()}
         onDelete={handleDelete}
         currentUser={user}
       />

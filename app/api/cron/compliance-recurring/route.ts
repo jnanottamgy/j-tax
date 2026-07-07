@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "crypto"
 import { NextResponse } from "next/server"
 import { generateRecurringComplianceTasks, seedDefaultTemplates } from "@/lib/compliance/recurring-engine"
+import { prisma } from "@/lib/prisma"
+import { tenantContext } from "@/lib/tenant/context"
 
 function safeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false
@@ -23,14 +25,25 @@ export async function GET(request: Request) {
       return new NextResponse("Unauthorized", { status: 401 })
     }
 
+    // Statutory templates are shared platform content — seed once, globally.
     await seedDefaultTemplates()
 
-    const result = await generateRecurringComplianceTasks()
+    // Multi-tenant: generate each firm's compliance events in its own context.
+    const firms = await prisma.firm.findMany({ where: { status: "ACTIVE" }, select: { id: true } })
+    let created = 0
+    const errors: string[] = []
+    for (const firm of firms) {
+      await tenantContext.run({ firmId: firm.id }, async () => {
+        const result = await generateRecurringComplianceTasks()
+        created += result.created
+        errors.push(...result.errors)
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Generated ${result.created} compliance tasks/events.`,
-      errors: result.errors.length > 0 ? result.errors : undefined,
+      message: `Generated ${created} compliance tasks/events across ${firms.length} firm(s).`,
+      errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error: unknown) {
     console.error("Compliance recurring CRON Error:", error)

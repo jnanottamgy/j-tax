@@ -5,12 +5,14 @@ import type {
   ServiceType,
 } from "@prisma/client"
 
-import { SERVICE_TYPE_LABELS } from "@/lib/clients/constants"
+import { serviceLabel } from "@/lib/clients/constants"
 
 type ServiceInput = {
   serviceType: ServiceType
   frequency: ServiceFrequency
   nextDueDate?: string
+  /** Name when serviceType is OTHER. */
+  customName?: string
 }
 
 const DOCUMENT_CHECKLIST: Record<ServiceType, string[]> = {
@@ -88,17 +90,21 @@ export function buildOnboardingArtifacts(
   options?: {
     reminderDaysBefore?: number
     notificationPreferences?: string[]
+    /** Checklist document labels already collected at onboarding. */
+    collectedDocuments?: string[]
   }
 ): {
   services: Prisma.ClientServiceCreateManyInput[]
   tasks: Prisma.TaskCreateManyInput[]
   complianceSchedules: Prisma.ComplianceScheduleCreateManyInput[]
   reminders: Prisma.ReminderCreateManyInput[]
+  documentChecklist: Prisma.ClientDocumentChecklistItemCreateManyInput[]
 } {
   const serviceRecords: Prisma.ClientServiceCreateManyInput[] = []
   const tasks: Prisma.TaskCreateManyInput[] = []
   const complianceSchedules: Prisma.ComplianceScheduleCreateManyInput[] = []
   const reminders: Prisma.ReminderCreateManyInput[] = []
+  const collectedSet = new Set(options?.collectedDocuments ?? [])
 
   const now = new Date()
   const reminderDaysBefore = options?.reminderDaysBefore ?? 7
@@ -110,11 +116,12 @@ export function buildOnboardingArtifacts(
     const nextDue = svc.nextDueDate
       ? new Date(svc.nextDueDate)
       : calculateNextDueDate(svc.frequency, now)
-    const label = SERVICE_TYPE_LABELS[svc.serviceType]
+    const label = serviceLabel(svc.serviceType, svc.customName)
 
     serviceRecords.push({
       clientId,
       serviceType: svc.serviceType,
+      customName: svc.serviceType === "OTHER" ? svc.customName ?? null : null,
       frequency: svc.frequency,
       nextDueDate: nextDue,
       isActive: true,
@@ -156,11 +163,21 @@ export function buildOnboardingArtifacts(
 
   }
 
+  const now2 = new Date()
+  const documentChecklist: Prisma.ClientDocumentChecklistItemCreateManyInput[] =
+    buildDocumentChecklist(services).map((label) => ({
+      clientId,
+      label,
+      collected: collectedSet.has(label),
+      collectedAt: collectedSet.has(label) ? now2 : null,
+    }))
+
   return {
     services: serviceRecords,
     tasks,
     complianceSchedules,
     reminders,
+    documentChecklist,
   }
 }
 

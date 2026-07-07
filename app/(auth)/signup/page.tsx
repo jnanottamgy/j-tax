@@ -6,7 +6,7 @@ import { GlassCard } from "@/components/dashboard/glass-card"
 import { LogoIcon } from "@/components/ui/logo"
 import { Button } from "@/components/ui/button"
 
-export default async function SignUpPage() {
+export default function SignUpPage() {
   return (
     <div className="space-y-8">
       <div className="space-y-3 text-center">
@@ -14,10 +14,11 @@ export default async function SignUpPage() {
           <LogoIcon size={56} glow />
         </div>
         <h1 className="text-gradient text-2xl font-semibold tracking-tight md:text-3xl mt-4">
-          Create your account
+          Start your firm on J-TACS
         </h1>
         <p className="text-[15px] leading-relaxed text-muted-foreground">
-          Join J-TACS to manage your tax operations efficiently
+          Create your firm&apos;s workspace — 14-day free trial, no card needed.
+          You&apos;ll be the founding Partner and can invite your team from inside.
         </p>
       </div>
 

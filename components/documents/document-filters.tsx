@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+
+import { useDebouncedCallback } from "@/hooks/use-debounced-callback"
 import { Search, Filter, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -50,13 +52,18 @@ export function DocumentFilters({ onFiltersChange, clients }: DocumentFiltersPro
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>()
   const [selectedClient, setSelectedClient] = useState<string | undefined>()
 
-  const handleSearchChange = (value: string) => {
-    setSearch(value)
+  // Debounced so typing doesn't fire a DB query per keystroke
+  const emitSearch = useDebouncedCallback((value: string) => {
     onFiltersChange({
       category: selectedCategory,
       clientId: selectedClient,
       search: value || undefined,
     })
+  })
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    emitSearch(value)
   }
 
   const handleCategoryChange = (category: string | undefined) => {

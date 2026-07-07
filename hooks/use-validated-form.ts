@@ -12,7 +12,7 @@ type UseValidatedFormOptions<T> = {
   onSubmit: (data: T) => Promise<FormActionState>
   successMessage?: string
   validationErrorMessage?: string
-  onSuccess?: () => void
+  onSuccess?: (result: FormActionState) => void
 }
 
 /**
@@ -61,9 +61,10 @@ export function useValidatedForm<T>({
         try {
           const result = await onSubmit(parsed.data)
           if (result.success) {
-            toast.success(successMessage)
+            // Server-provided message wins over the caller's static default.
+            toast.success(result.message ?? successMessage)
             clearErrors()
-            onSuccess?.()
+            onSuccess?.(result)
           } else if (result.fieldErrors) {
             setFieldErrors(flattenFieldErrors(result.fieldErrors))
             toast.error(validationErrorMessage)

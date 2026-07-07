@@ -48,6 +48,9 @@ export interface SendNotificationResult {
   status?: string
   error?: string
   providerResponse?: any // Raw response from provider
+  /** True when the provider rejected the request permanently (4xx validation
+   *  errors like a malformed recipient) — retrying can never succeed. */
+  permanentFailure?: boolean
 }
 
 export interface DeliveryStatus {

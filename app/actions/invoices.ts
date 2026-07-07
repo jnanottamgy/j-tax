@@ -3,6 +3,12 @@
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { recordTimelineEvent } from "@/lib/timeline/events"
+import { getFirmSettings } from "@/lib/firm-settings"
+import {
+  computeGstSplit,
+  normalizeStateCode,
+  stateFromGstin,
+} from "@/lib/invoices/gst"
 import type { FormActionState } from "@/lib/forms/types"
 import {
   followUpSchema,
@@ -18,11 +24,53 @@ const VALID_INVOICE_STATUSES = [
 ] as const
 type InvoiceStatus = typeof VALID_INVOICE_STATUSES[number]
 
-export async function getInvoicesData() {
-  // C-09 fix: require authentication
-  const session = await requireAuth()
+/**
+ * Resolve everything the GST split needs for an invoice:
+ *   - clientGstin snapshot (from the client row at issue time)
+ *   - placeOfSupply: explicit form value || client stateCode || client GSTIN
+ *     state || firm state (2-digit GST state code)
+ *   - CGST/SGST (intra-state) or IGST (inter-state) amounts.
+ *
+ * Splits are persisted only when the tax amount is positive AND both states
+ * could be resolved — otherwise the columns stay null and the UI/PDF fall
+ * back to the plain "GST @ x%" line (legacy behavior).
+ */
+async function resolveGstFields(
+  clientId: string,
+  formPlaceOfSupply: string | undefined,
+  taxAmount: number
+) {
+  const [client, firm] = await Promise.all([
+    prisma.client.findUnique({
+      where: { id: clientId },
+      select: { gstin: true, stateCode: true },
+    }),
+    getFirmSettings(),
+  ])
 
-  // PARTNER and MANAGER see all invoices; EMPLOYEE is blocked at the route level
+  const firmState = stateFromGstin(firm.gstin)
+  const clientState =
+    normalizeStateCode(client?.stateCode) ?? stateFromGstin(client?.gstin)
+  const placeOfSupply = formPlaceOfSupply ?? clientState ?? firmState
+
+  const split = computeGstSplit({ taxAmount, firmState, placeOfSupply })
+  const hasSplit = taxAmount > 0 && firmState !== null && placeOfSupply !== null
+
+  return {
+    clientGstin: client?.gstin ?? null,
+    placeOfSupply,
+    cgstAmount: hasSplit && split.igst === 0 ? split.cgst : null,
+    sgstAmount: hasSplit && split.igst === 0 ? split.sgst : null,
+    igstAmount: hasSplit && split.igst > 0 ? split.igst : null,
+  }
+}
+
+export async function getInvoicesData() {
+  // Defense-in-depth: gate the action itself on PARTNER/MANAGER, not just the
+  // route — a bare requireAuth would have exposed every invoice to an EMPLOYEE
+  // who invoked the action directly.
+  const session = await requirePartnerOrManager()
+
   const invoices = await prisma.invoice.findMany({
     include: { client: true },
     orderBy: { createdAt: "desc" },
@@ -34,15 +82,27 @@ export async function getInvoicesData() {
     amount: Number(invoice.amount),
     paidAmount: Number(invoice.paidAmount),
     outstandingAmount: Number(invoice.outstandingAmount),
+    professionalFee: invoice.professionalFee !== null ? Number(invoice.professionalFee) : null,
+    taxRate: invoice.taxRate !== null ? Number(invoice.taxRate) : null,
+    taxAmount: invoice.taxAmount !== null ? Number(invoice.taxAmount) : null,
+    cgstAmount: invoice.cgstAmount !== null ? Number(invoice.cgstAmount) : null,
+    sgstAmount: invoice.sgstAmount !== null ? Number(invoice.sgstAmount) : null,
+    igstAmount: invoice.igstAmount !== null ? Number(invoice.igstAmount) : null,
   }))
 
+  // gstin/stateCode ride along so the New Invoice dialog can auto-default the
+  // place of supply as soon as a client is picked.
   const clients = await prisma.client.findMany({
     where: { status: "ACTIVE" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, gstin: true, stateCode: true },
     orderBy: { name: "asc" },
   })
 
-  return { invoices: serializedInvoices, clients, user: session.user }
+  // Firm's own GST state — the dialogs need it for the live CGST/SGST vs IGST preview.
+  const firmSettings = await getFirmSettings()
+  const firmState = stateFromGstin(firmSettings.gstin)
+
+  return { invoices: serializedInvoices, clients, firmState, user: session.user }
 }
 
 export async function createInvoice(
@@ -63,14 +123,22 @@ export async function createInvoice(
   }
 
   const data = validation.data
-  const amountValue = parseFloat(data.amount)
+  const professionalFee = parseFloat(data.professionalFee)
 
-  if (isNaN(amountValue) || amountValue <= 0) {
-    return { fieldErrors: { amount: ["Invoice amount must be greater than zero."] } }
+  if (isNaN(professionalFee) || professionalFee <= 0) {
+    return {
+      fieldErrors: { professionalFee: ["Professional fee must be greater than zero."] },
+    }
   }
 
+  // Service billing: total payable = professional fee + GST at the chosen slab
+  const taxRate = parseFloat(data.taxRate)
+  const taxAmount = Math.round(professionalFee * taxRate) / 100
+  const totalAmount = professionalFee + taxAmount
+
   try {
-    const existingInvoice = await prisma.invoice.findUnique({
+    // Invoice numbers are unique per firm now — findFirst is tenant-scoped.
+    const existingInvoice = await prisma.invoice.findFirst({
       where: { invoiceNumber: data.invoiceNumber },
     })
 
@@ -78,15 +146,31 @@ export async function createInvoice(
       return { error: "An invoice with this number already exists." }
     }
 
+    // GST tax-invoice fields: recipient GSTIN snapshot, place of supply, and
+    // the CGST/SGST vs IGST split derived from taxAmount.
+    const gst = await resolveGstFields(data.clientId, data.placeOfSupply, taxAmount)
+
     const newInvoice = await prisma.invoice.create({
       data: {
         clientId: data.clientId,
         invoiceNumber: data.invoiceNumber,
-        amount: amountValue,
+        amount: totalAmount,
+        serviceDescription: data.serviceDescription,
+        serviceType: data.serviceType ?? null,
+        professionalFee,
+        taxRate,
+        taxAmount,
+        clientGstin: gst.clientGstin,
+        placeOfSupply: gst.placeOfSupply,
+        hsnSac: data.hsnSac || "9982",
+        cgstAmount: gst.cgstAmount,
+        sgstAmount: gst.sgstAmount,
+        igstAmount: gst.igstAmount,
+        remarks: data.remarks?.trim() ? data.remarks : null,
         issueDate: new Date(data.issueDate),
         dueDate: new Date(data.dueDate),
         status: data.status as any,
-        outstandingAmount: amountValue,
+        outstandingAmount: totalAmount,
         paidAmount: 0,
       },
     })
@@ -95,12 +179,13 @@ export async function createInvoice(
       clientId: data.clientId,
       eventType: "INVOICE_CREATED",
       title: `Invoice ${data.invoiceNumber} created`,
-      description: `Amount: ₹${amountValue.toLocaleString("en-IN")}`,
+      description: `${data.serviceDescription} — ₹${totalAmount.toLocaleString("en-IN")} (incl. GST)`,
       performedBy: session.user.id,
     })
 
     revalidatePath("/payments/invoices")
     revalidatePath("/payments")
+    revalidatePath(`/clients/${data.clientId}`)
     return { success: true }
   } catch (error) {
     console.error("Failed to create invoice:", error)
@@ -108,7 +193,11 @@ export async function createInvoice(
   }
 }
 
-export async function updateInvoice(invoiceId: string, prevState: any, formData: FormData) {
+export async function updateInvoice(
+  invoiceId: string,
+  prevState: FormActionState,
+  formData: FormData
+): Promise<FormActionState> {
   try {
     await requirePartnerOrManager()
   } catch {
@@ -116,38 +205,104 @@ export async function updateInvoice(invoiceId: string, prevState: any, formData:
   }
 
   const statusRaw = formData.get("status") as string
-  const paidAmountRaw = formData.get("paidAmount") as string | null
 
-  if (statusRaw && !(VALID_INVOICE_STATUSES as readonly string[]).includes(statusRaw)) {
-    return { error: "Invalid invoice status." }
+  // paidAmount is NOT settable here: the PaymentReceipt ledger (via
+  // recordPayment) is the single source of truth for what has been paid.
+  // PAID / PARTIALLY_PAID are ledger-derived and cannot be set manually, or
+  // status and paidAmount would silently diverge from the receipts.
+  const SETTABLE_STATUSES = ["DRAFT", "SENT", "OVERDUE", "DISPUTED", "WAIVED"] as const
+  if (statusRaw && !(SETTABLE_STATUSES as readonly string[]).includes(statusRaw)) {
+    return {
+      error:
+        "Paid / partially-paid status is derived from recorded payments and cannot be set directly. Use Record Payment or Waive instead.",
+    }
   }
-
-  const status = statusRaw as InvoiceStatus | null
+  const status = statusRaw as (typeof SETTABLE_STATUSES)[number] | null
 
   try {
     const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } })
     if (!invoice) return { error: "Invoice not found." }
 
-    const paidAmountValue = paidAmountRaw ? parseFloat(paidAmountRaw) : Number(invoice.paidAmount)
-    if (paidAmountRaw && (isNaN(paidAmountValue) || paidAmountValue < 0)) {
-      return { error: "Paid amount must be a non-negative number." }
-    }
-    if (paidAmountValue > Number(invoice.amount)) {
-      return { error: `Paid amount (₹${paidAmountValue.toLocaleString("en-IN")}) cannot exceed invoice total (₹${Number(invoice.amount).toLocaleString("en-IN")}).` }
-    }
-    const outstandingAmount = Math.max(0, Number(invoice.amount) - paidAmountValue)
+    // Full financial edit is DRAFT-only (accounting immutability: once an
+    // invoice is SENT it must not change). We treat the presence of a
+    // `serviceDescription` field as the signal that this is a full edit rather
+    // than a status-only flip from another caller.
+    const isFullEdit =
+      invoice.status === "DRAFT" && formData.get("serviceDescription") !== null
 
+    if (isFullEdit) {
+      const validation = parseInvoiceFormData(formData)
+      if (!validation.success) {
+        return { fieldErrors: validation.error.flatten().fieldErrors }
+      }
+
+      const data = validation.data
+      const professionalFee = parseFloat(data.professionalFee)
+      if (isNaN(professionalFee) || professionalFee <= 0) {
+        return {
+          fieldErrors: { professionalFee: ["Professional fee must be greater than zero."] },
+        }
+      }
+
+      // Same billing math as createInvoice: total = fee + GST at the chosen slab.
+      const taxRate = parseFloat(data.taxRate)
+      const taxAmount = Math.round(professionalFee * taxRate) / 100
+      const totalAmount = professionalFee + taxAmount
+
+      // Same GST recompute as createInvoice — the split must track the edited
+      // fee/rate/place-of-supply. Uses the invoice's own clientId (immutable).
+      const gst = await resolveGstFields(
+        invoice.clientId,
+        data.placeOfSupply,
+        taxAmount
+      )
+
+      // clientId and invoiceNumber are validated (parseInvoiceFormData reads
+      // them) but MUST NOT change — a draft edit keeps the invoice's identity.
+      await prisma.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          serviceDescription: data.serviceDescription,
+          serviceType: data.serviceType ?? null,
+          professionalFee,
+          taxRate,
+          taxAmount,
+          clientGstin: gst.clientGstin,
+          placeOfSupply: gst.placeOfSupply,
+          hsnSac: data.hsnSac || "9982",
+          cgstAmount: gst.cgstAmount,
+          sgstAmount: gst.sgstAmount,
+          igstAmount: gst.igstAmount,
+          amount: totalAmount,
+          // A draft has paidAmount 0, so the full amount is outstanding.
+          outstandingAmount: totalAmount,
+          remarks: data.remarks?.trim() ? data.remarks : null,
+          issueDate: new Date(data.issueDate),
+          dueDate: new Date(data.dueDate),
+          ...(status ? { status } : {}),
+        },
+      })
+
+      revalidatePath(`/payments/invoices/${invoiceId}`)
+      revalidatePath("/payments/invoices")
+      revalidatePath("/payments")
+      revalidatePath(`/clients/${invoice.clientId}`)
+      return { success: true }
+    }
+
+    // Status-only path (used by other callers): never touches financial fields,
+    // and non-draft invoices can only change status among SETTABLE_STATUSES.
     await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         ...(status ? { status } : {}),
-        paidAmount: paidAmountValue,
-        outstandingAmount,
       },
     })
 
+    revalidatePath(`/payments/invoices/${invoiceId}`)
     revalidatePath("/payments/invoices")
     revalidatePath("/payments")
+    revalidatePath(`/clients/${invoice.clientId}`)
     return { success: true }
   } catch (error) {
     console.error("Failed to update invoice:", error)
@@ -263,6 +418,7 @@ export async function recordPayment(
     revalidatePath(`/payments/invoices/${invoiceId}`)
     revalidatePath("/payments/invoices")
     revalidatePath("/payments")
+    revalidatePath(`/clients/${invoice.clientId}`)
     return { success: true }
   } catch (error) {
     console.error("Failed to record payment:", error)
@@ -305,6 +461,7 @@ export async function logFollowUp(
     })
 
     revalidatePath(`/payments/invoices/${invoiceId}`)
+    revalidatePath(`/clients/${invoice.clientId}`)
     return { success: true }
   } catch (error) {
     console.error("Failed to log follow-up:", error)
@@ -316,14 +473,18 @@ export async function updateInvoiceStatus(
   invoiceId: string,
   status: "DISPUTED" | "WAIVED" | "SENT" | "DRAFT"
 ) {
+  let session: Awaited<ReturnType<typeof requirePartnerOrManager>>
   try {
-    await requirePartnerOrManager()
+    session = await requirePartnerOrManager()
   } catch {
     return { error: "You do not have permission to update invoice status." }
   }
 
   try {
-    const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } })
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { client: { select: { name: true } } },
+    })
     if (!invoice) return { error: "Invoice not found." }
 
     await prisma.invoice.update({
@@ -331,9 +492,26 @@ export async function updateInvoiceStatus(
       data: { status },
     })
 
+    // Waiving money is a Partner-visibility event when a Manager does it.
+    if (status === "WAIVED" && session.user.role === "MANAGER") {
+      const { notifyRoles } = await import("@/lib/notifications/notify")
+      await notifyRoles(
+        ["PARTNER"],
+        {
+          title: `Invoice waived: ${invoice.invoiceNumber}`,
+          message: `${session.user.name} waived ${invoice.invoiceNumber} (${invoice.client.name}, ₹${Number(invoice.amount).toLocaleString("en-IN")}).`,
+          type: "WARNING",
+          entityType: "INVOICE",
+          entityId: invoiceId,
+        },
+        { excludeUserId: session.user.id }
+      )
+    }
+
     revalidatePath(`/payments/invoices/${invoiceId}`)
     revalidatePath("/payments/invoices")
     revalidatePath("/payments")
+    revalidatePath(`/clients/${invoice.clientId}`)
     return { success: true }
   } catch (error) {
     console.error("Failed to update invoice status:", error)
@@ -342,14 +520,18 @@ export async function updateInvoiceStatus(
 }
 
 export async function deleteInvoice(invoiceId: string): Promise<FormActionState> {
+  let session: Awaited<ReturnType<typeof requirePartnerOrManager>>
   try {
-    await requirePartnerOrManager()
+    session = await requirePartnerOrManager()
   } catch {
     return { error: "You do not have permission to delete invoices." }
   }
 
   try {
-    const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } })
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { client: { select: { name: true } } },
+    })
     if (!invoice) return { error: "Invoice not found." }
 
     if (Number(invoice.paidAmount) > 0) {
@@ -359,11 +541,31 @@ export async function deleteInvoice(invoiceId: string): Promise<FormActionState>
       return { error: "Cannot delete a fully paid invoice." }
     }
 
-    // PaymentReceipt and FollowUp both have onDelete: Cascade — no manual cleanup needed
-    await prisma.invoice.delete({ where: { id: invoiceId } })
+    // Soft delete → recycle bin. Restore/purge live in app/actions/trash.ts.
+    await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { deletedAt: new Date() },
+    })
+
+    // Partners hear about Manager-deleted invoices (restorable from the bin).
+    if (session.user.role === "MANAGER") {
+      const { notifyRoles } = await import("@/lib/notifications/notify")
+      await notifyRoles(
+        ["PARTNER"],
+        {
+          title: `Invoice moved to recycle bin: ${invoice.invoiceNumber}`,
+          message: `${session.user.name} deleted ${invoice.invoiceNumber} (${invoice.client.name}, ₹${Number(invoice.amount).toLocaleString("en-IN")}). It can be restored from the Recycle Bin.`,
+          type: "WARNING",
+          entityType: "INVOICE",
+          entityId: invoiceId,
+        },
+        { excludeUserId: session.user.id }
+      )
+    }
 
     revalidatePath("/payments/invoices")
     revalidatePath("/payments")
+    revalidatePath(`/clients/${invoice.clientId}`)
     return { success: true }
   } catch (error) {
     console.error("Failed to delete invoice:", error)

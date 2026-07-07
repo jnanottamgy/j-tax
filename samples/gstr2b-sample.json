@@ -1,0 +1,69 @@
+{
+  "data": {
+    "gstin": "27AAPFU0939F1ZV",
+    "rtnprd": "062026",
+    "docdata": {
+      "b2b": [
+        {
+          "ctin": "29AABCU9603R1ZJ",
+          "trdnm": "Steel Suppliers Pvt Ltd",
+          "inv": [
+            {
+              "inum": "INV/007",
+              "dt": "15-06-2026",
+              "val": 118000,
+              "itcavl": "Y",
+              "items": [{ "num": 1, "rt": 18, "txval": 100000, "igst": 18000, "cgst": 0, "sgst": 0, "cess": 0 }]
+            },
+            {
+              "inum": "SS-042",
+              "dt": "20-06-2026",
+              "val": 59000,
+              "itcavl": "Y",
+              "items": [{ "num": 1, "rt": 18, "txval": 50000, "igst": 9000, "cgst": 0, "sgst": 0, "cess": 0 }]
+            }
+          ]
+        },
+        {
+          "ctin": "27AAACI1681G1ZP",
+          "trdnm": "Mumbai Traders",
+          "inv": [
+            {
+              "inum": "MT-100",
+              "dt": "10-06-2026",
+              "val": 23600,
+              "itcavl": "Y",
+              "items": [
+                { "num": 1, "rt": 18, "txval": 10000, "igst": 0, "cgst": 900, "sgst": 900, "cess": 0 },
+                { "num": 2, "rt": 18, "txval": 10000, "igst": 0, "cgst": 900, "sgst": 900, "cess": 0 }
+              ]
+            },
+            {
+              "inum": "MT-105",
+              "dt": "28-06-2026",
+              "val": 47200,
+              "itcavl": "Y",
+              "items": [{ "num": 1, "rt": 18, "txval": 40000, "igst": 0, "cgst": 3600, "sgst": 3600, "cess": 0 }]
+            }
+          ]
+        }
+      ],
+      "cdnr": [
+        {
+          "ctin": "29AABCU9603R1ZJ",
+          "trdnm": "Steel Suppliers Pvt Ltd",
+          "nt": [
+            {
+              "ntnum": "CN-01",
+              "typ": "C",
+              "dt": "25-06-2026",
+              "val": 11800,
+              "itcavl": "Y",
+              "items": [{ "num": 1, "rt": 18, "txval": 10000, "igst": 1800, "cgst": 0, "sgst": 0, "cess": 0 }]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth/session"
 import { canAccessRoute, hasMinimumRole, ROLE_LEVEL } from "@/lib/auth/roles"
 import { logAccessDenied } from "@/lib/security"
+import { tenantContext } from "@/lib/tenant/context"
 
 /**
  * Enhanced Authentication & Authorization Guards
@@ -19,7 +20,12 @@ export interface GuardContext {
 }
 
 /**
- * Require authentication - basic guard
+ * Require authentication - basic guard.
+ *
+ * Also resolves the signed-in user's FIRM and enters the tenant context:
+ * from that point, every Prisma query in the request is automatically
+ * scoped to that firm (lib/prisma.ts). All other guards funnel through here,
+ * so tenancy is established exactly once per request.
  */
 export async function requireAuth(context?: GuardContext) {
   const session = await getSession()
@@ -29,6 +35,54 @@ export async function requireAuth(context?: GuardContext) {
     }
     throw new Error("Unauthorized")
   }
+  // Defense-in-depth: a provisioned user who hasn't set their own password
+  // must not be able to skip the forced reset by calling server actions / APIs
+  // directly. The set-password flow itself uses the raw Supabase client, not
+  // this guard, so it is unaffected.
+  if (session.mustChangePassword) {
+    throw new Error("PasswordChangeRequired")
+  }
+
+  // ── Tenant resolution ──────────────────────────────────────────────────────
+  // Dynamic import keeps this module importable from edge middleware.
+  const { prisma } = await import("@/lib/prisma")
+
+  // These lookups run BEFORE the tenant context exists, so they're unscoped
+  // by design — they are what establish the scope.
+  let userRow = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { firmId: true },
+  })
+
+  // Client-portal users can sign in before a mirror row exists: adopt them
+  // into the firm that owns their (unambiguous) client record.
+  if (!userRow && session.user.role === "CLIENT") {
+    const matches = await prisma.client.findMany({
+      where: { email: session.user.email, deletedAt: null },
+      select: { firmId: true },
+      take: 2,
+    })
+    if (matches.length === 1) {
+      userRow = await prisma.user.create({
+        data: {
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name,
+          role: "CLIENT",
+          firmId: matches[0].firmId,
+        },
+        select: { firmId: true },
+      })
+    }
+  }
+
+  if (!userRow?.firmId) {
+    throw new Error("Unauthorized: account is not linked to a firm")
+  }
+
+  session.user.firmId = userRow.firmId
+  tenantContext.enterWith({ firmId: userRow.firmId })
+
   return session
 }
 

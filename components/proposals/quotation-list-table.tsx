@@ -3,7 +3,8 @@
 import { useState } from "react"
 import Link from "next/link"
 import { format } from "date-fns"
-import { Eye, Download, Send, Clock, CheckCircle2, XCircle, FileText, AlertCircle } from "lucide-react"
+import { toast } from "sonner"
+import { Eye, Download, Send, Clock, CheckCircle2, XCircle, FileText, AlertCircle, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,36 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cl
 
 export function QuotationListTable({ initialQuotations }: { initialQuotations: Quotation[] }) {
   const [filter, setFilter] = useState("ALL")
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  async function handleDownloadPdf(q: Quotation) {
+    if (downloadingId) return
+    setDownloadingId(q.id)
+    try {
+      const res = await fetch(`/api/quotations/${q.id}/pdf`)
+      if (!res.ok) {
+        toast.error(
+          res.status === 429
+            ? "Too many downloads — wait a minute"
+            : "Failed to download PDF — please try again."
+        )
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Quotation-${q.quotationNumber}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error("Failed to download PDF — please try again.")
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   const filtered = filter === "ALL" ? initialQuotations : initialQuotations.filter((q) => q.status === filter)
 
@@ -107,14 +138,23 @@ export function QuotationListTable({ initialQuotations }: { initialQuotations: Q
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                              <Link href={`/proposals/quotations/${q.id}`}>
+                              <Link href={`/proposals/quotations/${q.id}`} aria-label={`View quotation #${q.quotationNumber}`}>
                                 <Eye className="size-3.5" />
                               </Link>
                             </Button>
-                            <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                              <a href={`/api/quotations/${q.id}/pdf`} download>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2"
+                              aria-label={`Download PDF for quotation #${q.quotationNumber}`}
+                              onClick={() => handleDownloadPdf(q)}
+                              disabled={downloadingId === q.id}
+                            >
+                              {downloadingId === q.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
                                 <Download className="size-3.5" />
-                              </a>
+                              )}
                             </Button>
                           </div>
                         </td>

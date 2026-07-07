@@ -2,15 +2,17 @@
 
 import { useState } from "react"
 import { format } from "date-fns"
-import { X, Download, Lock, History, Tag, Trash2, FileEdit, Plus } from "lucide-react"
+import { X, Download, Lock, History, Tag, Trash2, FileEdit, Pencil, Plus } from "lucide-react"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { RenameDocumentDialog } from "@/components/documents/rename-document-dialog"
+import { EditDocumentDialog } from "@/components/documents/edit-document-dialog"
 
 type DocumentCategory =
   | "GST" | "TDS" | "ROC" | "AUDIT" | "INCOME_TAX"
@@ -87,6 +89,8 @@ export function DocumentModal({
   const [newTag, setNewTag]           = useState("")
   const [isAddingTag, setIsAddingTag] = useState(false)
   const [renameOpen, setRenameOpen]   = useState(false)
+  const [editOpen, setEditOpen]       = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const canModify = currentUser?.role === "PARTNER" || currentUser?.role === "MANAGER"
 
@@ -97,9 +101,13 @@ export function DocumentModal({
     finally { setIsAddingTag(false) }
   }
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!document || !canModify) return
-    if (!confirm("Delete this document? This cannot be undone.")) return
+    setConfirmingDelete(true)
+  }
+
+  const handleDeleteConfirmed = async () => {
+    if (!document) return
     await onDelete?.(document.id)
     onOpenChange(false)
   }
@@ -247,6 +255,10 @@ export function DocumentModal({
               {canModify && (
                 <>
                   <Button variant="outline" size="sm" className="flex-1 gap-2 min-w-[100px]"
+                    onClick={() => { onOpenChange(false); setTimeout(() => setEditOpen(true), 100) }}>
+                    <Pencil className="h-4 w-4" />Edit details
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-2 min-w-[100px]"
                     onClick={() => { onOpenChange(false); setTimeout(() => setRenameOpen(true), 100) }}>
                     <FileEdit className="h-4 w-4" />Rename
                   </Button>
@@ -262,6 +274,25 @@ export function DocumentModal({
         </DialogContent>
       </Dialog>
 
+      {/* Edit details dialog — opens after main modal closes */}
+      {canModify && (
+        <EditDocumentDialog
+          document={{
+            id: document.id,
+            title: document.title,
+            category: document.category,
+            description: document.description,
+            isConfidential: document.isConfidential,
+          }}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSuccess={() => {
+            setEditOpen(false)
+            onEdit?.(document.id)
+          }}
+        />
+      )}
+
       {/* Rename dialog — opens after main modal closes */}
       {canModify && (
         <RenameDocumentDialog
@@ -275,6 +306,16 @@ export function DocumentModal({
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title={`Delete "${document.title}"?`}
+        description="The file and its version history will be permanently removed. This cannot be undone."
+        confirmLabel="Delete document"
+        destructive
+        onConfirm={handleDeleteConfirmed}
+      />
     </>
   )
 }

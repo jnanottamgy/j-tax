@@ -16,7 +16,12 @@ const emptyForm = {
   confirmPassword: "",
 }
 
-export function UpdatePasswordForm() {
+export function UpdatePasswordForm({
+  redirectTo = "/login?password=updated",
+}: {
+  /** Where to land after a successful change — first-login flows go to "/" */
+  redirectTo?: string
+}) {
   const router = useRouter()
   const [formData, setFormData] = useState(emptyForm)
 
@@ -25,7 +30,7 @@ export function UpdatePasswordForm() {
     successMessage: "Password updated successfully!",
     validationErrorMessage: "Please correct the highlighted fields.",
     onSuccess: () => {
-      router.push("/login?password=updated")
+      router.push(redirectTo)
     },
     onSubmit: async (data) => {
       const fd = new FormData()

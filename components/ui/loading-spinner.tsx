@@ -14,6 +14,11 @@ export function LoadingSpinner({ size = "md", className }: LoadingSpinnerProps) 
   }
 
   return (
-    <Loader2 className={cn("animate-spin text-primary", sizeClasses[size], className)} />
+    <span role="status" aria-label="Loading" className="inline-flex">
+      <Loader2
+        className={cn("animate-spin text-primary", sizeClasses[size], className)}
+        aria-hidden
+      />
+    </span>
   )
 }

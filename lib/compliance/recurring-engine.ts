@@ -1,40 +1,85 @@
 import { prisma } from "@/lib/prisma"
-import { addMonths, addDays, startOfMonth, format } from "date-fns"
+import { addDays, addMonths, startOfMonth, format } from "date-fns"
 
-const DEFAULT_TEMPLATES = [
-  // Accounting — Monthly
-  { serviceType: "BOOKKEEPING" as const, complianceType: "CUSTOM" as const, title: "Collect Bank Statements", frequency: "MONTHLY" as const, dueDayOfMonth: 5, reminderDays: 3 },
-  { serviceType: "BOOKKEEPING" as const, complianceType: "CUSTOM" as const, title: "Collect Sales Data", frequency: "MONTHLY" as const, dueDayOfMonth: 7, reminderDays: 3 },
-  { serviceType: "BOOKKEEPING" as const, complianceType: "CUSTOM" as const, title: "Collect Purchase Data", frequency: "MONTHLY" as const, dueDayOfMonth: 7, reminderDays: 3 },
-  { serviceType: "BOOKKEEPING" as const, complianceType: "CUSTOM" as const, title: "Collect Expense Receipts", frequency: "MONTHLY" as const, dueDayOfMonth: 10, reminderDays: 5 },
+import { statutoryEventsInWindow } from "@/lib/compliance/statutory-calendar"
 
-  // GST — Monthly
-  { serviceType: "GST_RETURN" as const, complianceType: "GSTR_1" as const, title: "GSTR-1 Data Collection", frequency: "MONTHLY" as const, dueDayOfMonth: 5, reminderDays: 5 },
-  { serviceType: "GST_RETURN" as const, complianceType: "GSTR_1" as const, title: "GSTR-1 Reconciliation & Filing", frequency: "MONTHLY" as const, dueDayOfMonth: 11, reminderDays: 3 },
-  { serviceType: "GST_RETURN" as const, complianceType: "GSTR_3B" as const, title: "GSTR-3B Data Collection", frequency: "MONTHLY" as const, dueDayOfMonth: 10, reminderDays: 5 },
-  { serviceType: "GST_RETURN" as const, complianceType: "GSTR_3B" as const, title: "GSTR-3B Reconciliation & Filing", frequency: "MONTHLY" as const, dueDayOfMonth: 20, reminderDays: 3 },
+/**
+ * Monthly cron (1st, 03:00) with two halves:
+ *
+ *  A. STATUTORY filings — enumerated from lib/compliance/statutory-calendar
+ *     on a rolling look-ahead window. Same canonical titles as the per-client
+ *     generator, so the two engines dedupe against each other instead of
+ *     doubling events on the calendar.
+ *
+ *  B. INTERNAL OPS tasks (document collection, planning reviews) — driven by
+ *     RecurringComplianceTemplate rows. These are firm routines, not statutory
+ *     filings (complianceType CUSTOM, isStatutory false). GST collection
+ *     tasks are labelled with the RETURN period they collect for (the month
+ *     before the due month) so "GSTR-1 Data Collection — Jul 2026" (due Aug 5)
+ *     pairs with the statutory "GSTR-1 — Jul 2026" (due Aug 11).
+ */
 
-  // Income Tax — Annual
-  { serviceType: "INCOME_TAX" as const, complianceType: "ITR" as const, title: "Tax Planning Review", frequency: "ANNUAL" as const, dueDayOfMonth: 1, reminderDays: 30 },
-  { serviceType: "INCOME_TAX" as const, complianceType: "ITR" as const, title: "Advance Tax Computation (Q1)", frequency: "QUARTERLY" as const, dueDayOfMonth: 15, reminderDays: 10 },
-  { serviceType: "INCOME_TAX" as const, complianceType: "ITR" as const, title: "ITR Filing", frequency: "ANNUAL" as const, dueDayOfMonth: 31, reminderDays: 30 },
+type TemplateSeed = {
+  serviceType: "BOOKKEEPING" | "GST_RETURN" | "INCOME_TAX" | "TDS" | "AUDIT" | "PAYROLL" | "COMPANY_LAW"
+  complianceType: "GSTR_1" | "GSTR_3B" | "TDS" | "ROC" | "ITR" | "PF_ESIC" | "AUDIT" | "CUSTOM"
+  title: string
+  frequency: "MONTHLY" | "QUARTERLY" | "ANNUAL"
+  dueDayOfMonth: number
+  reminderDays: number
+  /**
+   * Statutory anchor month (1-12) for ANNUAL templates (e.g. audit prep → 9).
+   * Not persisted (no dueMonth column) — resolved from this seed list at
+   * generation time. ANNUAL templates without one fall back to March.
+   */
+  dueMonth?: number
+  /**
+   * Months to shift the period LABEL by (not the due date). -1 for collection
+   * tasks that gather last month's data early in the current month.
+   */
+  periodOffset?: number
+}
 
-  // TDS — Monthly
-  { serviceType: "TDS" as const, complianceType: "TDS" as const, title: "TDS Return Filing", frequency: "MONTHLY" as const, dueDayOfMonth: 7, reminderDays: 5 },
+const DEFAULT_TEMPLATES: TemplateSeed[] = [
+  // Bookkeeping — monthly collection of the PREVIOUS month's records
+  { serviceType: "BOOKKEEPING", complianceType: "CUSTOM", title: "Collect Bank Statements", frequency: "MONTHLY", dueDayOfMonth: 5, reminderDays: 3, periodOffset: -1 },
+  { serviceType: "BOOKKEEPING", complianceType: "CUSTOM", title: "Collect Sales Data", frequency: "MONTHLY", dueDayOfMonth: 7, reminderDays: 3, periodOffset: -1 },
+  { serviceType: "BOOKKEEPING", complianceType: "CUSTOM", title: "Collect Purchase Data", frequency: "MONTHLY", dueDayOfMonth: 7, reminderDays: 3, periodOffset: -1 },
+  { serviceType: "BOOKKEEPING", complianceType: "CUSTOM", title: "Collect Expense Receipts", frequency: "MONTHLY", dueDayOfMonth: 10, reminderDays: 5, periodOffset: -1 },
 
-  // Audit — Annual
-  { serviceType: "AUDIT" as const, complianceType: "AUDIT" as const, title: "Audit Documentation Collection", frequency: "ANNUAL" as const, dueDayOfMonth: 1, reminderDays: 30 },
-  { serviceType: "AUDIT" as const, complianceType: "AUDIT" as const, title: "Financial Statement Preparation", frequency: "ANNUAL" as const, dueDayOfMonth: 15, reminderDays: 14 },
+  // GST — internal data collection ahead of the statutory filings (11th/20th)
+  { serviceType: "GST_RETURN", complianceType: "CUSTOM", title: "GSTR-1 Data Collection", frequency: "MONTHLY", dueDayOfMonth: 5, reminderDays: 3, periodOffset: -1 },
+  { serviceType: "GST_RETURN", complianceType: "CUSTOM", title: "GSTR-3B Reconciliation Prep", frequency: "MONTHLY", dueDayOfMonth: 14, reminderDays: 3, periodOffset: -1 },
 
-  // Payroll — Monthly
-  { serviceType: "PAYROLL" as const, complianceType: "PF_ESIC" as const, title: "PF/ESIC Return Filing", frequency: "MONTHLY" as const, dueDayOfMonth: 15, reminderDays: 5 },
+  // Income tax — annual planning routine (not a filing)
+  { serviceType: "INCOME_TAX", complianceType: "CUSTOM", title: "Tax Planning Review", frequency: "ANNUAL", dueDayOfMonth: 1, reminderDays: 30, dueMonth: 3 },
 
-  // ROC — Annual
-  { serviceType: "COMPANY_LAW" as const, complianceType: "ROC" as const, title: "Annual ROC Filing", frequency: "ANNUAL" as const, dueDayOfMonth: 30, reminderDays: 30 },
+  // Audit — preparation routines ahead of the Sep 30 statutory deadline
+  { serviceType: "AUDIT", complianceType: "CUSTOM", title: "Audit Documentation Collection", frequency: "ANNUAL", dueDayOfMonth: 1, reminderDays: 30, dueMonth: 9 },
+  { serviceType: "AUDIT", complianceType: "CUSTOM", title: "Financial Statement Preparation", frequency: "ANNUAL", dueDayOfMonth: 15, reminderDays: 14, dueMonth: 9 },
 ]
 
+// Statutory filings previously modelled as templates — now generated from the
+// statutory calendar. Deactivated (not deleted) so historical events keep
+// their provenance and the change is reversible.
+function isSeedTemplate(t: { serviceType: string; complianceType: string; title: string }): boolean {
+  return DEFAULT_TEMPLATES.some(
+    (s) => s.serviceType === t.serviceType && s.complianceType === t.complianceType && s.title === t.title
+  )
+}
+
+function seedFor(t: { serviceType: string; complianceType: string; title: string }): TemplateSeed | undefined {
+  return DEFAULT_TEMPLATES.find(
+    (s) => s.serviceType === t.serviceType && s.complianceType === t.complianceType && s.title === t.title
+  )
+}
+
+/** How far ahead the cron materializes statutory events. Runs monthly, so the
+ *  window must comfortably exceed one month; 75 days also gives assignees
+ *  lead time on 30-day-reminder annual filings. */
+const STATUTORY_LOOKAHEAD_DAYS = 75
+
 export async function seedDefaultTemplates() {
-  for (const tmpl of DEFAULT_TEMPLATES) {
+  for (const { dueMonth: _m, periodOffset: _o, ...tmpl } of DEFAULT_TEMPLATES) {
     await prisma.recurringComplianceTemplate.upsert({
       where: {
         serviceType_complianceType_title: {
@@ -43,100 +88,198 @@ export async function seedDefaultTemplates() {
           title: tmpl.title,
         },
       },
-      update: {},
+      update: { isActive: true },
       create: tmpl,
+    })
+  }
+
+  // Retire template rows superseded by the statutory calendar (old
+  // "Reconciliation & Filing" / "ITR Filing" / "Annual ROC Filing" seeds).
+  const all = await prisma.recurringComplianceTemplate.findMany({
+    where: { isActive: true },
+  })
+  const obsolete = all.filter((t) => !isSeedTemplate(t))
+  if (obsolete.length > 0) {
+    await prisma.recurringComplianceTemplate.updateMany({
+      where: { id: { in: obsolete.map((t) => t.id) } },
+      data: { isActive: false },
     })
   }
 }
 
+type ClientServices = {
+  clientId: string
+  clientName: string
+  assignedEmployeeId: string | null
+  serviceTypes: string[]
+}
+
+async function createEventWithTask(input: {
+  clientId: string
+  clientName: string
+  assignedEmployeeId: string | null
+  type: string
+  title: string
+  description: string
+  dueDate: Date
+  filingPeriod: string
+  reminderDays: number
+  isStatutory: boolean
+  serviceType: string
+}): Promise<void> {
+  const event = await prisma.complianceEvent.create({
+    data: {
+      clientId: input.clientId,
+      type: input.type as any,
+      title: input.title,
+      description: input.description,
+      dueDate: input.dueDate,
+      status: "PENDING",
+      workflowStatus: "NOT_STARTED",
+      isStatutory: input.isStatutory,
+      reminderDays: input.reminderDays,
+      filingPeriod: input.filingPeriod,
+    },
+  })
+
+  await prisma.task.create({
+    data: {
+      clientId: input.clientId,
+      title: `${input.title} — ${input.clientName}`,
+      description: `Auto-generated compliance task for ${input.filingPeriod}`,
+      status: "NOT_STARTED",
+      priority: "MEDIUM",
+      dueDate: input.dueDate,
+      serviceType: input.serviceType as any,
+      assignedEmployeeId: input.assignedEmployeeId,
+      complianceEvents: { connect: { id: event.id } },
+    },
+  })
+
+  if (input.assignedEmployeeId) {
+    const employee = await prisma.employee.findUnique({
+      where: { id: input.assignedEmployeeId },
+      select: { userId: true },
+    })
+    if (employee?.userId) {
+      await prisma.notification.create({
+        data: {
+          userId: employee.userId,
+          title: "New Compliance Task",
+          message: `${input.title} for ${input.clientName} — due ${format(input.dueDate, "dd MMM yyyy")}`,
+          type: "COMPLIANCE_DUE",
+          entityType: "COMPLIANCE",
+          entityId: event.id,
+        },
+      })
+    }
+  }
+}
+
 export async function generateRecurringComplianceTasks(): Promise<{ created: number; errors: string[] }> {
+  const now = new Date()
+  let created = 0
+  const errors: string[] = []
+
+  const clientServices = await prisma.clientService.findMany({
+    where: { isActive: true, client: { status: "ACTIVE" } },
+    include: { client: { select: { id: true, name: true, assignedEmployeeId: true } } },
+  })
+
+  // Group services per client — the full list matters (an AUDIT engagement
+  // shifts the client's ITR due date to Oct 31).
+  const byClient = new Map<string, ClientServices>()
+  for (const cs of clientServices) {
+    const entry = byClient.get(cs.clientId) ?? {
+      clientId: cs.clientId,
+      clientName: cs.client.name,
+      assignedEmployeeId: cs.client.assignedEmployeeId,
+      serviceTypes: [],
+    }
+    entry.serviceTypes.push(cs.serviceType)
+    byClient.set(cs.clientId, entry)
+  }
+
+  // ── A. Statutory filings from the shared calendar ─────────────────────────
+  const windowEnd = addDays(now, STATUTORY_LOOKAHEAD_DAYS)
+
+  for (const client of byClient.values()) {
+    const specs = statutoryEventsInWindow(client.serviceTypes, now, windowEnd)
+    if (specs.length === 0) continue
+
+    const existing = await prisma.complianceEvent.findMany({
+      where: { clientId: client.clientId, title: { in: specs.map((s) => s.title) } },
+      select: { title: true },
+    })
+    const existingTitles = new Set(existing.map((e) => e.title))
+
+    for (const spec of specs) {
+      if (existingTitles.has(spec.title)) continue
+      try {
+        await createEventWithTask({
+          clientId: client.clientId,
+          clientName: client.clientName,
+          assignedEmployeeId: client.assignedEmployeeId,
+          type: spec.type,
+          title: spec.title,
+          description: spec.description,
+          dueDate: spec.dueDate,
+          filingPeriod: spec.filingPeriod,
+          reminderDays: spec.reminderDays,
+          isStatutory: true,
+          serviceType: spec.serviceType,
+        })
+        created++
+      } catch (err) {
+        errors.push(`${client.clientName}/${spec.title}: ${err instanceof Error ? err.message : "Unknown error"}`)
+      }
+    }
+  }
+
+  // ── B. Internal ops routines from templates ──────────────────────────────
   const templates = await prisma.recurringComplianceTemplate.findMany({
     where: { isActive: true },
   })
 
-  const clientsWithServices = await prisma.clientService.findMany({
-    where: { isActive: true },
-    include: { client: { select: { id: true, name: true, assignedEmployeeId: true, status: true } } },
-  })
-
-  const now = new Date()
   const targetMonth = addMonths(startOfMonth(now), 1)
-  const filingPeriod = format(targetMonth, "MMM yyyy")
-
-  let created = 0
-  const errors: string[] = []
 
   for (const tmpl of templates) {
-    const relevantClients = clientsWithServices.filter(
-      (cs) => cs.serviceType === tmpl.serviceType && cs.client.status === "ACTIVE"
-    )
+    const seed = seedFor(tmpl)
+    const dueDate = computeOpsDueDate(tmpl.frequency, tmpl.dueDayOfMonth, targetMonth, seed?.dueMonth)
+    if (!dueDate) continue
 
-    for (const cs of relevantClients) {
-      const dueDate = computeDueDate(tmpl.frequency, tmpl.dueDayOfMonth, targetMonth)
-      if (!dueDate) continue
+    // Label with the data period, not the due month: collection tasks early
+    // in month M gather month M-1's records.
+    const periodMonth = addMonths(targetMonth, seed?.periodOffset ?? 0)
+    const filingPeriod = format(periodMonth, "MMM yyyy")
+    const eventTitle = `${tmpl.title} — ${filingPeriod}`
 
-      const existingEvent = await prisma.complianceEvent.findFirst({
-        where: {
-          clientId: cs.clientId,
-          title: tmpl.title,
-          filingPeriod,
-        },
+    const relevant = [...byClient.values()].filter((c) => c.serviceTypes.includes(tmpl.serviceType))
+
+    for (const client of relevant) {
+      const existing = await prisma.complianceEvent.findFirst({
+        where: { clientId: client.clientId, title: eventTitle },
+        select: { id: true },
       })
-
-      if (existingEvent) continue
+      if (existing) continue
 
       try {
-        const event = await prisma.complianceEvent.create({
-          data: {
-            clientId: cs.clientId,
-            type: tmpl.complianceType,
-            title: tmpl.title,
-            description: tmpl.description || `Auto-generated from ${tmpl.serviceType} service`,
-            dueDate,
-            status: "PENDING",
-            workflowStatus: "NOT_STARTED",
-            isStatutory: tmpl.complianceType !== "CUSTOM",
-            reminderDays: tmpl.reminderDays,
-            filingPeriod,
-          },
+        await createEventWithTask({
+          clientId: client.clientId,
+          clientName: client.clientName,
+          assignedEmployeeId: client.assignedEmployeeId,
+          type: tmpl.complianceType,
+          title: eventTitle,
+          description: tmpl.description || `Internal routine for the ${tmpl.serviceType} engagement`,
+          dueDate,
+          filingPeriod,
+          reminderDays: tmpl.reminderDays,
+          isStatutory: false,
+          serviceType: tmpl.serviceType,
         })
-
-        await prisma.task.create({
-          data: {
-            clientId: cs.clientId,
-            title: `${tmpl.title} — ${cs.client.name}`,
-            description: `Auto-generated compliance task for ${filingPeriod}`,
-            status: "NOT_STARTED",
-            priority: "MEDIUM",
-            dueDate,
-            serviceType: tmpl.serviceType,
-            assignedEmployeeId: cs.client.assignedEmployeeId || null,
-            complianceEvents: { connect: { id: event.id } },
-          },
-        })
-
-        if (cs.client.assignedEmployeeId) {
-          const employee = await prisma.employee.findUnique({
-            where: { id: cs.client.assignedEmployeeId },
-            select: { userId: true },
-          })
-          if (employee?.userId) {
-            await prisma.notification.create({
-              data: {
-                userId: employee.userId,
-                title: "New Compliance Task",
-                message: `${tmpl.title} for ${cs.client.name} — due ${format(dueDate, "dd MMM yyyy")}`,
-                type: "COMPLIANCE_DUE",
-                entityType: "COMPLIANCE",
-                entityId: event.id,
-              },
-            })
-          }
-        }
-
         created++
       } catch (err) {
-        errors.push(`${cs.client.name}/${tmpl.title}: ${err instanceof Error ? err.message : "Unknown error"}`)
+        errors.push(`${client.clientName}/${eventTitle}: ${err instanceof Error ? err.message : "Unknown error"}`)
       }
     }
   }
@@ -144,33 +287,29 @@ export async function generateRecurringComplianceTasks(): Promise<{ created: num
   return { created, errors }
 }
 
-function computeDueDate(
+function computeOpsDueDate(
   frequency: string,
   dueDayOfMonth: number,
-  targetMonth: Date
+  targetMonth: Date,
+  dueMonth?: number
 ): Date | null {
   const year = targetMonth.getFullYear()
   const month = targetMonth.getMonth()
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  const day = Math.min(dueDayOfMonth, lastDay)
 
   switch (frequency) {
-    case "MONTHLY": {
-      const lastDay = new Date(year, month + 1, 0).getDate()
-      const day = Math.min(dueDayOfMonth, lastDay)
+    case "MONTHLY":
       return new Date(year, month, day)
-    }
-    case "QUARTERLY": {
-      if (month % 3 !== 0) return null
-      const lastDay = new Date(year, month + 1, 0).getDate()
-      const day = Math.min(dueDayOfMonth, lastDay)
-      return new Date(year, month, day)
-    }
     case "ANNUAL": {
-      if (month !== 2) return null // March (FY end month)
-      const lastDay = new Date(year, month + 1, 0).getDate()
-      const day = Math.min(dueDayOfMonth, lastDay)
+      // Fire only in the template's anchor month (audit prep → Sep, tax
+      // planning → Mar); templates without one fall back to March (FY end).
+      const anchorMonth = (dueMonth ?? 3) - 1
+      if (month !== anchorMonth) return null
       return new Date(year, month, day)
     }
     default:
+      // QUARTERLY ops templates no longer exist — advance tax is statutory now.
       return null
   }
 }

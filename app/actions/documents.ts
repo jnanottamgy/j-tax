@@ -18,7 +18,6 @@ import { recordTimelineEvent } from "@/lib/timeline/events"
 import {
   assertDocumentBucketExists,
   createSignedUploadUrl,
-  deleteFile,
   fileExists,
   getSignedUrl,
   moveFile,
@@ -781,17 +780,12 @@ export async function deleteDocument(documentId: string): Promise<DocumentAction
       return { error: "Document not found" }
     }
 
-    // C-03 fix: delete the actual file from Supabase Storage before removing the DB record
-    if (document.storagePath) {
-      const deleteResult = await deleteFile(document.storagePath)
-      if (deleteResult.error) {
-        // Log but don't block â€” the DB record should still be removed
-        console.error("Storage delete failed:", deleteResult.error)
-      }
-    }
-
-    await prisma.document.delete({
+    // Soft delete → recycle bin. The Storage file is kept so a restore brings
+    // the document back intact; it is removed only on permanent purge
+    // (app/actions/trash.ts).
+    await prisma.document.update({
       where: { id: documentId },
+      data: { deletedAt: new Date() },
     })
 
     revalidatePath("/documents")

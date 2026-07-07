@@ -8,8 +8,60 @@ datasource db {
 
 // ─── Firm Settings ────────────────────────────────────────────────────────────
 
+/// A tenant — one CA firm's isolated workspace. Every business row carries
+/// firmId; lib/prisma.ts enforces isolation automatically from the session.
+model Firm {
+  id          String    @id @default(cuid())
+  name        String
+  /// TRIAL | STARTER | GROWTH | PROFESSIONAL — billing enforcement comes later
+  plan        String    @default("TRIAL")
+  /// ACTIVE | SUSPENDED
+  status      String    @default("ACTIVE")
+  trialEndsAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  settings    FirmSettings?
+  users User[]
+  employees Employee[]
+  clients Client[]
+  clientGroups ClientGroup[]
+  tasks Task[]
+  taskAutomations TaskAutomation[]
+  complianceSchedules ComplianceSchedule[]
+  complianceEvents ComplianceEvent[]
+  documents Document[]
+  documentRequests DocumentRequest[]
+  messages Message[]
+  messageTemplates MessageTemplate[]
+  invoices Invoice[]
+  reminders Reminder[]
+  activityLogs ActivityLog[]
+  auditLogs AuditLog[]
+  employeeSessions EmployeeSession[]
+  employeeActivitys EmployeeActivity[]
+  attendanceRecords AttendanceRecord[]
+  leads Lead[]
+  quotations Quotation[]
+  quotationFollowUps QuotationFollowUp[]
+  clientTimelineEvents ClientTimelineEvent[]
+  statutoryRegistrations StatutoryRegistration[]
+  dscRecords DscRecord[]
+  udinRecords UdinRecord[]
+  jobTemplates JobTemplate[]
+  timeEntrys TimeEntry[]
+  gstReconRuns GstReconRun[]
+  itrComputations ItrComputation[]
+  taxNotices TaxNotice[]
+  financialStatements FinancialStatement[]
+
+  @@map("firms")
+}
+
 model FirmSettings {
-  id           String   @id @default("singleton")
+  firmId String  @unique
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
   firmName     String   @default("Your Tax Firm")
   fromEmail    String   @default("")
   replyToEmail String?
@@ -29,6 +81,13 @@ model FirmSettings {
   // firm display name + firm reply-to (default true; PARTNER can opt out)
   platformFallbackEnabled Boolean @default(true)
 
+  // ── Payment collection details (shown to clients in the portal Pay dialog) ─
+  bankAccountName   String?
+  bankAccountNumber String?
+  bankIfsc          String?
+  bankName          String?
+  upiId             String?
+
   updatedAt    DateTime @updatedAt
   updatedBy    String?
 
@@ -45,6 +104,8 @@ enum Role {
 }
 
 model User {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id              String   @id @default(cuid())
   name            String
   email           String   @unique
@@ -55,14 +116,17 @@ model User {
 
   employee        Employee?
   notifications   Notification[]
+  @@index([firmId])
 }
 
 model Employee {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id         String   @id @default(cuid())
   userId     String?  @unique
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   name       String
-  email      String   @unique
+  email      String  
   department String?
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
@@ -73,10 +137,16 @@ model Employee {
   sessions           EmployeeSession[]
   activities         EmployeeActivity[]
   attendanceRecords  AttendanceRecord[]
+  teamMemberships    ClientTeamMember[]
+  timeEntries        TimeEntry[]
+  reviewTasks        Task[]             @relation("TaskReviewer")
+  taxNotices         TaxNotice[]
 
   @@index([name])
   @@index([department])
   @@map("employees")
+  @@index([firmId])
+  @@unique([firmId, email])
 }
 
 // ─── Client master entity ────────────────────────────────────────────────────
@@ -114,11 +184,13 @@ enum ServiceFrequency {
 }
 
 model Client {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id                   String         @id @default(cuid())
-  clientCode           String         @unique
+  clientCode           String        
   name                 String
-  gstin                String? @unique
-  pan                  String? @unique
+  gstin                String?
+  pan                  String?
   email                String?
   phone                String?
   whatsapp             String?
@@ -130,8 +202,17 @@ model Client {
   assignedEmployeeName String?
   assignedEmployee     Employee?      @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
   phoneNumber          String?
+  /// Constitution: PROPRIETORSHIP, PARTNERSHIP, LLP, PVT_LTD, PUBLIC_LTD, HUF, TRUST, AOP, INDIVIDUAL
+  entityType           String?
+  /// GST place-of-supply state (falls back to the state encoded in gstin)
+  stateCode            String?
+  groupId              String?
+  group                ClientGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
+  deletedAt            DateTime?
 
   services             ClientService[]
+  documentChecklist    ClientDocumentChecklistItem[]
   tasks                Task[]
   complianceSchedules  ComplianceSchedule[]
   documents            Document[]
@@ -140,6 +221,18 @@ model Client {
   messages             Message[]
   complianceEvents     ComplianceEvent[]
   timelineEvents       ClientTimelineEvent[]
+  contacts             ClientContact[]
+  teamMembers          ClientTeamMember[]
+  credentials          ClientCredential[]
+  registrations        StatutoryRegistration[]
+  dscRecords           DscRecord[]
+  udinRecords          UdinRecord[]
+  timeEntries          TimeEntry[]
+  documentRequests     DocumentRequest[]
+  gstReconRuns         GstReconRun[]
+  itrComputations      ItrComputation[]
+  taxNotices           TaxNotice[]
+  financialStatements  FinancialStatement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -150,7 +243,13 @@ model Client {
   @@index([assignedEmployeeId])
   @@index([status, priority])
   @@index([assignedEmployeeId, status])
+  @@index([groupId])
+  @@index([deletedAt])
   @@map("clients")
+  @@index([firmId])
+  @@unique([firmId, clientCode])
+  @@unique([firmId, gstin])
+  @@unique([firmId, pan])
 }
 
 model ClientService {
@@ -158,6 +257,9 @@ model ClientService {
   clientId    String
   client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   serviceType ServiceType
+  /// Free-text name when serviceType is OTHER (e.g. "Trademark filing").
+  /// Null for the standard service types.
+  customName  String?
   frequency   ServiceFrequency
   isActive    Boolean          @default(true)
   nextDueDate DateTime?
@@ -166,6 +268,23 @@ model ClientService {
 
   @@unique([clientId, serviceType])
   @@map("client_services")
+}
+
+/// A document the client needs to provide (generated from their service mix at
+/// onboarding, editable afterwards). `collected` tracks whether the firm has
+/// received it.
+model ClientDocumentChecklistItem {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  label       String
+  collected   Boolean   @default(false)
+  collectedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId])
+  @@map("client_document_checklist_items")
 }
 
 // ─── Connected modules (placeholders ready) ────────────────────────────────
@@ -187,6 +306,8 @@ enum TaskPriority {
 }
 
 model Task {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id                String           @id @default(cuid())
   clientId          String
   client            Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -203,6 +324,11 @@ model Task {
   isOverdue         Boolean          @default(false)
   escalated         Boolean          @default(false)
   escalationLevel   Int              @default(0)
+  /// Reviewer sign-off (preparer → reviewer gate)
+  reviewerEmployeeId String?
+  reviewer          Employee?        @relation("TaskReviewer", fields: [reviewerEmployeeId], references: [id], onDelete: SetNull)
+  /// Time budget in minutes (budget-vs-actual against timeEntries)
+  estimatedMinutes  Int?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -210,6 +336,12 @@ model Task {
   attachments       TaskAttachment[]
   automations       TaskAutomation[]
   complianceEvents  ComplianceEvent[]
+  checklistItems    TaskChecklistItem[]
+  timeEntries       TimeEntry[]
+  /// Dependencies where THIS task is blocked (must wait for blockers)
+  blockedBy         TaskDependency[]  @relation("TaskBlockedBy")
+  /// Dependencies where THIS task is the blocker (others wait on it)
+  blocking          TaskDependency[]  @relation("TaskBlocks")
 
   @@index([clientId])
   @@index([status])
@@ -222,6 +354,155 @@ model Task {
   @@index([dueDate, status])
   @@index([title])
   @@map("tasks")
+  @@index([firmId])
+}
+
+/// Schedule III financial statements generated from an imported trial
+/// balance. Ledger mappings are stored so a sheet can be reopened and
+/// re-mapped; statements are rebuilt server-side from ledgers on save.
+model FinancialStatement {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// e.g. "2025-26"
+  financialYear String
+  /// MappedLedger[] (name, group, debit, credit, bucket, matched)
+  ledgers       Json
+  /// Statements JSON (pl, bs, checks) — rebuilt from ledgers on every save
+  statements    Json
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clientId, financialYear])
+  @@map("financial_statements")
+  @@index([firmId])
+}
+
+/// Tax notice / litigation register — one row per notice received.
+/// Status values: OPEN, REPLY_DRAFTED, REPLIED, HEARING, CLOSED_FAVOURABLE,
+/// CLOSED_UNFAVOURABLE, CLOSED_PARTIAL.
+model TaxNotice {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id                 String    @id @default(cuid())
+  clientId           String
+  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// e.g. "GST DRC-01", "IT 143(2)", "IT 148", "TDS 200A"
+  noticeType         String
+  /// Statute section quoted on the notice
+  section            String?
+  /// Issuing authority, e.g. "ITO Ward 4(2), Pune", "State GST, Mumbai"
+  authority          String?
+  /// Reference / DIN number on the notice
+  referenceNo        String?
+  noticeDate         DateTime?
+  receivedDate       DateTime?
+  replyDueDate       DateTime?
+  hearingDate        DateTime?
+  status             String    @default("OPEN")
+  /// Demand raised (₹), if any
+  demandAmount       Decimal?  @db.Decimal(14, 2)
+  description        String?
+  /// Running notes: reply filed, submissions, outcomes
+  notes              String?
+  assignedEmployeeId String?
+  assignedEmployee   Employee? @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  createdBy          String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@index([replyDueDate])
+  @@index([hearingDate])
+  @@map("tax_notices")
+  @@index([firmId])
+}
+
+/// A saved ITR computation (both regimes) for one client + financial year.
+/// Inputs are stored so the sheet can be reopened/edited; results are always
+/// recomputed server-side from inputs on save.
+model ItrComputation {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// e.g. "2025-26"
+  financialYear String
+  /// OLD | NEW — the regime the firm decided to file under (null = undecided)
+  regimeChosen  String?
+  inputs        Json
+  results       Json
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clientId, financialYear])
+  @@map("itr_computations")
+  @@index([firmId])
+}
+
+/// A saved GSTR-2B ↔ purchase-register reconciliation run for one client+period.
+model GstReconRun {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Return period as MMYYYY (portal convention), e.g. "062026"
+  period    String
+  /// GSTIN found inside the uploaded 2B file (cross-checked vs client.gstin)
+  portalGstin String?
+  /// ReconSummary JSON (counts, unclaimedItc, itcAtRisk, vendor rollup)
+  summary   Json
+  /// Parser diagnostics shown with the results
+  diagnostics Json?
+  createdBy String
+  createdAt DateTime @default(now())
+
+  entries   GstReconEntry[]
+
+  @@index([clientId, period])
+  @@index([createdAt])
+  @@map("gst_recon_runs")
+  @@index([firmId])
+}
+
+model GstReconEntry {
+  id            String      @id @default(cuid())
+  runId         String
+  run           GstReconRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// MATCHED | MISMATCH | MISSING_IN_BOOKS | MISSING_IN_2B
+  bucket        String
+  supplierGstin String
+  supplierName  String?
+  /// ReconEntry JSON (books/portal sides, deltas, matchTier)
+  data          Json
+
+  @@index([runId, bucket])
+  @@index([supplierGstin])
+  @@map("gst_recon_entries")
+}
+
+/// Task sequencing: `task` cannot progress until `blocker` reaches FILED_DONE.
+/// Cycle-checked at write time (app/actions/task-dependencies.ts).
+model TaskDependency {
+  id        String   @id @default(cuid())
+  /// The dependent (blocked) task
+  taskId    String
+  task      Task     @relation("TaskBlockedBy", fields: [taskId], references: [id], onDelete: Cascade)
+  /// The task that must complete first
+  blockerId String
+  blocker   Task     @relation("TaskBlocks", fields: [blockerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, blockerId])
+  @@index([blockerId])
+  @@map("task_dependencies")
 }
 
 enum ComplianceStatus {
@@ -232,6 +513,8 @@ enum ComplianceStatus {
 }
 
 model ComplianceSchedule {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id           String           @id @default(cuid())
   clientId     String
   client       Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -249,6 +532,7 @@ model ComplianceSchedule {
   @@index([clientId, dueDate])
   @@index([dueDate, status])
   @@map("compliance_schedules")
+  @@index([firmId])
 }
 
 // ─── Document Vault Models ─────────────────────────────────────────────────
@@ -267,6 +551,8 @@ enum DocumentCategory {
 }
 
 model Document {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id          String            @id @default(cuid())
   clientId    String
   client      Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -283,12 +569,15 @@ model Document {
   version     Int               @default(1)
   expiryDate  DateTime?
   renewalDate DateTime?
+  /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
+  deletedAt   DateTime?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
   versions    DocumentVersion[]
   tags        DocumentTag[]
   activities  DocumentActivity[]
+  requestItems DocumentRequestItem[]
 
   @@index([clientId])
   @@index([category])
@@ -298,7 +587,9 @@ model Document {
   @@index([uploadedBy, createdAt])
   @@index([title])
   @@index([expiryDate])
+  @@index([deletedAt])
   @@map("documents")
+  @@index([firmId])
 }
 
 model DocumentVersion {
@@ -379,6 +670,8 @@ enum TemplateType {
 }
 
 model MessageTemplate {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id          String        @id @default(cuid())
   name        String
   type        TemplateType  @default(CUSTOM)
@@ -394,9 +687,12 @@ model MessageTemplate {
   @@index([type])
   @@index([isActive])
   @@map("message_templates")
+  @@index([firmId])
 }
 
 model Message {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id          String        @id @default(cuid())
   clientId    String
   client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -424,6 +720,7 @@ model Message {
   @@index([sentAt])
   @@index([templateId])
   @@map("messages")
+  @@index([firmId])
 }
 
 model MessageLog {
@@ -451,16 +748,39 @@ enum InvoiceStatus {
 }
 
 model Invoice {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id                String        @id @default(cuid())
-  invoiceNumber     String        @unique
+  invoiceNumber     String       
   clientId          String
   client            Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Total payable = professionalFee + taxAmount (kept as the canonical amount
+  /// for all outstanding/collection math)
   amount            Decimal       @db.Decimal(12, 2)
   paidAmount        Decimal       @default(0) @db.Decimal(12, 2)
   outstandingAmount Decimal       @default(0) @db.Decimal(12, 2)
   status            InvoiceStatus @default(DRAFT)
   dueDate           DateTime
   issueDate         DateTime      @default(now())
+  // ── Service-based billing (tax/accounting practice, not e-commerce) ────────
+  serviceDescription String?
+  serviceType        ServiceType?
+  professionalFee    Decimal?     @db.Decimal(12, 2)
+  taxRate            Decimal?     @db.Decimal(5, 2)
+  taxAmount          Decimal?     @db.Decimal(12, 2)
+  remarks            String?
+  // ── GST tax-invoice fields ──────────────────────────────────────────────────
+  /// Recipient GSTIN (snapshotted from the client at issue time)
+  clientGstin        String?
+  /// Place-of-supply state name; drives the CGST/SGST vs IGST split
+  placeOfSupply      String?
+  /// SAC for professional services (default 9982 — accounting/auditing/tax)
+  hsnSac             String?
+  cgstAmount         Decimal?     @db.Decimal(12, 2)
+  sgstAmount         Decimal?     @db.Decimal(12, 2)
+  igstAmount         Decimal?     @db.Decimal(12, 2)
+  /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
+  deletedAt          DateTime?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -471,7 +791,10 @@ model Invoice {
   @@index([clientId])
   @@index([status])
   @@index([dueDate])
+  @@index([deletedAt])
   @@map("invoices")
+  @@index([firmId])
+  @@unique([firmId, invoiceNumber])
 }
 
 model PaymentReceipt {
@@ -502,6 +825,8 @@ model FollowUp {
 }
 
 model ActivityLog {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id          String   @id @default(cuid())
   entityType  String   // CLIENT, TASK, INVOICE, DOCUMENT, EMPLOYEE, COMPLIANCE
   entityId    String   // ID of the entity
@@ -516,6 +841,7 @@ model ActivityLog {
   @@index([userId])
   @@index([timestamp])
   @@map("activity_logs")
+  @@index([firmId])
 }
 
 model InvoiceReminder {
@@ -581,6 +907,8 @@ model Notification {
 }
 
 model Reminder {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id        String   @id @default(cuid())
   clientId  String
   client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -591,6 +919,7 @@ model Reminder {
 
   @@index([clientId])
   @@map("reminders")
+  @@index([firmId])
 }
 
 // ─── Work Tracker Models ─────────────────────────────────────────────────────
@@ -638,6 +967,8 @@ enum AutomationFrequency {
 }
 
 model TaskAutomation {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id          String              @id @default(cuid())
   taskId      String?
   task        Task?               @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -653,6 +984,7 @@ model TaskAutomation {
   @@index([taskId])
   @@index([nextRunDate])
   @@map("task_automations")
+  @@index([firmId])
 }
 
 // ─── Compliance Calendar Models ─────────────────────────────────────────────
@@ -686,6 +1018,8 @@ enum ComplianceWorkflowStatus {
 }
 
 model ComplianceEvent {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id             String                   @id @default(cuid())
   clientId       String?
   client         Client?                  @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -714,6 +1048,7 @@ model ComplianceEvent {
   @@index([type, status])
   @@index([clientId, status])
   @@map("compliance_events")
+  @@index([firmId])
 }
 
 // ─── Security & Audit ──────────────────────────────────────────────────────────
@@ -745,6 +1080,8 @@ enum AuditEventType {
 }
 
 model AuditLog {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id          String   @id @default(cuid())
   eventType   AuditEventType
   userId      String?
@@ -767,6 +1104,7 @@ model AuditLog {
   @@index([userId, timestamp])
   @@index([eventType, timestamp])
   @@map("audit_logs")
+  @@index([firmId])
 }
 
 // ─── Workforce Intelligence ───────────────────────────────────────────────────
@@ -804,6 +1142,8 @@ enum AttendanceStatus {
 }
 
 model EmployeeSession {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id              String    @id @default(cuid())
   employeeId      String
   employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -822,9 +1162,12 @@ model EmployeeSession {
   @@index([isActive])
   @@index([employeeId, loginAt])
   @@map("employee_sessions")
+  @@index([firmId])
 }
 
 model EmployeeActivity {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id           String               @id @default(cuid())
   employeeId   String
   employee     Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -844,9 +1187,12 @@ model EmployeeActivity {
   @@index([employeeId, performedAt])
   @@index([entityType, entityId])
   @@map("employee_activities")
+  @@index([firmId])
 }
 
 model AttendanceRecord {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id           String           @id @default(cuid())
   employeeId   String
   employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -865,6 +1211,7 @@ model AttendanceRecord {
   @@index([status])
   @@index([employeeId, date])
   @@map("attendance_records")
+  @@index([firmId])
 }
 
 // ─── Quotation & Proposal System ─────────────────────────────────────────────
@@ -902,6 +1249,8 @@ enum QuotationStatus {
 }
 
 model Lead {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id              String     @id @default(cuid())
   name            String
   phone           String?
@@ -927,11 +1276,14 @@ model Lead {
   @@index([createdAt])
   @@index([assignedTo])
   @@map("leads")
+  @@index([firmId])
 }
 
 model Quotation {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id              String          @id @default(cuid())
-  quotationNumber String          @unique
+  quotationNumber String         
   leadId          String?
   lead            Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
   clientName      String
@@ -965,6 +1317,8 @@ model Quotation {
   @@index([token])
   @@index([createdAt])
   @@map("quotations")
+  @@index([firmId])
+  @@unique([firmId, quotationNumber])
 }
 
 model QuotationItem {
@@ -1002,6 +1356,8 @@ model QuotationEmailLog {
 }
 
 model QuotationFollowUp {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id           String    @id @default(cuid())
   quotationId  String
   quotation    Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
@@ -1014,6 +1370,7 @@ model QuotationFollowUp {
   @@index([scheduledAt])
   @@index([status])
   @@map("quotation_follow_ups")
+  @@index([firmId])
 }
 
 // ─── Client Lifecycle Timeline ──────────────────────────────────────────────
@@ -1041,6 +1398,8 @@ enum TimelineEventType {
 }
 
 model ClientTimelineEvent {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
   id          String            @id @default(cuid())
   clientId    String?
   client      Client?           @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -1059,6 +1418,7 @@ model ClientTimelineEvent {
   @@index([createdAt])
   @@index([clientId, createdAt])
   @@map("client_timeline_events")
+  @@index([firmId])
 }
 
 // ─── Recurring Compliance Engine ────────────────────────────────────────────
@@ -1080,4 +1440,298 @@ model RecurringComplianceTemplate {
   @@index([serviceType])
   @@index([isActive])
   @@map("recurring_compliance_templates")
+}
+
+// ─── Client master data: contacts, groups, engagement teams ─────────────────
+
+model ClientContact {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name      String
+  /// Director, CFO, Authorized Signatory, Accountant, Promoter…
+  role      String?
+  email     String?
+  phone     String?
+  isPrimary Boolean  @default(false)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@map("client_contacts")
+}
+
+model ClientGroup {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  name      String  
+  notes     String?
+  clients   Client[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("client_groups")
+  @@index([firmId])
+  @@unique([firmId, name])
+}
+
+enum TeamRole {
+  ENGAGEMENT_PARTNER
+  REVIEW_MANAGER
+  PREPARER
+}
+
+model ClientTeamMember {
+  id         String   @id @default(cuid())
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  role       TeamRole @default(PREPARER)
+  createdAt  DateTime @default(now())
+
+  @@unique([clientId, employeeId, role])
+  @@index([clientId])
+  @@index([employeeId])
+  @@map("client_team_members")
+}
+
+// ─── Credential vault (government-portal logins) ────────────────────────────
+
+model ClientCredential {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// GST, INCOME_TAX, TRACES, MCA, EPFO, ESIC, ICEGATE, PT, OTHER
+  portal      String
+  username    String
+  /// AES-256-GCM sealed: base64(iv).base64(tag).base64(ciphertext)
+  passwordEnc String
+  loginUrl    String?
+  notes       String?
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  accessLogs  CredentialAccessLog[]
+
+  @@unique([clientId, portal, username])
+  @@index([clientId])
+  @@map("client_credentials")
+}
+
+model CredentialAccessLog {
+  id           String           @id @default(cuid())
+  credentialId String
+  credential   ClientCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  userId       String
+  /// VIEWED, CREATED, UPDATED, DELETED
+  action       String
+  createdAt    DateTime         @default(now())
+
+  @@index([credentialId])
+  @@index([userId])
+  @@map("credential_access_logs")
+}
+
+// ─── Statutory registration / DSC / UDIN registers ─────────────────────────
+
+model StatutoryRegistration {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id                 String    @id @default(cuid())
+  clientId           String
+  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// GST, PT, IEC, MSME_UDYAM, FSSAI, SHOPS_ESTAB, PF, ESIC, DIN, LLPIN, CIN, TAN, OTHER
+  registrationType   String
+  registrationNumber String
+  jurisdiction       String?
+  issueDate          DateTime?
+  /// Renewal reminders key off this
+  expiryDate         DateTime?
+  reminderDays       Int       @default(30)
+  /// ACTIVE, EXPIRED, SURRENDERED, CANCELLED
+  status             String    @default("ACTIVE")
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([expiryDate])
+  @@map("statutory_registrations")
+  @@index([firmId])
+}
+
+model DscRecord {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  clientId     String
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Director/partner the DSC belongs to
+  holderName   String
+  dscClass     String    @default("CLASS_3")
+  serialNumber String?
+  issuedBy     String?
+  issueDate    DateTime?
+  expiryDate   DateTime
+  /// Who physically holds the USB token
+  custody      String?
+  /// ACTIVE, EXPIRED, REVOKED
+  status       String    @default("ACTIVE")
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([expiryDate])
+  @@map("dsc_records")
+  @@index([firmId])
+}
+
+model UdinRecord {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  clientId     String?
+  client       Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  udin         String   
+  /// Tax Audit Report, Certificate, Statutory Audit, GST Audit…
+  documentType String
+  documentDate DateTime
+  /// Signing partner / membership number
+  generatedBy  String?
+  remarks      String?
+  createdAt    DateTime  @default(now())
+
+  @@index([clientId])
+  @@map("udin_records")
+  @@index([firmId])
+  @@unique([firmId, udin])
+}
+
+// ─── Job templates & task checklists ────────────────────────────────────────
+
+model JobTemplate {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id          String            @id @default(cuid())
+  name        String           
+  serviceType ServiceType
+  description String?
+  isActive    Boolean           @default(true)
+  items       JobTemplateItem[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([serviceType])
+  @@map("job_templates")
+  @@index([firmId])
+  @@unique([firmId, name])
+}
+
+model JobTemplateItem {
+  id          String      @id @default(cuid())
+  templateId  String
+  template    JobTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  sortOrder   Int         @default(0)
+  /// Days BEFORE the job due date this step should be completed
+  offsetDays  Int         @default(0)
+
+  @@index([templateId])
+  @@map("job_template_items")
+}
+
+model TaskChecklistItem {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title     String
+  done      Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+  @@map("task_checklist_items")
+}
+
+// ─── Time tracking ───────────────────────────────────────────────────────────
+
+model TimeEntry {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  taskId      String?
+  task        Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  description String?
+  startedAt   DateTime
+  /// Null while the live timer is running
+  endedAt     DateTime?
+  /// Derived duration, stored for reporting
+  minutes     Int       @default(0)
+  billable    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([clientId])
+  @@index([taskId])
+  @@index([startedAt])
+  @@index([employeeId, startedAt])
+  @@map("time_entries")
+  @@index([firmId])
+}
+
+// ─── PBC document request lists ──────────────────────────────────────────────
+
+model DocumentRequest {
+  firmId String  @default("")
+  firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id             String                @id @default(cuid())
+  clientId       String
+  client         Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title          String
+  /// OPEN, COMPLETED, CANCELLED
+  status         String                @default("OPEN")
+  dueDate        DateTime?
+  notes          String?
+  createdBy      String
+  /// Chase-cadence bookkeeping (reminders stop when all items resolve)
+  lastRemindedAt DateTime?
+  items          DocumentRequestItem[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@map("document_requests")
+  @@index([firmId])
+}
+
+model DocumentRequestItem {
+  id              String          @id @default(cuid())
+  requestId       String
+  request         DocumentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  title           String
+  /// PENDING, UPLOADED, ACCEPTED, REJECTED
+  status          String          @default("PENDING")
+  documentId      String?
+  document        Document?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  rejectionReason String?
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([requestId])
+  @@index([status])
+  @@map("document_request_items")
 }

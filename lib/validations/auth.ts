@@ -28,6 +28,10 @@ export const signupSchema = z.object({
     .string()
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name is too long"),
+  firmName: z
+    .string()
+    .min(2, "Firm name must be at least 2 characters")
+    .max(120, "Firm name is too long"),
   confirmPassword: z.string().min(1, "Please confirm your password"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords do not match",

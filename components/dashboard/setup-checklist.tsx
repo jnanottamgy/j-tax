@@ -61,9 +61,28 @@ const STEPS = [
   },
 ]
 
+const DISMISS_KEY = "jtacs-setup-checklist-dismissed"
+
 export function SetupChecklist({ data }: { data: SetupChecklistData }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [dismissed, setDismissed] = useState(false)
+  // Persist dismissal so the checklist doesn't reappear on every reload.
+  const [dismissed, setDismissed] = useState(() => {
+    if (typeof window === "undefined") return false
+    try {
+      return window.localStorage.getItem(DISMISS_KEY) === "1"
+    } catch {
+      return false
+    }
+  })
+
+  const dismiss = () => {
+    setDismissed(true)
+    try {
+      window.localStorage.setItem(DISMISS_KEY, "1")
+    } catch {
+      // localStorage unavailable (private mode) — session-only dismissal
+    }
+  }
 
   const completedCount = STEPS.filter((s) => data[s.key]).length
   const totalCount = STEPS.length
@@ -105,7 +124,7 @@ export function SetupChecklist({ data }: { data: SetupChecklistData }) {
               variant="ghost"
               size="icon"
               className="size-7"
-              onClick={() => setDismissed(true)}
+              onClick={dismiss}
               aria-label="Dismiss setup checklist"
             >
               <X className="size-4" />

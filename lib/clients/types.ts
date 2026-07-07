@@ -20,7 +20,12 @@ export type ClientListItem = {
   assignedEmployee: string
   status: ClientStatus
   priority: ClientPriority
-  services: { type: ServiceType; frequency: ServiceFrequency }[]
+  services: {
+    type: ServiceType
+    frequency: ServiceFrequency
+    /** Custom name when type is OTHER. */
+    customName?: string | null
+  }[]
   nextDueDate: string | null
   createdAt: string
 }

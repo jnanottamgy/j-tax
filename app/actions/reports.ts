@@ -484,7 +484,9 @@ export async function getClientReport(filters: ReportFilters) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getReportingCenterData(filters: ReportFilters) {
-  await requireAuth()
+  // Guard at the top too — don't rely solely on the four inner report
+  // functions each re-guarding (fragile if one is ever refactored).
+  await requirePartnerOrManager()
   const parsed = reportFiltersSchema.safeParse(filters)
   if (!parsed.success) throw new Error("Invalid filters")
 

@@ -36,7 +36,9 @@ const nextConfig: NextConfig = {
   },
 
   poweredByHeader: false,
-  serverExternalPackages: [],
+  // pdfkit must stay unbundled — bundling breaks its AFM font-file resolution
+  // (ENOENT .../pdfkit/js/data/Helvetica.afm) on every PDF route.
+  serverExternalPackages: ["pdfkit"],
 
   images: {
     remotePatterns: [

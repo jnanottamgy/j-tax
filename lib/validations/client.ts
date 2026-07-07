@@ -1,7 +1,34 @@
 import { z } from "zod"
+import { validateGSTIN, validatePAN, gstinPanMismatch } from "@/lib/india/validators"
 
-const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
-const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
+/**
+ * India-aware statutory checks, attached object-level so error messages are
+ * specific ("check digit doesn't match", "GSTIN belongs to PAN …") instead of
+ * a generic "invalid format". Runs after field transforms (trim + uppercase).
+ */
+function indiaStatutoryChecks(
+  data: { gstin?: string; pan?: string },
+  ctx: z.RefinementCtx
+) {
+  if (data.gstin) {
+    const r = validateGSTIN(data.gstin)
+    if (!r.valid) {
+      ctx.addIssue({ code: "custom", path: ["gstin"], message: r.error })
+      return // skip cross-check when GSTIN itself is broken
+    }
+  }
+  if (data.pan) {
+    const r = validatePAN(data.pan)
+    if (!r.valid) {
+      ctx.addIssue({ code: "custom", path: ["pan"], message: r.error })
+      return
+    }
+  }
+  const mismatch = gstinPanMismatch(data.gstin, data.pan)
+  if (mismatch) {
+    ctx.addIssue({ code: "custom", path: ["pan"], message: mismatch })
+  }
+}
 
 export const serviceAssignmentSchema = z.object({
   serviceType: z.enum([
@@ -20,9 +47,19 @@ export const serviceAssignmentSchema = z.object({
     .optional()
     .transform((v) => v?.trim() || undefined)
     .refine((v) => !v || !Number.isNaN(Date.parse(v)), "Invalid due date"),
-})
+  /** Required name when serviceType is OTHER; ignored for standard types. */
+  customName: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined)
+    .refine((v) => !v || v.length <= 120, "Service name is too long"),
+}).refine(
+  (s) => s.serviceType !== "OTHER" || Boolean(s.customName),
+  { message: "Enter the name of the other service", path: ["customName"] }
+)
 
-export const createClientSchema = z.object({
+/** Pure field schema — statutory checks are attached on the exported schemas. */
+const clientBaseSchema = z.object({
   name: z
     .string()
     .min(2, "Client name must be at least 2 characters")
@@ -30,13 +67,11 @@ export const createClientSchema = z.object({
   gstin: z
     .string()
     .optional()
-    .transform((v) => v?.trim().toUpperCase() || undefined)
-    .refine((v) => !v || gstinRegex.test(v), "Invalid GSTIN format"),
+    .transform((v) => v?.trim().toUpperCase() || undefined),
   pan: z
     .string()
     .optional()
-    .transform((v) => v?.trim().toUpperCase() || undefined)
-    .refine((v) => !v || panRegex.test(v), "Invalid PAN format"),
+    .transform((v) => v?.trim().toUpperCase() || undefined),
   email: z
     .string()
     .optional()
@@ -69,23 +104,31 @@ export const createClientSchema = z.object({
   services: z
     .array(serviceAssignmentSchema)
     .min(1, "Select at least one service"),
+  /** Document-checklist labels already collected at onboarding. */
+  collectedDocuments: z.array(z.string()).optional().default([]),
 })
+
+export const createClientSchema = clientBaseSchema.superRefine(indiaStatutoryChecks)
 
 export type CreateClientInput = z.infer<typeof createClientSchema>
 
-export const updateClientSchema = createClientSchema
-  .omit({ services: true })
+export const updateClientSchema = clientBaseSchema
+  .omit({ services: true, collectedDocuments: true })
   .extend({
     status: z.enum(["ACTIVE", "INACTIVE", "PENDING", "ON_HOLD"]),
     assignedEmployeeId: z
       .string()
       .optional()
       .transform((v) => v || null),
+    // Editable in the Edit-client dialog; omitted when the caller isn't
+    // touching services (undefined = leave services unchanged).
+    services: z.array(serviceAssignmentSchema).optional(),
   })
+  .superRefine(indiaStatutoryChecks)
 
 export type UpdateClientInput = z.infer<typeof updateClientSchema>
 
-export const createClientFormSchema = createClientSchema.extend({
+export const createClientFormSchema = clientBaseSchema.extend({
   gstin: z.string().optional(),
   pan: z.string().optional(),
   email: z.string().optional(),

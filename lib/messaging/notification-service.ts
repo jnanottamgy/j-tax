@@ -7,6 +7,7 @@
 
 import type { NotificationProvider } from "./provider-interface"
 import { resendProvider } from "./resend-provider"
+import { whatsappProvider } from "./whatsapp-provider"
 
 export type NotificationChannel = "email" | "whatsapp" | "sms"
 
@@ -37,6 +38,7 @@ class NotificationService {
   constructor() {
     // Register default providers
     this.registerProvider("email", resendProvider)
+    this.registerProvider("whatsapp", whatsappProvider)
   }
 
   /**
@@ -83,6 +85,9 @@ class NotificationService {
           }
         }
         lastError = result.error
+        // Validation-style rejections (bad recipient, unverified sender…)
+        // fail identically on every retry — bail out immediately.
+        if (result.permanentFailure) break
       } else {
         // Send regular notification
         if (!options.content) {
@@ -109,6 +114,7 @@ class NotificationService {
           }
         }
         lastError = result.error
+        if (result.permanentFailure) break
       }
 
       // If not the last attempt, wait before retrying with exponential backoff

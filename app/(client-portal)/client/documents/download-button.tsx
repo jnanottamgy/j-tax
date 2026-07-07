@@ -2,6 +2,8 @@
 
 import { useState } from "react"
 import { Download, Loader2 } from "lucide-react"
+import { toast } from "sonner"
+
 import { Button } from "@/components/ui/button"
 import { getDocumentDownloadUrl } from "@/app/actions/documents"
 
@@ -15,8 +17,10 @@ export function DownloadButton({ documentId }: { documentId: string }) {
       if (result.url) {
         window.open(result.url, "_blank", "noopener,noreferrer")
       } else {
-        console.error("Download failed:", result.error)
+        toast.error(result.error || "Download failed. Please try again.")
       }
+    } catch {
+      toast.error("Download failed. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -28,6 +32,7 @@ export function DownloadButton({ documentId }: { documentId: string }) {
       size="icon"
       className="size-8"
       title="Download"
+      aria-label="Download document"
       onClick={handleDownload}
       disabled={loading}
     >

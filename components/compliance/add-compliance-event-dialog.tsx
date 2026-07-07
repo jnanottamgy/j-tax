@@ -73,8 +73,6 @@ export function AddComplianceEventDialog({
     }
   }, [state, onSuccess])
 
-  const canSubmit = title.trim().length >= 1 && dueDate.length > 0 && !isPending
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg border-white/[0.08] bg-popover/95 backdrop-blur-2xl max-h-[90vh] overflow-y-auto">
@@ -273,10 +271,12 @@ export function AddComplianceEventDialog({
             >
               Cancel
             </Button>
+            {/* Always pressable — a silent hard-disable strands users with no
+                explanation; the server returns precise errors on submit. */}
             <Button
               type="submit"
               className="flex-1 h-10 rounded-xl btn-glow"
-              disabled={!canSubmit}
+              disabled={isPending}
             >
               {isPending ? (
                 <>

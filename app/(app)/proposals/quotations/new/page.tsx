@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { ChevronLeft } from "lucide-react"
 import { requirePartnerOrManager } from "@/lib/auth/guards"
+import { getFirmSettings } from "@/lib/firm-settings"
 import { getLeads } from "@/app/actions/proposals"
 import { QuotationBuilderClient } from "@/components/proposals/quotation-builder-client"
 import { PageHeader } from "@/components/layout/page-header"
@@ -16,7 +17,7 @@ export default async function NewQuotationPage() {
     redirect("/unauthorized")
   }
 
-  const leads = await getLeads()
+  const [leads, cfg] = await Promise.all([getLeads(), getFirmSettings()])
 
   const backLink = (
     <Link href="/proposals" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -32,7 +33,17 @@ export default async function NewQuotationPage() {
         description="Build a professional quotation for a prospective client"
         action={backLink}
       />
-      <QuotationBuilderClient leads={leads} />
+      <QuotationBuilderClient
+        leads={leads}
+        firm={{
+          name: cfg.firmName,
+          address: cfg.firmAddress,
+          phone: cfg.firmPhone,
+          email: cfg.replyToEmail || cfg.fromEmail || null,
+          gstin: cfg.gstin,
+          website: cfg.website,
+        }}
+      />
     </PageContainer>
   )
 }

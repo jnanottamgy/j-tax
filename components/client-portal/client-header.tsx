@@ -4,6 +4,7 @@ import { Menu } from "lucide-react"
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { NotificationBell } from "@/components/notifications/notification-bell"
+import { ThemeToggle } from "@/components/theme/theme-toggle"
 
 interface ClientHeaderProps {
   clientName: string
@@ -24,6 +25,7 @@ export function ClientHeader({ clientName }: ClientHeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <ThemeToggle />
         <NotificationBell />
       </div>
     </header>

@@ -2,9 +2,9 @@ import { z } from "zod"
 
 export const messageSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
-  phoneNumber: z.string().trim().min(10, "Phone number must be at least 10 digits"),
   content: z.string().trim().min(1, "Message content is required"),
   templateId: z.string().optional().or(z.literal("")),
+  channel: z.enum(["EMAIL", "WHATSAPP"]).default("EMAIL"),
 })
 
 export const templateSchema = z.object({

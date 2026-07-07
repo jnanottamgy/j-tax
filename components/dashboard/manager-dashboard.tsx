@@ -88,12 +88,23 @@ function ProductivityBar({ value }: { value: number }) {
   )
 }
 
+function formatRelativeTime(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
 export function ManagerDashboard({
   managerName: _managerName,
   teamStats,
   teamWorkload,
   urgentItems,
-  recentActivity: _recentActivity,
+  recentActivity,
 }: ManagerDashboardProps) {
   return (
     <div className="space-y-6">
@@ -347,6 +358,41 @@ export function ManagerDashboard({
           </CardContent>
         </Card>
       </div>
+
+      {/* Recent team activity */}
+      <Card className="border-white/[0.06] bg-white/[0.02]">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Clock className="size-4 text-primary" />
+            Recent Activity
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {recentActivity.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No recent activity yet — actions across clients, tasks, and
+              invoices will show up here.
+            </p>
+          ) : (
+            recentActivity.map((activity) => (
+              <div
+                key={activity.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2"
+              >
+                <p className="min-w-0 truncate text-[13px]">{activity.description}</p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge className="bg-white/[0.05] text-[10px] text-muted-foreground">
+                    {activity.entityType}
+                  </Badge>
+                  <span className="text-[11px] text-muted-foreground">
+                    {formatRelativeTime(activity.timestamp)}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

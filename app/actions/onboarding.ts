@@ -5,6 +5,7 @@ import { randomBytes } from "crypto"
 import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
 import { upsertFirmSettings, extractDomain } from "@/lib/firm-settings"
+import { validateGSTIN } from "@/lib/india/validators"
 
 export async function getOnboardingStatus() {
   const session = await requireAuth()
@@ -297,7 +298,8 @@ export async function createEmployeeFromOnboarding(data: {
   }
 
   try {
-    const existing = await prisma.employee.findUnique({ where: { email: data.email.trim() } })
+    // Employee email is unique per firm now — findFirst is tenant-scoped.
+    const existing = await prisma.employee.findFirst({ where: { email: data.email.trim() } })
     if (existing) {
       return { success: false, error: "An employee with this email already exists." }
     }
@@ -341,6 +343,25 @@ export async function createClientFromOnboarding(data: {
     return { success: false, error: "Client name is required." }
   }
 
+  // Same format rules as the main Add Client flow — this path previously
+  // skipped validation entirely, letting unusable emails/GSTINs into the DB
+  // (which then broke messaging sends downstream).
+  const email = data.email?.trim() || null
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { success: false, error: `"${email}" is not a valid email address.` }
+  }
+  const phone = data.phone?.trim() || null
+  if (phone && !/^[+]?[\d\s\-().]{7,20}$/.test(phone)) {
+    return { success: false, error: `"${phone}" is not a valid phone number.` }
+  }
+  const gstin = data.gstin?.trim().toUpperCase() || null
+  if (gstin) {
+    const r = validateGSTIN(gstin)
+    if (!r.valid) {
+      return { success: false, error: `GSTIN "${gstin}": ${r.error}` }
+    }
+  }
+
   try {
     const count = await prisma.client.count()
     const clientCode = `CLI-${String(count + 1).padStart(4, "0")}`
@@ -349,9 +370,9 @@ export async function createClientFromOnboarding(data: {
       data: {
         name: data.name.trim(),
         clientCode,
-        email: data.email?.trim() || null,
-        phone: data.phone?.trim() || null,
-        gstin: data.gstin?.trim().toUpperCase() || null,
+        email,
+        phone,
+        gstin,
         status: "ACTIVE",
         priority: "MEDIUM",
       },

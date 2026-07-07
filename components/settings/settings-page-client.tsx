@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react"
 import { Loader2, Building2, Mail, Globe, ShieldCheck, AlertTriangle, CheckCircle2, RefreshCw, Copy } from "lucide-react"
-import { User, Bell, Shield, CreditCard } from "lucide-react"
+import { User, Bell, Shield } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -157,7 +157,8 @@ export function SettingsPageClient({
     setNotifSaving(true)
     setNotifSaved(false)
     setNotifError("")
-    const result = await saveNotificationPreferences(notifications)
+    // SMS delivery isn't wired yet — never persist it as enabled.
+    const result = await saveNotificationPreferences({ ...notifications, sms: false })
     setNotifSaving(false)
     if (result.error) {
       setNotifError(result.error)
@@ -308,6 +309,69 @@ export function SettingsPageClient({
                   className="input-premium rounded-xl resize-none"
                   rows={2}
                 />
+              </div>
+
+              {/* ── Payment collection details ─────────────────────────── */}
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-4">
+                <div>
+                  <p className="text-sm font-medium">Payment collection details</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Shown to clients in the portal&apos;s “Pay” dialog and on invoice PDFs.
+                    Leave blank to hide.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="bankName">Bank Name</Label>
+                    <Input
+                      id="bankName"
+                      name="bankName"
+                      defaultValue={initialFirmSettings?.bankName ?? ""}
+                      placeholder="HDFC Bank"
+                      className="input-premium h-10 rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bankAccountName">Account Name</Label>
+                    <Input
+                      id="bankAccountName"
+                      name="bankAccountName"
+                      defaultValue={initialFirmSettings?.bankAccountName ?? ""}
+                      placeholder="Sharma & Associates"
+                      className="input-premium h-10 rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bankAccountNumber">Account Number</Label>
+                    <Input
+                      id="bankAccountNumber"
+                      name="bankAccountNumber"
+                      defaultValue={initialFirmSettings?.bankAccountNumber ?? ""}
+                      placeholder="50100123456789"
+                      className="input-premium h-10 rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bankIfsc">IFSC Code</Label>
+                    <Input
+                      id="bankIfsc"
+                      name="bankIfsc"
+                      defaultValue={initialFirmSettings?.bankIfsc ?? ""}
+                      placeholder="HDFC0001234"
+                      className="input-premium h-10 rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="upiId">UPI ID</Label>
+                    <Input
+                      id="upiId"
+                      name="upiId"
+                      defaultValue={initialFirmSettings?.upiId ?? ""}
+                      placeholder="yourfirm@okhdfcbank"
+                      className="input-premium h-10 rounded-xl"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-between gap-3 pt-2">
@@ -616,26 +680,29 @@ export function SettingsPageClient({
           <Separator className="bg-white/[0.06]" />
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label htmlFor="sms-notifications">SMS Notifications</Label>
-              <p className="text-xs text-muted-foreground">Receive urgent alerts via SMS</p>
-            </div>
-            <Switch
-              id="sms-notifications"
-              checked={notifications.sms}
-              onCheckedChange={(checked) => setNotifications({ ...notifications, sms: checked })}
-            />
-          </div>
-          <Separator className="bg-white/[0.06]" />
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="push-notifications">Push Notifications</Label>
-              <p className="text-xs text-muted-foreground">Receive in-app notifications</p>
+              <Label htmlFor="push-notifications">In-App Notifications</Label>
+              <p className="text-xs text-muted-foreground">Show alerts in the notification bell</p>
             </div>
             <Switch
               id="push-notifications"
               checked={notifications.push}
               onCheckedChange={(checked) => setNotifications({ ...notifications, push: checked })}
             />
+          </div>
+          <Separator className="bg-white/[0.06]" />
+          <div className="flex items-center justify-between opacity-60">
+            <div className="space-y-0.5">
+              <Label htmlFor="sms-notifications" className="flex items-center gap-2">
+                SMS Notifications
+                <span className="rounded-full border border-white/[0.12] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  Coming soon
+                </span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Urgent alerts via SMS — requires an SMS provider (not yet configured)
+              </p>
+            </div>
+            <Switch id="sms-notifications" checked={false} disabled aria-label="SMS notifications (coming soon)" />
           </div>
           {notifError && <p className="text-sm text-destructive">{notifError}</p>}
           <div className="flex justify-end pt-2">
@@ -743,26 +810,6 @@ export function SettingsPageClient({
         </CardContent>
       </Card>
 
-      {/* ── Billing (placeholder) ─────────────────────────────────────────── */}
-      {userRole === "PARTNER" && (
-        <Card className="border-white/[0.08] bg-white/[0.02]">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5" />
-              Billing &amp; Subscription
-            </CardTitle>
-            <CardDescription>Manage your subscription and payment methods</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-4 rounded-xl border border-white/[0.08] bg-white/[0.02]">
-              <div>
-                <p className="font-medium">Professional Plan</p>
-                <p className="text-sm text-muted-foreground">Contact your administrator to manage billing.</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

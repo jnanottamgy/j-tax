@@ -35,23 +35,29 @@ export async function getClient360Data(clientId: string) {
     complianceEvents,
     documentCompleteness,
     timelineEvents,
+    documentChecklist,
   ] = await Promise.all([
     prisma.client.findUnique({
       where: { id: clientId },
       include: { assignedEmployee: true },
     }),
+    // Per-client lists — bounded to avoid a pathological single client pulling
+    // thousands of rows into one page (realistic clients are well under this).
     prisma.task.findMany({
       where: { clientId },
       orderBy: { createdAt: "desc" },
       include: { assignedEmployee: true },
+      take: 500,
     }),
     prisma.invoice.findMany({
       where: { clientId },
       orderBy: { dueDate: "desc" },
+      take: 500,
     }),
     prisma.document.findMany({
       where: { clientId },
       orderBy: { createdAt: "desc" },
+      take: 500,
     }),
     prisma.clientService.findMany({
       where: { clientId },
@@ -66,6 +72,10 @@ export async function getClient360Data(clientId: string) {
       where: { clientId },
       orderBy: { createdAt: "desc" },
       take: 50,
+    }),
+    prisma.clientDocumentChecklistItem.findMany({
+      where: { clientId },
+      orderBy: [{ collected: "asc" }, { createdAt: "asc" }],
     }),
   ])
 
@@ -89,6 +99,9 @@ export async function getClient360Data(clientId: string) {
     amount: Number(invoice.amount),
     paidAmount: Number(invoice.paidAmount),
     outstandingAmount: Number(invoice.outstandingAmount),
+    professionalFee: invoice.professionalFee !== null ? Number(invoice.professionalFee) : null,
+    taxRate: invoice.taxRate !== null ? Number(invoice.taxRate) : null,
+    taxAmount: invoice.taxAmount !== null ? Number(invoice.taxAmount) : null,
   }))
 
   // Calculate metrics
@@ -116,6 +129,7 @@ export async function getClient360Data(clientId: string) {
     complianceEvents,
     documentCompleteness,
     timelineEvents,
+    documentChecklist,
     metrics,
     user: session.user,
   }

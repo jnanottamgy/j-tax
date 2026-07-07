@@ -1,10 +1,16 @@
 "use client"
 
 import { useState } from "react"
-import { motion } from "framer-motion"
-import { MoreHorizontal, Plus } from "lucide-react"
+import { Eye, Lock, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { TaskPriorityBadge } from "./task-priority-badge"
 import { DueDateBadge } from "./due-date-badge"
 import { cn } from "@/lib/utils"
@@ -26,6 +32,7 @@ interface Task {
     id: string
     name: string
   } | null
+  blockedBy?: Array<{ blocker: { id: string; title: string; status: string } }>
   _count: {
     comments: number
     attachments: number
@@ -43,6 +50,9 @@ interface KanbanBoardProps {
   onTaskClick?: (taskId: string) => void
   onStatusChange?: (taskId: string, newStatus: TaskStatus) => void
   onAddTask?: (status: TaskStatus) => void
+  onEditTask?: (taskId: string) => void
+  /** Only passed for PARTNER/MANAGER — hides the delete item otherwise */
+  onDeleteTask?: (taskId: string) => void
 }
 
 const COLUMNS: TaskStatus[] = [
@@ -63,7 +73,14 @@ const COLUMN_TITLES: Record<TaskStatus, string> = {
   ON_HOLD: "On Hold",
 }
 
-export function KanbanBoard({ tasks, onTaskClick, onStatusChange, onAddTask }: KanbanBoardProps) {
+export function KanbanBoard({
+  tasks,
+  onTaskClick,
+  onStatusChange,
+  onAddTask,
+  onEditTask,
+  onDeleteTask,
+}: KanbanBoardProps) {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null)
 
   const columns: KanbanColumn[] = COLUMNS.map((status) => ({
@@ -87,18 +104,17 @@ export function KanbanBoard({ tasks, onTaskClick, onStatusChange, onAddTask }: K
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
+    <div className="flex gap-4 overflow-x-auto pb-4 h-[calc(100vh-16rem)] min-h-[420px] items-stretch">
       {columns.map((column) => (
-        <motion.div
+        <div
           key={column.id}
-          layout
-          className="flex-shrink-0 w-80"
+          className="flex-shrink-0 w-80 flex flex-col"
           onDragOver={(e) => e.preventDefault()}
           onDrop={() => handleDrop(column.id)}
         >
-          <div className="bg-white/[0.02] border border-white/[0.08] rounded-2xl overflow-hidden">
+          <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
             {/* Column Header */}
-            <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
+            <div className="shrink-0 px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-primary/50" />
                 <h3 className="font-semibold text-sm">{column.title}</h3>
@@ -106,44 +122,72 @@ export function KanbanBoard({ tasks, onTaskClick, onStatusChange, onAddTask }: K
                   {column.tasks.length}
                 </span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
-                onClick={() => onAddTask?.(column.id)}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
+              {onAddTask && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+                  onClick={() => onAddTask(column.id)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
             </div>
 
-            {/* Task Cards */}
-            <div className="p-3 space-y-2 min-h-[200px]">
+            {/* Task Cards — scrolls internally so one busy column can't stretch the board */}
+            <div className="flex-1 space-y-2 overflow-y-auto p-3">
               {column.tasks.map((task) => (
-                <motion.div
+                <div
                   key={task.id}
-                  layout
                   draggable
                   onDragStart={() => handleDragStart(task)}
                   onDragEnd={handleDragEnd}
-                  whileDrag={{ scale: 1.02, rotate: 1 }}
-                  whileHover={{ scale: 1.01 }}
                   onClick={() => onTaskClick?.(task.id)}
                   className={cn(
                     "bg-white/[0.03] border border-white/[0.08] rounded-xl p-4 cursor-pointer",
-                    "hover:bg-white/[0.05] hover:border-white/[0.12] transition-all duration-200",
+                    "hover:bg-white/[0.05] hover:border-white/[0.12] transition-colors duration-200",
                     draggedTask?.id === task.id && "opacity-50"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <h4 className="font-medium text-sm leading-tight flex-1">{task.title}</h4>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-white/[0.05] flex-shrink-0"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-white/[0.05] flex-shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`Actions for ${task.title}`}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuItem onSelect={() => onTaskClick?.(task.id)}>
+                          <Eye className="size-3.5" />
+                          View details
+                        </DropdownMenuItem>
+                        {onEditTask && (
+                          <DropdownMenuItem onSelect={() => onEditTask(task.id)}>
+                            <Pencil className="size-3.5" />
+                            Edit task
+                          </DropdownMenuItem>
+                        )}
+                        {onDeleteTask && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                              onSelect={() => onDeleteTask(task.id)}
+                            >
+                              <Trash2 className="size-3.5" />
+                              Delete task
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   <div className="space-y-2">
@@ -156,6 +200,17 @@ export function KanbanBoard({ tasks, onTaskClick, onStatusChange, onAddTask }: K
                     <div className="flex flex-wrap gap-1.5">
                       <TaskPriorityBadge priority={task.priority} />
                       {task.dueDate && <DueDateBadge dueDate={task.dueDate} />}
+                      {(task.blockedBy ?? []).some((d) => d.blocker.status !== "FILED_DONE") && (
+                        <span
+                          title={`Waiting on: ${(task.blockedBy ?? [])
+                            .filter((d) => d.blocker.status !== "FILED_DONE")
+                            .map((d) => d.blocker.title)
+                            .join(", ")}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-400"
+                        >
+                          <Lock className="h-3 w-3" /> Blocked
+                        </span>
+                      )}
                     </div>
 
                     {/* Footer */}
@@ -180,7 +235,7 @@ export function KanbanBoard({ tasks, onTaskClick, onStatusChange, onAddTask }: K
                       </div>
                     </div>
                   </div>
-                </motion.div>
+                </div>
               ))}
 
               {column.tasks.length === 0 && (
@@ -190,7 +245,7 @@ export function KanbanBoard({ tasks, onTaskClick, onStatusChange, onAddTask }: K
               )}
             </div>
           </div>
-        </motion.div>
+        </div>
       ))}
     </div>
   )

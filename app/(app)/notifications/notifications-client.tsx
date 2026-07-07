@@ -30,6 +30,7 @@ import {
   markNotificationRead,
   type NotificationDTO,
 } from "@/app/actions/notifications"
+import { notificationHref } from "@/lib/notifications/entity-link"
 import { useNotifications } from "@/components/notifications/notifications-provider"
 
 type TabType = "all" | "unread" | "archived"
@@ -141,6 +142,17 @@ export function NotificationsClient({
 
   const handleMarkRead = async (id: string) => {
     await markNotificationRead(id)
+  }
+
+  // Clicking a notification jumps to the entity it references and marks it read.
+  const handleOpen = (notification: NotificationDTO) => {
+    const href = notificationHref(notification.entityType, notification.entityId)
+    if (!href) return
+    if (!notification.read) {
+      // Fire-and-forget: don't block navigation on the write.
+      void markNotificationRead(notification.id)
+    }
+    router.push(href)
   }
 
   const handleMarkAllRead = async () => {
@@ -355,15 +367,35 @@ export function NotificationsClient({
         </Card>
       ) : (
         <div className="space-y-2">
-          {filteredNotifications.map((notification) => (
+          {filteredNotifications.map((notification) => {
+            const href = notificationHref(
+              notification.entityType,
+              notification.entityId
+            )
+            const clickable = !!href
+            return (
             <Card
               key={notification.id}
               className={cn(
                 "border-white/[0.08] bg-white/[0.02] transition-all duration-200 hover:border-white/[0.12]",
                 !notification.read &&
                   activeTab !== "archived" &&
-                  "border-primary/20 bg-primary/[0.02]"
+                  "border-primary/20 bg-primary/[0.02]",
+                clickable && "cursor-pointer"
               )}
+              role={clickable ? "link" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              onClick={clickable ? () => handleOpen(notification) : undefined}
+              onKeyDown={
+                clickable
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault()
+                        handleOpen(notification)
+                      }
+                    }
+                  : undefined
+              }
             >
               <CardHeader className="pb-2">
                 <div className="flex items-start gap-3">
@@ -416,8 +448,11 @@ export function NotificationsClient({
                   </time>
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1">
+                {/* Actions — must not trigger the card's navigate-on-click */}
+                <div
+                  className="flex items-center gap-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {activeTab === "archived" ? (
                     <>
                       <Button
@@ -475,7 +510,8 @@ export function NotificationsClient({
                 </div>
               </CardContent>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
 

@@ -49,6 +49,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: oklch(0.99 0.002 265);
   --foreground: oklch(0.14 0.02 265);
   --card: oklch(1 0 0);
@@ -84,6 +85,9 @@
 }
 
 .dark {
+  /* Render native form controls (select popups, date pickers, scrollbars)
+     with dark chrome so OS-drawn option lists aren't white-on-white. */
+  color-scheme: dark;
   --background: oklch(0.09 0.016 265);
   --foreground: oklch(0.96 0.008 265);
   --card: oklch(0.13 0.018 265);
@@ -120,6 +124,28 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+
+  /* Respect the OS "reduce motion" setting — neutralize framer-motion,
+     tw-animate, and CSS transitions/animations for motion-sensitive users
+     (WCAG 2.3.3) without changing layout. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Native <select> option lists are OS-rendered; force a readable,
+     theme-matched panel regardless of the select's own (translucent) bg. */
+  select option,
+  select optgroup {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
   }
 
   html {
@@ -165,9 +191,20 @@
     @apply text-[11px] font-semibold tracking-[0.14em] text-primary/90 uppercase;
   }
 
+  /* ── Themed surface primitives ──────────────────────────────────────────────
+     Light values are the defaults; `.dark` scopes restore the original
+     dark-glass look exactly. */
+
   .dashboard-gradient {
     position: relative;
     background-color: var(--background);
+    background-image:
+      radial-gradient(ellipse 120% 80% at 50% -30%, oklch(0.55 0.14 265 / 10%), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 100% 0%, oklch(0.6 0.1 195 / 6%), transparent 50%),
+      radial-gradient(ellipse 50% 40% at 0% 100%, oklch(0.6 0.08 320 / 5%), transparent 45%);
+  }
+
+  .dark .dashboard-gradient {
     background-image:
       radial-gradient(ellipse 120% 80% at 50% -30%, oklch(0.42 0.14 265 / 22%), transparent 55%),
       radial-gradient(ellipse 70% 50% at 100% 0%, oklch(0.35 0.1 195 / 12%), transparent 50%),
@@ -179,13 +216,32 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
-    opacity: 0.35;
+    opacity: 0.15;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
     z-index: 0;
   }
 
+  .dark .dashboard-gradient::before {
+    opacity: 0.35;
+  }
+
   .glass-card {
-    @apply relative overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.055] to-white/[0.015] shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset,0_4px_24px_-6px_rgba(0,0,0,0.35),0_20px_48px_-16px_rgba(0,0,0,0.4)] backdrop-blur-2xl transition-[border-color,box-shadow,transform,background] duration-500 ease-out;
+    @apply relative overflow-hidden rounded-2xl border backdrop-blur-2xl transition-[border-color,box-shadow,transform,background] duration-500 ease-out;
+    border-color: rgb(15 23 42 / 0.08);
+    background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.65));
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.9) inset,
+      0 4px 24px -6px rgb(15 23 42 / 0.08),
+      0 20px 48px -16px rgb(15 23 42 / 0.1);
+  }
+
+  .dark .glass-card {
+    border-color: rgb(255 255 255 / 0.06);
+    background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.055), rgb(255 255 255 / 0.015));
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 4px 24px -6px rgba(0, 0, 0, 0.35),
+      0 20px 48px -16px rgba(0, 0, 0, 0.4);
   }
 
   .glass-card::before {
@@ -197,26 +253,93 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      oklch(0.72 0.17 265 / 35%) 50%,
+      oklch(0.55 0.17 265 / 30%) 50%,
       transparent 100%
     );
     opacity: 0.7;
   }
 
+  .dark .glass-card::before {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      oklch(0.72 0.17 265 / 35%) 50%,
+      transparent 100%
+    );
+  }
+
   .glass-card:hover {
-    @apply border-white/[0.1] from-white/[0.07] to-white/[0.025] shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_8px_32px_-8px_rgba(0,0,0,0.4),0_24px_56px_-16px_rgba(0,0,0,0.45)] -translate-y-px;
+    @apply -translate-y-px;
+    border-color: rgb(15 23 42 / 0.14);
+    background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.97), rgb(255 255 255 / 0.78));
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.95) inset,
+      0 8px 32px -8px rgb(15 23 42 / 0.12),
+      0 24px 56px -16px rgb(15 23 42 / 0.14);
+  }
+
+  .dark .glass-card:hover {
+    border-color: rgb(255 255 255 / 0.1);
+    background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.025));
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.08) inset,
+      0 8px 32px -8px rgba(0, 0, 0, 0.4),
+      0 24px 56px -16px rgba(0, 0, 0, 0.45);
   }
 
   .glass-card-static:hover {
-    @apply translate-y-0 border-white/[0.06] from-white/[0.055] to-white/[0.015] shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset,0_4px_24px_-6px_rgba(0,0,0,0.35),0_20px_48px_-16px_rgba(0,0,0,0.4)];
+    @apply translate-y-0;
+    border-color: rgb(15 23 42 / 0.08);
+    background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.65));
+    box-shadow:
+      0 1px 0 0 rgb(255 255 255 / 0.9) inset,
+      0 4px 24px -6px rgb(15 23 42 / 0.08),
+      0 20px 48px -16px rgb(15 23 42 / 0.1);
+  }
+
+  .dark .glass-card-static:hover {
+    border-color: rgb(255 255 255 / 0.06);
+    background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.055), rgb(255 255 255 / 0.015));
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 4px 24px -6px rgba(0, 0, 0, 0.35),
+      0 20px 48px -16px rgba(0, 0, 0, 0.4);
   }
 
   .surface-elevated {
-    @apply rounded-xl border border-white/[0.06] bg-white/[0.03] shadow-[0_2px_12px_-4px_rgba(0,0,0,0.25)] backdrop-blur-md transition-all duration-300 hover:border-white/[0.09] hover:bg-white/[0.045];
+    @apply rounded-xl border backdrop-blur-md transition-all duration-300;
+    border-color: rgb(15 23 42 / 0.08);
+    background-color: rgb(15 23 42 / 0.025);
+    box-shadow: 0 2px 12px -4px rgb(15 23 42 / 0.06);
+  }
+
+  .surface-elevated:hover {
+    border-color: rgb(15 23 42 / 0.13);
+    background-color: rgb(15 23 42 / 0.04);
+  }
+
+  .dark .surface-elevated {
+    border-color: rgb(255 255 255 / 0.06);
+    background-color: rgb(255 255 255 / 0.03);
+    box-shadow: 0 2px 12px -4px rgba(0, 0, 0, 0.25);
+  }
+
+  .dark .surface-elevated:hover {
+    border-color: rgb(255 255 255 / 0.09);
+    background-color: rgb(255 255 255 / 0.045);
   }
 
   .header-glass {
-    @apply border-b border-white/[0.05] bg-background/50 shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset] backdrop-blur-2xl backdrop-saturate-150;
+    @apply border-b backdrop-blur-2xl backdrop-saturate-150;
+    border-bottom-color: rgb(15 23 42 / 0.08);
+    background-color: color-mix(in srgb, var(--background) 72%, transparent);
+    box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.6) inset;
+  }
+
+  .dark .header-glass {
+    border-bottom-color: rgb(255 255 255 / 0.05);
+    background-color: color-mix(in srgb, var(--background) 50%, transparent);
+    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset;
   }
 
   .btn-glow {
@@ -224,7 +347,26 @@
   }
 
   .input-premium {
-    @apply border-white/[0.07] bg-white/[0.035] shadow-[0_1px_2px_rgba(0,0,0,0.12)_inset] transition-all duration-300 placeholder:text-muted-foreground/55 focus-visible:border-primary/30 focus-visible:bg-white/[0.05] focus-visible:shadow-[0_0_0_3px_oklch(0.7_0.16_265/12%)];
+    @apply transition-all duration-300 placeholder:text-muted-foreground/55 focus-visible:border-primary/40;
+    border-color: rgb(15 23 42 / 0.14);
+    background-color: rgb(15 23 42 / 0.02);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.05) inset;
+  }
+
+  .input-premium:focus-visible {
+    background-color: rgb(15 23 42 / 0.035);
+    box-shadow: 0 0 0 3px oklch(0.55 0.16 265 / 14%);
+  }
+
+  .dark .input-premium {
+    border-color: rgb(255 255 255 / 0.07);
+    background-color: rgb(255 255 255 / 0.035);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) inset;
+  }
+
+  .dark .input-premium:focus-visible {
+    background-color: rgb(255 255 255 / 0.05);
+    box-shadow: 0 0 0 3px oklch(0.7 0.16 265 / 12%);
   }
 
   .page-enter {
@@ -246,7 +388,16 @@
   }
 
   [data-slot="sidebar-inner"] {
-    @apply border border-white/[0.05] bg-sidebar/70 shadow-[4px_0_24px_-8px_rgba(0,0,0,0.35)] backdrop-blur-2xl;
+    @apply border backdrop-blur-2xl;
+    border-color: rgb(15 23 42 / 0.08);
+    background-color: color-mix(in srgb, var(--sidebar) 85%, transparent);
+    box-shadow: 4px 0 24px -8px rgb(15 23 42 / 0.08);
+  }
+
+  .dark [data-slot="sidebar-inner"] {
+    border-color: rgb(255 255 255 / 0.05);
+    background-color: color-mix(in srgb, var(--sidebar) 70%, transparent);
+    box-shadow: 4px 0 24px -8px rgba(0, 0, 0, 0.35);
   }
 
   .kpi-glow {
@@ -256,4 +407,86 @@
       transparent 70%
     );
   }
+}
+
+/* ── Light-mode compatibility layer ──────────────────────────────────────────
+   The app was built dark-first: hundreds of surfaces use literal white-alpha
+   utilities (bg-white/[0.03], border-white/[0.08], …) that vanish on a light
+   background. Rather than rewrite every component, light mode re-points those
+   EXACT generated utility classes at a slate ink (alpha ≈ 1.5× for contrast
+   on light surfaces). Dark mode is untouched — these rules only apply when
+   `.dark` is absent from <html>. Status text tones (-300/-400) are likewise
+   darkened to their -600/-700 equivalents for WCAG-readable contrast. */
+:root:not(.dark) {
+  /* backgrounds */
+  .bg-white\/\[0\.01\] { background-color: rgb(15 23 42 / 0.02); }
+  .bg-white\/\[0\.02\] { background-color: rgb(15 23 42 / 0.035); }
+  .bg-white\/\[0\.025\] { background-color: rgb(15 23 42 / 0.045); }
+  .bg-white\/\[0\.03\] { background-color: rgb(15 23 42 / 0.05); }
+  .bg-white\/\[0\.04\] { background-color: rgb(15 23 42 / 0.06); }
+  .bg-white\/\[0\.05\] { background-color: rgb(15 23 42 / 0.075); }
+  .bg-white\/\[0\.06\] { background-color: rgb(15 23 42 / 0.09); }
+  .bg-white\/\[0\.08\] { background-color: rgb(15 23 42 / 0.12); }
+
+  /* hover / focus backgrounds */
+  .hover\:bg-white\/\[0\.02\]:hover { background-color: rgb(15 23 42 / 0.035); }
+  .hover\:bg-white\/\[0\.03\]:hover { background-color: rgb(15 23 42 / 0.05); }
+  .hover\:bg-white\/\[0\.035\]:hover { background-color: rgb(15 23 42 / 0.055); }
+  .hover\:bg-white\/\[0\.04\]:hover { background-color: rgb(15 23 42 / 0.06); }
+  .hover\:bg-white\/\[0\.045\]:hover { background-color: rgb(15 23 42 / 0.07); }
+  .hover\:bg-white\/\[0\.05\]:hover { background-color: rgb(15 23 42 / 0.075); }
+  .hover\:bg-white\/\[0\.06\]:hover { background-color: rgb(15 23 42 / 0.09); }
+  .focus-visible\:bg-white\/\[0\.05\]:focus-visible { background-color: rgb(15 23 42 / 0.075); }
+
+  /* borders */
+  .border-white\/\[0\.04\] { border-color: rgb(15 23 42 / 0.06); }
+  .border-white\/\[0\.05\] { border-color: rgb(15 23 42 / 0.075); }
+  .border-white\/\[0\.06\] { border-color: rgb(15 23 42 / 0.09); }
+  .border-white\/\[0\.07\] { border-color: rgb(15 23 42 / 0.1); }
+  .border-white\/\[0\.08\] { border-color: rgb(15 23 42 / 0.12); }
+  .border-white\/\[0\.1\] { border-color: rgb(15 23 42 / 0.14); }
+  .border-white\/\[0\.12\] { border-color: rgb(15 23 42 / 0.16); }
+  .border-white\/\[0\.15\] { border-color: rgb(15 23 42 / 0.2); }
+
+  /* hover borders */
+  .hover\:border-white\/\[0\.08\]:hover { border-color: rgb(15 23 42 / 0.12); }
+  .hover\:border-white\/\[0\.09\]:hover { border-color: rgb(15 23 42 / 0.13); }
+  .hover\:border-white\/\[0\.1\]:hover { border-color: rgb(15 23 42 / 0.14); }
+  .hover\:border-white\/\[0\.12\]:hover { border-color: rgb(15 23 42 / 0.16); }
+  .hover\:border-white\/\[0\.15\]:hover { border-color: rgb(15 23 42 / 0.2); }
+  .hover\:border-white\/\[0\.16\]:hover { border-color: rgb(15 23 42 / 0.21); }
+  .hover\:border-white\/\[0\.2\]:hover { border-color: rgb(15 23 42 / 0.26); }
+  .hover\:border-white\/\[0\.24\]:hover { border-color: rgb(15 23 42 / 0.3); }
+
+  /* dividers (Tailwind applies these to child siblings) */
+  .divide-white\/\[0\.04\] > :not([hidden]) ~ :not([hidden]) { border-color: rgb(15 23 42 / 0.06); }
+  .divide-white\/\[0\.05\] > :not([hidden]) ~ :not([hidden]) { border-color: rgb(15 23 42 / 0.075); }
+  .divide-white\/\[0\.08\] > :not([hidden]) ~ :not([hidden]) { border-color: rgb(15 23 42 / 0.12); }
+
+  /* misc white-alpha */
+  .ring-white\/\[0\.08\] { --tw-ring-color: rgb(15 23 42 / 0.12); }
+  .text-white\/\[0\.06\] { color: rgb(15 23 42 / 0.06); }
+
+  /* status text tones — dark-theme -300/-400s are unreadable on white */
+  .text-red-400 { color: #dc2626; }
+  .text-red-300 { color: #b91c1c; }
+  .text-amber-400 { color: #d97706; }
+  .text-amber-300 { color: #b45309; }
+  .text-emerald-400 { color: #059669; }
+  .text-emerald-300 { color: #047857; }
+  .text-emerald-100 { color: #065f46; }
+  .text-blue-400 { color: #2563eb; }
+  .text-blue-300 { color: #1d4ed8; }
+  .text-blue-200 { color: #1d4ed8; }
+  .text-green-400 { color: #16a34a; }
+  .text-yellow-400 { color: #ca8a04; }
+  .text-purple-400 { color: #9333ea; }
+  .text-purple-300 { color: #7e22ce; }
+  .text-orange-400 { color: #ea580c; }
+  .text-orange-300 { color: #c2410c; }
+  .text-sky-400 { color: #0284c7; }
+  .text-violet-400 { color: #7c3aed; }
+  .text-slate-400 { color: #475569; }
+  .text-slate-300 { color: #475569; }
+  .text-slate-200 { color: #334155; }
 }

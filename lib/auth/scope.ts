@@ -55,6 +55,43 @@ export function clientWhereForSession(
   return { assignedEmployeeId: employeeScopeId }
 }
 
+/**
+ * Prisma `where` fragment limiting Client rows to what this session may see.
+ * PARTNER/MANAGER → no restriction. EMPLOYEE → only their assigned clients.
+ * EMPLOYEE with no linked Employee record → matches nothing (safe default).
+ *
+ * Spread into any client query:
+ *   where: { ...(await getClientScopeWhere(session)), deletedAt: null }
+ * or nest it: where: { client: await getClientScopeWhere(session) }
+ */
+export async function getClientScopeWhere(
+  session: SessionInfo
+): Promise<{ assignedEmployeeId?: string; id?: string }> {
+  if (!isEmployee(session.user.role)) return {}
+  const employeeId = await getLinkedEmployeeId(session.user.id)
+  if (!employeeId) return { id: "__no_visible_clients__" }
+  return { assignedEmployeeId: employeeId }
+}
+
+/**
+ * May this session act on this specific client's data?
+ * PARTNER/MANAGER → always. EMPLOYEE → only if the client is assigned to them.
+ * Use on every per-client mutation reachable by employees.
+ */
+export async function canAccessClientById(
+  session: SessionInfo,
+  clientId: string
+): Promise<boolean> {
+  if (!isEmployee(session.user.role)) return true
+  const employeeId = await getLinkedEmployeeId(session.user.id)
+  if (!employeeId) return false
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { assignedEmployeeId: true },
+  })
+  return client?.assignedEmployeeId === employeeId
+}
+
 // ─── Legacy aliases ────────────────────────────────────────────────────────────
 // Keep backward-compat exports until all callers are migrated.
 /** @deprecated use getEmployeeScopeId */

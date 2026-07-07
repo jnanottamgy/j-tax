@@ -57,10 +57,10 @@ describe("canAccessRoute — privilege boundaries", () => {
     assert.equal(canAccessRoute("CLIENT", "/activity"), false)
   })
 
-  // /workforce — PARTNER only
-  test("/workforce is PARTNER-only", () => {
+  // /workforce — management (Partner + Manager run the team)
+  test("/workforce is management-only", () => {
     assert.equal(canAccessRoute("PARTNER", "/workforce"), true)
-    assert.equal(canAccessRoute("MANAGER", "/workforce"), false)
+    assert.equal(canAccessRoute("MANAGER", "/workforce"), true)
     assert.equal(canAccessRoute("EMPLOYEE", "/workforce"), false)
   })
 

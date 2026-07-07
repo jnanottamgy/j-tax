@@ -14,7 +14,6 @@ import { AddComplianceEventDialog } from "@/components/compliance/add-compliance
 import {
   getComplianceEvents,
   getUpcomingDeadlines,
-  updateComplianceEventStatus,
   deleteComplianceEvent,
 } from "@/app/actions/compliance"
 import { toast } from "sonner"
@@ -61,16 +60,6 @@ export function ComplianceCalendarClient() {
       events.find((e) => e.id === eventId) ||
       upcomingDeadlines.find((e) => e.id === eventId)
     if (event) { setSelectedEvent(event); setModalOpen(true) }
-  }
-
-  const handleStatusUpdate = async (eventId: string, status: any) => {
-    const result = await updateComplianceEventStatus(eventId, status)
-    if (result.success) {
-      toast.success("Status updated")
-      await loadData()
-    } else {
-      toast.error(result.error || "Failed to update status")
-    }
   }
 
   const handleDeleteEvent = async (eventId: string) => {
@@ -180,7 +169,7 @@ export function ComplianceCalendarClient() {
         event={selectedEvent}
         open={modalOpen}
         onOpenChange={setModalOpen}
-        onStatusUpdate={handleStatusUpdate}
+        onRefresh={loadData}
         onDelete={handleDeleteEvent}
         currentUser={user}
       />

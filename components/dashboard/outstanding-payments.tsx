@@ -7,6 +7,7 @@ import { GlassCard } from "@/components/dashboard/glass-card"
 import { SectionHeading } from "@/components/ui/section-heading"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { formatINRCompact } from "@/lib/india/format"
 import { cn } from "@/lib/utils"
 
 interface Invoice {
@@ -18,10 +19,7 @@ interface Invoice {
   client: { name: string }
 }
 
-function formatCurrency(n: number) {
-  if (n >= 100_000) return `₹${(n / 100_000).toFixed(1)}L`
-  return `₹${n.toLocaleString("en-IN")}`
-}
+const formatCurrency = formatINRCompact
 
 function formatDate(date: Date): string {
   return new Date(date).toLocaleDateString("en-IN", {

@@ -15,7 +15,8 @@ import { cn } from "@/lib/utils"
 export default async function ClientDocumentsPage({
   searchParams,
 }: {
-  searchParams: { q?: string; category?: string }
+  // Next 16: searchParams is a Promise and must be awaited
+  searchParams: Promise<{ q?: string; category?: string }>
 }) {
   const session = await getSession()
   if (!session) redirect("/login")
@@ -30,8 +31,9 @@ export default async function ClientDocumentsPage({
     redirect("/unauthorized")
   }
 
-  const searchQuery = searchParams.q || ""
-  const categoryFilter = searchParams.category || ""
+  const params = await searchParams
+  const searchQuery = params.q || ""
+  const categoryFilter = params.category || ""
 
   // Build where clause
   const where: any = { clientId: clientRecord.id }
@@ -102,22 +104,30 @@ export default async function ClientDocumentsPage({
 
       {/* Search and Filters */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="relative flex-1 max-w-md">
+        {/* GET form so typing + Enter actually submits the search */}
+        <form action="/client/documents" className="relative flex-1 max-w-md" role="search">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
-            placeholder="Search documents..."
+            placeholder="Search documents... (press Enter)"
             defaultValue={searchQuery}
             name="q"
+            type="search"
+            aria-label="Search documents"
             className="pl-9"
           />
-        </div>
+          {categoryFilter && <input type="hidden" name="category" value={categoryFilter} />}
+        </form>
         <div className="flex gap-2 flex-wrap">
           <Button
             variant={!categoryFilter ? "secondary" : "outline"}
             size="sm"
             asChild
           >
-            <a href="/client/documents">All</a>
+            <a
+              href={`/client/documents${searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ""}`}
+            >
+              All
+            </a>
           </Button>
           {categories.map((cat) => (
             <Button
@@ -126,7 +136,9 @@ export default async function ClientDocumentsPage({
               size="sm"
               asChild
             >
-              <a href={`/client/documents?category=${cat.category}`}>
+              <a
+                href={`/client/documents?category=${cat.category}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}`}
+              >
                 {categoryLabels[cat.category] || cat.category}
               </a>
             </Button>
@@ -223,7 +235,7 @@ export default async function ClientDocumentsPage({
               <p className="font-medium text-blue-500">Document Guidelines</p>
               <ul className="text-sm text-muted-foreground mt-1 space-y-1">
                 <li>• Maximum file size: 10MB per document</li>
-                <li>• Supported formats: PDF, JPG, PNG, XLS, XLSX</li>
+                <li>• Supported formats: PDF, JPG, PNG, XLSX, DOCX</li>
                 <li>• Please ensure documents are clear and readable</li>
               </ul>
             </div>

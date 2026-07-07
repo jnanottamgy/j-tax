@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Upload, X, FileText, Loader2, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +35,7 @@ const CATEGORIES = [
 type Phase = "idle" | "selected" | "uploading" | "finalizing" | "done" | "error"
 
 export function UploadForm() {
+  const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState("")
@@ -48,6 +50,13 @@ export function UploadForm() {
     if (!f) return
     if (!ALLOWED_TYPES.includes(f.type)) {
       setErrorMsg("File type not allowed. Supported: PDF, JPG, PNG, XLSX, DOCX.")
+      setPhase("error")
+      return
+    }
+    // Enforce the advertised 10MB limit up front — don't let the user wait
+    // through a full upload only to be rejected server-side.
+    if (f.size > 10 * 1024 * 1024) {
+      setErrorMsg("File is too large. Maximum size is 10MB.")
       setPhase("error")
       return
     }
@@ -136,6 +145,9 @@ export function UploadForm() {
 
     setProgress(100)
     setPhase("done")
+    // Actually refresh so the newly-uploaded document appears in the list
+    // (the success copy promised a refresh that never happened).
+    router.refresh()
     // Auto-reset after 2.5 s so user can upload another
     setTimeout(reset, 2500)
   }

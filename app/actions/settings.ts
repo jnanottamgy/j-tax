@@ -200,6 +200,12 @@ const firmSettingsSchema = z.object({
     (v) => v === "on" || v === "true" || v === true,
     z.boolean()
   ).optional(),
+  // Payment collection details — shown to clients in the portal Pay dialog
+  bankName: z.string().max(100).optional().or(z.literal("")),
+  bankAccountName: z.string().max(200).optional().or(z.literal("")),
+  bankAccountNumber: z.string().max(30).optional().or(z.literal("")),
+  bankIfsc: z.string().max(11).optional().or(z.literal("")),
+  upiId: z.string().max(100).optional().or(z.literal("")),
 })
 
 export type FirmSettingsActionState = FormActionState
@@ -233,6 +239,11 @@ export async function saveFirmSettings(
       pan: formData.get("pan") || undefined,
       website: formData.get("website") || undefined,
       platformFallbackEnabled: formData.get("platformFallbackEnabled") ?? undefined,
+      bankName: formData.get("bankName") || undefined,
+      bankAccountName: formData.get("bankAccountName") || undefined,
+      bankAccountNumber: formData.get("bankAccountNumber") || undefined,
+      bankIfsc: formData.get("bankIfsc") || undefined,
+      upiId: formData.get("upiId") || undefined,
     }
 
     const parsed = firmSettingsSchema.safeParse(raw)
@@ -265,6 +276,11 @@ export async function saveFirmSettings(
             }
           : {}),
         platformFallbackEnabled: parsed.data.platformFallbackEnabled ?? true,
+        bankName: parsed.data.bankName || null,
+        bankAccountName: parsed.data.bankAccountName || null,
+        bankAccountNumber: parsed.data.bankAccountNumber || null,
+        bankIfsc: parsed.data.bankIfsc || null,
+        upiId: parsed.data.upiId || null,
       },
       session.user.id
     )

@@ -12,7 +12,8 @@ interface ExecutiveSummaryProps {
   outstandingInvoices: number
   pendingDocuments: number
   complianceScore: number
-  workload: number
+  /** Open (not filed/done) tasks per active team member */
+  openTasksPerMember: number
 }
 
 export function ExecutiveSummary({
@@ -21,7 +22,7 @@ export function ExecutiveSummary({
   outstandingInvoices,
   pendingDocuments,
   complianceScore,
-  workload,
+  openTasksPerMember,
 }: ExecutiveSummaryProps) {
   const hasAlerts = overdueTasks > 0 || upcomingDeadlines < 7 || outstandingInvoices > 0
 
@@ -120,21 +121,20 @@ export function ExecutiveSummary({
 
         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-muted-foreground">Team Workload</span>
-            <span className="text-2xl font-semibold">{workload}%</span>
+            <span className="text-sm text-muted-foreground">Open Tasks per Team Member</span>
+            <span className="text-2xl font-semibold tabular-nums">{openTasksPerMember}</span>
           </div>
-          <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
-            <div
+          <div className="flex items-center gap-2">
+            <span
               className={cn(
-                "h-full rounded-full transition-all duration-500",
-                workload <= 70 ? "bg-emerald-500" : workload <= 85 ? "bg-amber-500" : "bg-red-500"
+                "size-2 shrink-0 rounded-full",
+                openTasksPerMember < 8 ? "bg-emerald-500" : openTasksPerMember <= 15 ? "bg-amber-500" : "bg-red-500"
               )}
-              style={{ width: `${workload}%` }}
             />
+            <p className="text-xs text-muted-foreground">
+              {openTasksPerMember < 8 ? "Healthy workload" : openTasksPerMember <= 15 ? "Busy — monitor capacity" : "Overloaded — rebalance assignments"}
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            {workload <= 70 ? "Healthy capacity" : workload <= 85 ? "Near capacity" : "Overloaded"}
-          </p>
         </div>
       </div>
     </GlassCard>

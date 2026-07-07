@@ -1,6 +1,6 @@
 "use server"
 
-import { requirePartner } from "@/lib/auth/guards"
+import { requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, startOfQuarter, subDays, format } from "date-fns"
 
@@ -76,7 +76,7 @@ export type WorkloadAlert = {
 // ─── Dashboard Overview ───────────────────────────────────────────────────────
 
 export async function getWorkforceDashboard() {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const now = new Date()
   const todayStart = startOfDay(now)
@@ -184,7 +184,7 @@ export async function getWorkforceDashboard() {
 export async function getPerformanceMetrics(
   period: "day" | "week" | "month" | "quarter" = "month"
 ) {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const now = new Date()
   let rangeStart: Date
@@ -339,7 +339,7 @@ export async function getEmployeeTimeline(
   page = 1,
   pageSize = 50
 ) {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const now = new Date()
   let rangeStart: Date
@@ -393,7 +393,7 @@ export async function getEmployeeTimeline(
 // ─── Employee Detail ──────────────────────────────────────────────────────────
 
 export async function getEmployeeDetail(employeeId: string) {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const now = new Date()
   const thirtyDaysAgo = subDays(now, 30)
@@ -463,7 +463,7 @@ export async function getAttendanceReport(
   year: number = new Date().getFullYear(),
   month: number = new Date().getMonth() + 1
 ) {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const rangeStart = new Date(Date.UTC(year, month - 1, 1))
   const rangeEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59))
@@ -532,7 +532,7 @@ export async function getDailyAttendance(
   month: number,
   employeeId?: string
 ) {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const rangeStart = new Date(Date.UTC(year, month - 1, 1))
   const rangeEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59))
@@ -552,7 +552,7 @@ export async function getDailyAttendance(
 // ─── Workload Alerts ──────────────────────────────────────────────────────────
 
 export async function getWorkloadAlerts(): Promise<WorkloadAlert[]> {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const now = new Date()
   const sevenDaysAgo = subDays(now, 7)
@@ -646,7 +646,7 @@ export async function getProductivityChartData(
   employeeId: string,
   period: "week" | "month" = "week"
 ) {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const now = new Date()
   const rangeStart = period === "week"
@@ -700,7 +700,7 @@ export async function getProductivityChartData(
 // ─── Team Comparison ──────────────────────────────────────────────────────────
 
 export async function getTeamComparisonData(period: "week" | "month" = "month") {
-  await requirePartner()
+  await requirePartnerOrManager()
 
   const now = new Date()
   const rangeStart = period === "week"

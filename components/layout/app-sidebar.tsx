@@ -38,7 +38,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ROLE_LABELS } from "@/lib/auth/roles"
+import { canAccessRoute, ROLE_LABELS } from "@/lib/auth/roles"
 import { getUserInitials } from "@/lib/auth/utils"
 import {
   getNavigationForRole,
@@ -53,10 +53,12 @@ import { LogoFull, LogoIcon } from "@/components/ui/logo"
 
 // ─── Quick Actions ─────────────────────────────────────────────────────────────
 
+// Each deep link opens the corresponding create dialog on arrival (?new=1).
+// Filtered per role so employees don't see doors they can't open.
 const QUICK_ACTIONS = [
-  { label: "New Client", href: "/clients", icon: Building2 },
-  { label: "New Task", href: "/work-tracker", icon: ClipboardList },
-  { label: "New Invoice", href: "/payments/invoices", icon: Receipt },
+  { label: "New Client", href: "/clients?new=1", icon: Building2 },
+  { label: "New Task", href: "/work-tracker?new=1", icon: ClipboardList },
+  { label: "New Invoice", href: "/payments/invoices?new=1", icon: Receipt },
   { label: "New Quote", href: "/proposals/quotations/new", icon: Send },
 ]
 
@@ -267,11 +269,18 @@ function RecentItemsSection() {
 
 function QuickActionsSection() {
   const { state } = useSidebar()
+  const { user } = useAuth()
+
+  const visibleActions = QUICK_ACTIONS.filter((action) =>
+    canAccessRoute(user.role, action.href.split("?")[0])
+  )
+
+  if (visibleActions.length === 0) return null
 
   if (state === "collapsed") {
     return (
       <SidebarMenu className="mb-1">
-        {QUICK_ACTIONS.map((action) => (
+        {visibleActions.map((action) => (
           <SidebarMenuItem key={action.label}>
             <SidebarMenuButton
               asChild
@@ -298,7 +307,7 @@ function QuickActionsSection() {
         </span>
       </div>
       <div className="grid grid-cols-2 gap-1 px-2 pb-1">
-        {QUICK_ACTIONS.map((action) => (
+        {visibleActions.map((action) => (
           <Link
             key={action.label}
             href={action.href}

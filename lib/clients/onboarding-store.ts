@@ -12,6 +12,8 @@ export type OnboardingServiceConfig = {
   selected: boolean
   frequency: ServiceFrequency
   nextDueDate: string
+  /** Name for the service when serviceType is OTHER. */
+  customName?: string
 }
 
 type BasicInfo = {
@@ -40,6 +42,8 @@ type OnboardingState = {
   step: number
   basic: BasicInfo
   services: Partial<Record<ServiceType, OnboardingServiceConfig>>
+  /** Document-checklist labels marked collected during onboarding. */
+  collectedDocuments: string[]
   assignedEmployeeId: string
   priority: ClientPriority
   compliance: ComplianceSetup
@@ -47,6 +51,7 @@ type OnboardingState = {
   setStep: (step: number) => void
   updateBasic: (data: Partial<BasicInfo>) => void
   toggleService: (serviceType: ServiceType) => void
+  toggleCollectedDocument: (label: string) => void
   updateService: (
     serviceType: ServiceType,
     data: Partial<OnboardingServiceConfig>
@@ -88,6 +93,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
       step: 0,
       basic: emptyBasic,
       services: {},
+      collectedDocuments: [],
       assignedEmployeeId: "",
       priority: "MEDIUM",
       compliance: emptyCompliance,
@@ -95,6 +101,12 @@ export const useClientOnboardingStore = create<OnboardingState>()(
       setStep: (step) => set({ step }),
       updateBasic: (data) =>
         set((state) => ({ basic: { ...state.basic, ...data } })),
+      toggleCollectedDocument: (label) =>
+        set((state) => ({
+          collectedDocuments: state.collectedDocuments.includes(label)
+            ? state.collectedDocuments.filter((l) => l !== label)
+            : [...state.collectedDocuments, label],
+        })),
       toggleService: (serviceType) =>
         set((state) => {
           const current = state.services[serviceType]
@@ -139,6 +151,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
           step: 0,
           basic: emptyBasic,
           services: {},
+          collectedDocuments: [],
           assignedEmployeeId: "",
           priority: "MEDIUM",
           compliance: emptyCompliance,
@@ -151,6 +164,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
         step: state.step,
         basic: state.basic,
         services: state.services,
+        collectedDocuments: state.collectedDocuments,
         assignedEmployeeId: state.assignedEmployeeId,
         priority: state.priority,
         compliance: state.compliance,

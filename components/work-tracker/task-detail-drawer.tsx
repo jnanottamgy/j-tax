@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { format } from "date-fns"
-import { X, MessageSquare, Paperclip, Clock, User, Building2, Save, Trash2, Upload, Loader2 } from "lucide-react"
+import { X, MessageSquare, Paperclip, Clock, User, Building2, Save, Trash2, Upload, Loader2, Lock } from "lucide-react"
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { TaskStatusBadge } from "./task-status-badge"
 import { TaskPriorityBadge } from "./task-priority-badge"
 import { DueDateBadge } from "./due-date-badge"
+import { TaskTimer } from "./task-timer"
+import { TaskDependencies } from "./task-dependencies"
 import { addAttachment } from "@/app/actions/tasks"
 import { uploadFile } from "@/lib/storage/storage"
 import { cn } from "@/lib/utils"
@@ -54,6 +56,9 @@ interface Task {
   } | null
   comments: TaskComment[]
   attachments: TaskAttachment[]
+  /// Present when loaded via getTaskDetail / getTasksData includes
+  blockedBy?: Array<{ blocker: { id: string; title: string; status: string } }>
+  blocking?: Array<{ task: { id: string; title: string; status: string } }>
 }
 
 interface TaskDetailDrawerProps {
@@ -64,6 +69,8 @@ interface TaskDetailDrawerProps {
   onAddComment?: (taskId: string, content: string) => void
   onDeleteComment?: (commentId: string) => void
   onDeleteAttachment?: (attachmentId: string) => void
+  /** Called after a successful attachment upload so the parent can refetch */
+  onUploaded?: (taskId: string) => void
   currentUser?: { id: string; name: string; role: string }
   userNameMap?: Record<string, string>
 }
@@ -76,6 +83,7 @@ export function TaskDetailDrawer({
   onAddComment,
   onDeleteComment,
   onDeleteAttachment,
+  onUploaded,
   currentUser,
   userNameMap = {},
 }: TaskDetailDrawerProps) {
@@ -136,8 +144,9 @@ export function TaskDetailDrawer({
 
       if (attachmentResult.success) {
         toast.success("Attachment uploaded successfully")
-        // Reload task data to show new attachment
-        await onAddComment?.(task.id, "") // Trigger reload
+        // Ask the parent to refetch — previously this abused onAddComment("")
+        // which fired a spurious "Comment cannot be empty" error toast.
+        onUploaded?.(task.id)
       } else {
         toast.error(attachmentResult.error || "Failed to add attachment")
       }
@@ -151,15 +160,18 @@ export function TaskDetailDrawer({
     }
   }
 
-  const canEdit = currentUser?.role === "PARTNER" || currentUser?.role === "MANAGER" || 
+  const canEdit = currentUser?.role === "PARTNER" || currentUser?.role === "MANAGER" ||
     (currentUser?.role === "EMPLOYEE" && task?.assignedEmployee?.id === currentUser?.id)
 
+  // Employees submit work as UNDER_REVIEW; only a Manager/Partner may sign a
+  // task off as FILED_DONE (mirrors the server-side review gate).
+  const isEmployeeViewer = currentUser?.role === "EMPLOYEE"
   const STATUS_OPTIONS: TaskStatus[] = [
     "NOT_STARTED",
     "IN_PROGRESS",
     "DATA_AWAITED",
     "UNDER_REVIEW",
-    "FILED_DONE",
+    ...(isEmployeeViewer ? [] : (["FILED_DONE"] as TaskStatus[])),
     "ON_HOLD",
   ]
 
@@ -189,6 +201,11 @@ export function TaskDetailDrawer({
               <TaskStatusBadge status={task.status} />
               <TaskPriorityBadge priority={task.priority} />
               {task.dueDate && <DueDateBadge dueDate={task.dueDate} />}
+              {(task.blockedBy ?? []).some((d) => d.blocker.status !== "FILED_DONE") && (
+                <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400">
+                  <Lock className="h-3 w-3" /> Blocked
+                </span>
+              )}
             </div>
 
             {task.description && (
@@ -247,6 +264,12 @@ export function TaskDetailDrawer({
             {canEdit && (
               <div className="pt-4 border-t border-white/[0.08]">
                 <div className="text-xs text-muted-foreground mb-2">Update Status</div>
+                {isEmployeeViewer && (
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    Done with this? Submit it as <span className="text-foreground">Under Review</span> — a
+                    Manager or Partner signs off Filed/Done.
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {STATUS_OPTIONS.map((status) => (
                     <Button
@@ -264,6 +287,21 @@ export function TaskDetailDrawer({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Dependencies */}
+          <TaskDependencies
+            taskId={task.id}
+            blockedBy={(task.blockedBy ?? []).map((d) => d.blocker)}
+            blocking={(task.blocking ?? []).map((d) => d.task)}
+            canEdit={Boolean(canEdit)}
+            // onUploaded is the drawer's existing "refetch this task" pipe
+            onChanged={() => onUploaded?.(task.id)}
+          />
+
+          {/* Time tracking */}
+          <div className="pt-4 border-t border-white/[0.08]">
+            <TaskTimer taskId={task.id} />
           </div>
 
           {/* Attachments */}

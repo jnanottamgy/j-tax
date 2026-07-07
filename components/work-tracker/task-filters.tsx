@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+
+import { useDebouncedCallback } from "@/hooks/use-debounced-callback"
 import { Search, Filter, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -68,8 +70,8 @@ export function TaskFilters({ onFiltersChange, employees }: TaskFiltersProps) {
     { value: "OTHER", label: "Other" },
   ]
 
-  const handleSearchChange = (value: string) => {
-    setSearch(value)
+  // Debounced so typing doesn't fire a DB query per keystroke
+  const emitSearch = useDebouncedCallback((value: string) => {
     onFiltersChange({
       status: selectedStatus,
       priority: selectedPriority,
@@ -77,6 +79,11 @@ export function TaskFilters({ onFiltersChange, employees }: TaskFiltersProps) {
       serviceType: selectedServiceType,
       search: value || undefined,
     })
+  })
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    emitSearch(value)
   }
 
   const handleStatusChange = (status: string | undefined) => {

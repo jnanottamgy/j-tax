@@ -3,11 +3,15 @@
 import { revalidatePath } from "next/cache"
 import { toUserError } from "@/lib/forms/errors"
 import { z } from "zod"
-import { addDays, format } from "date-fns"
+import { addDays } from "date-fns"
 
 import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
 import { logActivity } from "@/lib/activity/logger"
+import {
+  clientGenerationWindow,
+  statutoryEventsInWindow,
+} from "@/lib/compliance/statutory-calendar"
 
 export type ComplianceActionState = {
   success?: boolean
@@ -20,11 +24,31 @@ export type ComplianceActionState = {
 const COMPLIANCE_TYPES = ["GSTR_1", "GSTR_3B", "TDS", "ROC", "ITR", "PF_ESIC", "AUDIT", "CUSTOM"] as const
 const WORKFLOW_STATUSES = ["NOT_STARTED", "DOCUMENTS_AWAITED", "IN_PROGRESS", "UNDER_REVIEW", "FILED", "COMPLETED", "OVERDUE"] as const
 
+// Maps a workflowStatus to the outer status/completedAt fields so the two
+// never desync. Shared by updateComplianceEvent and updateComplianceWorkflowStatus.
+function deriveStatusFromWorkflow(workflowStatus: typeof WORKFLOW_STATUSES[number]): {
+  status: "PENDING" | "COMPLETED" | "OVERDUE"
+  // Always explicit (Date on completion, null otherwise) so reopening a
+  // completed event clears the stale timestamp — undefined would leave it.
+  completedAt: Date | null
+} {
+  if (workflowStatus === "COMPLETED" || workflowStatus === "FILED") {
+    return { status: "COMPLETED", completedAt: new Date() }
+  }
+  if (workflowStatus === "OVERDUE") {
+    return { status: "OVERDUE", completedAt: null }
+  }
+  return { status: "PENDING", completedAt: null }
+}
+
 const complianceEventSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().optional(),
   type: z.enum(COMPLIANCE_TYPES),
-  dueDate: z.string().min(1, "Due date is required"),
+  dueDate: z
+    .string()
+    .min(1, "Due date is required")
+    .refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid due date"),
   clientId: z.string().optional(),
   isStatutory: z.boolean().default(true),
   reminderDays: z.coerce.number().int().min(0).max(90).default(7),
@@ -378,7 +402,11 @@ export async function updateComplianceEvent(
 
     const event = await prisma.complianceEvent.update({
       where: { id },
-      data: { ...parsed.data, dueDate: new Date(parsed.data.dueDate) },
+      data: {
+        ...parsed.data,
+        dueDate: new Date(parsed.data.dueDate),
+        ...deriveStatusFromWorkflow(parsed.data.workflowStatus),
+      },
     })
 
     await logActivity({
@@ -434,17 +462,8 @@ export async function updateComplianceWorkflowStatus(
       }
     }
 
-    const updateData: any = { workflowStatus }
-
     // Sync the outer status field
-    if (workflowStatus === "COMPLETED" || workflowStatus === "FILED") {
-      updateData.status = "COMPLETED"
-      updateData.completedAt = new Date()
-    } else if (workflowStatus === "OVERDUE") {
-      updateData.status = "OVERDUE"
-    } else {
-      updateData.status = "PENDING"
-    }
+    const updateData: any = { workflowStatus, ...deriveStatusFromWorkflow(workflowStatus) }
 
     const event = await prisma.complianceEvent.update({
       where: { id: eventId },
@@ -525,8 +544,11 @@ export async function updateComplianceEventStatus(
     if (status === "COMPLETED") {
       updateData.completedAt = new Date()
       updateData.workflowStatus = "COMPLETED"
-    } else if (status === "OVERDUE") {
-      updateData.workflowStatus = "OVERDUE"
+    } else {
+      // Any non-completed status (PENDING / CANCELLED / OVERDUE) must clear a
+      // stale completion timestamp so status and completedAt never diverge.
+      updateData.completedAt = null
+      if (status === "OVERDUE") updateData.workflowStatus = "OVERDUE"
     }
 
     const event = await prisma.complianceEvent.update({
@@ -606,162 +628,43 @@ export async function generateComplianceEventsForClient(
   if (!client) return { count: 0 }
 
   const now = new Date()
-  // Indian FY: April to March
-  const fyStart = now.getMonth() >= 3
-    ? new Date(now.getFullYear(), 3, 1)   // Apr this year
-    : new Date(now.getFullYear() - 1, 3, 1) // Apr last year
-  const fyEnd = new Date(fyStart.getFullYear() + 1, 2, 31) // Mar 31 next year
-  const fyLabel = `FY${fyStart.getFullYear()}-${String(fyEnd.getFullYear()).slice(2)}`
+  const { from, to, monthlyCap } = clientGenerationWindow(now)
 
-  const events: any[] = []
+  // Statutory due dates come from the shared calendar (single source of truth
+  // with the recurring cron). Monthly cadences are capped so the calendar
+  // isn't flooded a year+ ahead — the cron tops them up on a rolling window.
+  const specs = statutoryEventsInWindow(serviceTypes, from, to).filter(
+    (s) => s.cadence !== "MONTHLY" || s.dueDate <= monthlyCap
+  )
+  if (specs.length === 0) return { count: 0 }
 
-  for (const serviceType of serviceTypes) {
-    switch (serviceType) {
-      case "GST_RETURN": {
-        // GSTR-1: monthly, due 11th of following month
-        for (let m = 0; m < 12; m++) {
-          const periodDate = new Date(fyStart.getFullYear(), fyStart.getMonth() + m, 1)
-          if (periodDate > fyEnd) break
-          const dueDate = new Date(periodDate.getFullYear(), periodDate.getMonth() + 1, 11)
-          events.push({
-            clientId,
-            type: "GSTR_1",
-            title: `GSTR-1 — ${format(periodDate, "MMM yyyy")}`,
-            dueDate,
-            filingPeriod: format(periodDate, "MMM yyyy"),
-            isStatutory: true,
-            reminderDays: 7,
-            workflowStatus: dueDate < now ? "OVERDUE" : "NOT_STARTED",
-            status: dueDate < now ? "OVERDUE" : "PENDING",
-          })
-        }
-        // GSTR-3B: monthly, due 20th of following month
-        for (let m = 0; m < 12; m++) {
-          const periodDate = new Date(fyStart.getFullYear(), fyStart.getMonth() + m, 1)
-          if (periodDate > fyEnd) break
-          const dueDate = new Date(periodDate.getFullYear(), periodDate.getMonth() + 1, 20)
-          events.push({
-            clientId,
-            type: "GSTR_3B",
-            title: `GSTR-3B — ${format(periodDate, "MMM yyyy")}`,
-            dueDate,
-            filingPeriod: format(periodDate, "MMM yyyy"),
-            isStatutory: true,
-            reminderDays: 7,
-            workflowStatus: dueDate < now ? "OVERDUE" : "NOT_STARTED",
-            status: dueDate < now ? "OVERDUE" : "PENDING",
-          })
-        }
-        break
-      }
-      case "TDS": {
-        // TDS quarterly returns: Q1 Jul 31, Q2 Oct 31, Q3 Jan 31, Q4 May 31
-        const tdsQuarters = [
-          { label: `Q1 ${fyLabel}`, dueDate: new Date(fyStart.getFullYear(), 6, 31) },
-          { label: `Q2 ${fyLabel}`, dueDate: new Date(fyStart.getFullYear(), 9, 31) },
-          { label: `Q3 ${fyLabel}`, dueDate: new Date(fyStart.getFullYear() + 1, 0, 31) },
-          { label: `Q4 ${fyLabel}`, dueDate: new Date(fyStart.getFullYear() + 1, 4, 31) },
-        ]
-        for (const q of tdsQuarters) {
-          events.push({
-            clientId,
-            type: "TDS",
-            title: `TDS Return — ${q.label}`,
-            dueDate: q.dueDate,
-            filingPeriod: q.label,
-            isStatutory: true,
-            reminderDays: 7,
-            workflowStatus: q.dueDate < now ? "OVERDUE" : "NOT_STARTED",
-            status: q.dueDate < now ? "OVERDUE" : "PENDING",
-          })
-        }
-        break
-      }
-      case "INCOME_TAX": {
-        // ITR: July 31 for non-audit, Sep 30 for audit
-        events.push({
-          clientId,
-          type: "ITR",
-          title: `Income Tax Return — ${fyLabel}`,
-          dueDate: new Date(fyStart.getFullYear() + 1, 6, 31),
-          filingPeriod: fyLabel,
-          isStatutory: true,
-          reminderDays: 30,
-          workflowStatus: "NOT_STARTED",
-          status: "PENDING",
-        })
-        break
-      }
-      case "COMPANY_LAW": {
-        // ROC Annual Return: Sep 30
-        events.push({
-          clientId,
-          type: "ROC",
-          title: `ROC Annual Return — ${fyLabel}`,
-          dueDate: new Date(fyStart.getFullYear() + 1, 8, 30),
-          filingPeriod: fyLabel,
-          isStatutory: true,
-          reminderDays: 30,
-          workflowStatus: "NOT_STARTED",
-          status: "PENDING",
-        })
-        // ROC Financial Statements: Oct 31
-        events.push({
-          clientId,
-          type: "ROC",
-          title: `ROC Financial Statements — ${fyLabel}`,
-          dueDate: new Date(fyStart.getFullYear() + 1, 9, 31),
-          filingPeriod: fyLabel,
-          isStatutory: true,
-          reminderDays: 30,
-          workflowStatus: "NOT_STARTED",
-          status: "PENDING",
-        })
-        break
-      }
-      case "PAYROLL": {
-        // PF/ESIC: monthly, due 15th of following month
-        for (let m = 0; m < 12; m++) {
-          const periodDate = new Date(fyStart.getFullYear(), fyStart.getMonth() + m, 1)
-          if (periodDate > fyEnd) break
-          const dueDate = new Date(periodDate.getFullYear(), periodDate.getMonth() + 1, 15)
-          events.push({
-            clientId,
-            type: "PF_ESIC",
-            title: `PF/ESIC — ${format(periodDate, "MMM yyyy")}`,
-            dueDate,
-            filingPeriod: format(periodDate, "MMM yyyy"),
-            isStatutory: true,
-            reminderDays: 5,
-            workflowStatus: dueDate < now ? "OVERDUE" : "NOT_STARTED",
-            status: dueDate < now ? "OVERDUE" : "PENDING",
-          })
-        }
-        break
-      }
-      case "AUDIT": {
-        events.push({
-          clientId,
-          type: "AUDIT",
-          title: `Statutory Audit — ${fyLabel}`,
-          dueDate: new Date(fyStart.getFullYear() + 1, 8, 30),
-          filingPeriod: fyLabel,
-          isStatutory: true,
-          reminderDays: 30,
-          workflowStatus: "NOT_STARTED",
-          status: "PENDING",
-        })
-        break
-      }
-    }
-  }
+  // ComplianceEvent has no unique constraint, so createMany+skipDuplicates
+  // can't dedupe — a second "Generate" click would double every event.
+  // Canonical titles embed the filing period, so (title) is the dedupe key.
+  const existing = await prisma.complianceEvent.findMany({
+    where: { clientId, title: { in: specs.map((s) => s.title) } },
+    select: { title: true },
+  })
+  const existingTitles = new Set(existing.map((e) => e.title))
+
+  const events = specs
+    .filter((s) => !existingTitles.has(s.title))
+    .map((s) => ({
+      clientId,
+      type: s.type as any,
+      title: s.title,
+      description: s.description,
+      dueDate: s.dueDate,
+      filingPeriod: s.filingPeriod,
+      isStatutory: true,
+      reminderDays: s.reminderDays,
+      workflowStatus: (s.dueDate < now ? "OVERDUE" : "NOT_STARTED") as any,
+      status: (s.dueDate < now ? "OVERDUE" : "PENDING") as any,
+    }))
 
   if (events.length === 0) return { count: 0 }
 
-  await prisma.complianceEvent.createMany({
-    data: events,
-    skipDuplicates: true,
-  })
+  await prisma.complianceEvent.createMany({ data: events })
 
   return { count: events.length }
 }

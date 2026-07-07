@@ -14,6 +14,7 @@ import {
 } from "@/lib/auth/scope"
 import type { FormActionState } from "@/lib/forms/types"
 import { prisma } from "@/lib/prisma"
+import { notifyRoles, notifyUser } from "@/lib/notifications/notify"
 import { parseCreateTaskFormData, taskBaseSchema } from "@/lib/validations/task"
 import { recordTimelineEvent } from "@/lib/timeline/events"
 
@@ -71,6 +72,9 @@ export async function getTasksData(filters?: {
       comments: {
         orderBy: { createdAt: "desc" },
         take: 1,
+      },
+      blockedBy: {
+        include: { blocker: { select: { id: true, title: true, status: true } } },
       },
       _count: {
         select: {
@@ -179,6 +183,7 @@ export async function createTask(
     }
 
     revalidatePath("/work-tracker")
+    revalidatePath(`/clients/${newTask.clientId}`)
 
     return { success: true }
   } catch (error) {
@@ -200,25 +205,23 @@ export async function updateTask(
   formData: FormData
 ): Promise<TaskActionState> {
   try {
-    const session = await requireAuth()
+    // Full task edits (title, due date, priority, assignee, completion date)
+    // are management actions. Employees work their tasks through status
+    // updates (review-gated), comments, attachments, and the timer — they
+    // don't get to re-negotiate scope or deadlines on assigned work.
+    await requirePartnerOrManager()
 
     const id = formData.get("id")
     if (typeof id !== "string" || !id) {
       return { error: "Missing task id" }
     }
 
-    // Check permissions
     const task = await prisma.task.findUnique({
       where: { id },
     })
 
     if (!task) {
       return { error: "Task not found" }
-    }
-
-    const executiveEmployeeId = await getExecutiveEmployeeId(session)
-    if (!canAccessAssignedTask(session, executiveEmployeeId, task.assignedEmployeeId)) {
-      return { error: "You can only update tasks assigned to you" }
     }
 
     const raw = {
@@ -241,13 +244,6 @@ export async function updateTask(
       }
     }
 
-    // Only PARTNER and MANAGER can reassign tasks
-    if (parsed.data.assignedEmployeeId && parsed.data.assignedEmployeeId !== task.assignedEmployeeId) {
-      if (session.user.role === "EMPLOYEE") {
-        return { error: "You do not have permission to reassign tasks" }
-      }
-    }
-
     await prisma.task.update({
       where: { id },
       data: {
@@ -259,6 +255,7 @@ export async function updateTask(
 
     revalidatePath("/work-tracker")
     revalidatePath(`/work-tracker/${id}`)
+    revalidatePath(`/clients/${task.clientId}`)
 
     return { success: true }
   } catch (error) {
@@ -295,8 +292,32 @@ export async function updateTaskStatus(
       return { error: "You can only update tasks assigned to you" }
     }
 
+    // Review gate — an employee cannot sign off their own filing. They submit
+    // work as UNDER_REVIEW; a Manager/Partner moves it to FILED_DONE.
+    if (status === "FILED_DONE" && session.user.role === "EMPLOYEE") {
+      return {
+        error:
+          'Submit it as "Under Review" instead — a Manager or Partner signs off Filed/Done.',
+      }
+    }
+
+    // Dependency guard — a task with open blockers cannot move forward.
+    // (Moving back to NOT_STARTED / ON_HOLD / DATA_AWAITED is always allowed.)
+    if (["IN_PROGRESS", "UNDER_REVIEW", "FILED_DONE"].includes(status)) {
+      const openBlockers = await prisma.taskDependency.findMany({
+        where: { taskId, blocker: { status: { not: "FILED_DONE" } } },
+        include: { blocker: { select: { title: true } } },
+      })
+      if (openBlockers.length > 0) {
+        const titles = openBlockers.map((d) => `"${d.blocker.title}"`).join(", ")
+        return {
+          error: `Blocked by ${titles} — complete ${openBlockers.length === 1 ? "it" : "them"} first, or remove the dependency.`,
+        }
+      }
+    }
+
     const updateData: any = { status }
-    
+
     // Auto-set completion date when marked as FILED_DONE
     if (status === "FILED_DONE" && !task.completionDate) {
       updateData.completionDate = new Date()
@@ -306,6 +327,54 @@ export async function updateTaskStatus(
       where: { id: taskId },
       data: updateData,
     })
+
+    // ── Review-flow notifications (the Employee ↔ Manager reporting chain) ──
+    // Employee submits → every Manager/Partner is told there's work to review.
+    if (status === "UNDER_REVIEW" && session.user.role === "EMPLOYEE") {
+      const client = await prisma.client.findUnique({
+        where: { id: task.clientId },
+        select: { name: true },
+      })
+      await notifyRoles(["PARTNER", "MANAGER"], {
+        title: `Ready for review: ${task.title}`,
+        message: `${session.user.name} submitted "${task.title}"${client ? ` (${client.name})` : ""} for sign-off.`,
+        type: "INFO",
+        entityType: "TASK",
+        entityId: taskId,
+      })
+    }
+    // Reviewer decides → the assignee hears back (approved or sent back).
+    if (
+      task.status === "UNDER_REVIEW" &&
+      status !== "UNDER_REVIEW" &&
+      session.user.role !== "EMPLOYEE" &&
+      task.assignedEmployeeId
+    ) {
+      const assignee = await prisma.employee.findUnique({
+        where: { id: task.assignedEmployeeId },
+        select: { userId: true },
+      })
+      if (assignee?.userId && assignee.userId !== session.user.id) {
+        await notifyUser(
+          assignee.userId,
+          status === "FILED_DONE"
+            ? {
+                title: `Signed off: ${task.title}`,
+                message: `${session.user.name} approved and filed "${task.title}".`,
+                type: "INFO",
+                entityType: "TASK",
+                entityId: taskId,
+              }
+            : {
+                title: `Sent back: ${task.title}`,
+                message: `${session.user.name} moved "${task.title}" from Under Review to ${status.replace(/_/g, " ").toLowerCase()} — check the task comments.`,
+                type: "WARNING",
+                entityType: "TASK",
+                entityId: taskId,
+              }
+        )
+      }
+    }
 
     // Timeline event on completion
     if (status === "FILED_DONE") {
@@ -334,10 +403,46 @@ export async function updateTaskStatus(
           })
         }
       } catch (logErr) { console.error("activity/notification log failed:", logErr) }
+
+      // Notify assignees of tasks this completion just unblocked
+      try {
+        const dependents = await prisma.taskDependency.findMany({
+          where: { blockerId: taskId },
+          include: {
+            task: {
+              include: {
+                assignedEmployee: { select: { userId: true } },
+                blockedBy: {
+                  include: { blocker: { select: { id: true, status: true } } },
+                },
+              },
+            },
+          },
+        })
+        for (const dep of dependents) {
+          const stillBlocked = dep.task.blockedBy.some(
+            (d) => d.blocker.id !== taskId && d.blocker.status !== "FILED_DONE"
+          )
+          const userId = dep.task.assignedEmployee?.userId
+          if (!stillBlocked && userId) {
+            await prisma.notification.create({
+              data: {
+                userId,
+                title: `Task unblocked: ${dep.task.title}`,
+                message: `"${task.title}" is done — "${dep.task.title}" is no longer waiting on anything.`,
+                type: "INFO",
+                entityType: "TASK",
+                entityId: dep.task.id,
+              },
+            })
+          }
+        }
+      } catch (logErr) { console.error("unblock notification failed:", logErr) }
     }
 
     revalidatePath("/work-tracker")
     revalidatePath(`/work-tracker/${taskId}`)
+    revalidatePath(`/clients/${task.clientId}`)
 
     return { success: true }
   } catch (error) {
@@ -358,6 +463,7 @@ export async function deleteTask(taskId: string): Promise<TaskActionState> {
     await prisma.task.delete({ where: { id: taskId } })
 
     revalidatePath("/work-tracker")
+    revalidatePath(`/clients/${task.clientId}`)
 
     return { success: true }
   } catch (error) {
@@ -387,6 +493,12 @@ export async function getTaskDetail(taskId: string) {
       },
       automations: {
         where: { isActive: true },
+      },
+      blockedBy: {
+        include: { blocker: { select: { id: true, title: true, status: true } } },
+      },
+      blocking: {
+        include: { task: { select: { id: true, title: true, status: true } } },
       },
     },
   })

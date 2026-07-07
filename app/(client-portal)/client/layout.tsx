@@ -28,7 +28,9 @@ export default async function ClientPortalLayout({
   // Find the Client record for this user — match on email only.
   // HIGH-04: removed GSTIN fallback which allowed any user whose email matched
   // a client's GSTIN to gain access to that client's portal.
-  const clientRecord = await prisma.client.findFirst({
+  // Client.email is not unique, so if two client records share an email we must
+  // NOT silently bind to whichever findFirst returns (cross-client exposure).
+  const matches = await prisma.client.findMany({
     where: { email: session.user.email },
     select: {
       id: true,
@@ -39,24 +41,39 @@ export default async function ClientPortalLayout({
       gstin: true,
       status: true,
     },
+    take: 2,
   })
 
-  if (!clientRecord) {
+  if (matches.length === 0) {
     // No client record found - show unauthorized or redirect
     redirect("/unauthorized")
   }
+
+  if (matches.length > 1) {
+    // Ambiguous identity — refuse rather than risk showing the wrong client's data.
+    redirect("/unauthorized?reason=ambiguous_client")
+  }
+
+  const clientRecord = matches[0]
 
   return (
     <AuthProvider user={session.user}>
       <ErrorBoundary>
         <TooltipProvider>
           <SidebarProvider defaultOpen={false}>
+            {/* Keyboard users can jump past the sidebar/header */}
+            <a
+              href="#client-main"
+              className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+            >
+              Skip to main content
+            </a>
             <ClientSidebar client={clientRecord} />
             <SidebarInset className="min-h-svh bg-background">
               <ClientHeader clientName={clientRecord.name} />
-              <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
+              <main id="client-main" className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
                 {children}
-              </div>
+              </main>
             </SidebarInset>
           </SidebarProvider>
         </TooltipProvider>

@@ -9,8 +9,16 @@ const PUBLIC_ROUTES = [
   "/reset-password",
   "/auth/callback",
   "/auth/reset-password",
+  // Cron routes authenticate themselves via CRON_SECRET (Bearer header) —
+  // they arrive without a Supabase session, so they must bypass the proxy.
   "/api/cron/payments",
   "/api/cron/quotation-followups",
+  "/api/cron/reminders",
+  "/api/cron/compliance-recurring",
+  "/api/cron/task-automation",
+  // Meta calls this without a session; the route verifies the webhook token
+  // (GET handshake) and X-Hub-Signature-256 (POST) itself.
+  "/api/webhooks/whatsapp",
   "/unauthorized",
   "/q",
 ]
@@ -58,6 +66,19 @@ export async function proxy(request: NextRequest) {
     unauthorizedUrl.pathname = "/unauthorized"
     unauthorizedUrl.searchParams.set("reason", "missing_role")
     return NextResponse.redirect(unauthorizedUrl)
+  }
+
+  // Provisioned staff signing in with a temporary password must choose their
+  // own before touching anything else in the app.
+  if (
+    user.user_metadata?.must_change_password &&
+    pathname !== "/auth/set-password" &&
+    !pathname.startsWith("/api/")
+  ) {
+    const setPasswordUrl = request.nextUrl.clone()
+    setPasswordUrl.pathname = "/auth/set-password"
+    setPasswordUrl.search = ""
+    return NextResponse.redirect(setPasswordUrl)
   }
 
   if (isAuthRoute) {

@@ -80,6 +80,9 @@ export class ResendProvider implements NotificationProvider {
         success: false,
         error: responseData.message || "Failed to send email",
         providerResponse: responseData,
+        // 4xx (except 429 rate-limit) means the request itself is invalid —
+        // e.g. malformed recipient — and will fail identically on every retry.
+        permanentFailure: response.status >= 400 && response.status < 500 && response.status !== 429,
       }
     } catch (error) {
       return {
@@ -147,6 +150,7 @@ export class ResendProvider implements NotificationProvider {
         success: false,
         error: responseData.message || "Failed to send template email",
         providerResponse: responseData,
+        permanentFailure: response.status >= 400 && response.status < 500 && response.status !== 429,
       }
     } catch (error) {
       return {

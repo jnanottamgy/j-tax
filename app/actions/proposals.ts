@@ -144,7 +144,15 @@ export async function getLeads(filters?: { status?: string; search?: string }) {
     orderBy: { createdAt: "desc" },
   })
 
-  return leads
+  // Serialize Decimals — they can't cross the server → client boundary.
+  return leads.map((lead) => ({
+    ...lead,
+    estimatedValue: lead.estimatedValue !== null ? Number(lead.estimatedValue) : null,
+    quotations: lead.quotations.map((q) => ({
+      ...q,
+      total: Number(q.total),
+    })),
+  }))
 }
 
 // ─── Quotation Actions ────────────────────────────────────────────────────────
@@ -184,6 +192,12 @@ export async function createQuotation(
       return { error: "Invalid email address." }
     }
 
+    // Reject a garbage date before it becomes an Invalid Date in the DB.
+    const validUntil = new Date(validUntilRaw)
+    if (Number.isNaN(validUntil.getTime())) {
+      return { error: "Enter a valid 'valid until' date." }
+    }
+
     let items: z.infer<typeof itemSchema>[]
     try {
       const raw = JSON.parse(itemsRaw)
@@ -221,7 +235,7 @@ export async function createQuotation(
         clientEmail,
         clientPhone,
         clientCompany,
-        validUntil: new Date(validUntilRaw),
+        validUntil,
         notes,
         terms,
         subtotal,
@@ -373,7 +387,7 @@ export async function getQuotations(filters?: { status?: string; search?: string
     ]
   }
 
-  return prisma.quotation.findMany({
+  const quotations = await prisma.quotation.findMany({
     where,
     include: {
       items: { orderBy: { sortOrder: "asc" } },
@@ -382,11 +396,26 @@ export async function getQuotations(filters?: { status?: string; search?: string
     },
     orderBy: { createdAt: "desc" },
   })
+
+  // Serialize Decimals — they can't cross the server → client boundary.
+  return quotations.map((quotation) => ({
+    ...quotation,
+    subtotal: Number(quotation.subtotal),
+    taxAmount: Number(quotation.taxAmount),
+    total: Number(quotation.total),
+    items: quotation.items.map((item) => ({
+      ...item,
+      unitPrice: Number(item.unitPrice),
+      taxRate: Number(item.taxRate),
+      taxAmount: Number(item.taxAmount),
+      total: Number(item.total),
+    })),
+  }))
 }
 
 export async function getQuotationById(id: string) {
   await requirePartnerOrManager()
-  return prisma.quotation.findUnique({
+  const quotation = await prisma.quotation.findUnique({
     where: { id },
     include: {
       items: { orderBy: { sortOrder: "asc" } },
@@ -395,6 +424,31 @@ export async function getQuotationById(id: string) {
       lead: true,
     },
   })
+  if (!quotation) return null
+
+  // Serialize Decimals — they can't cross the server → client boundary.
+  return {
+    ...quotation,
+    subtotal: Number(quotation.subtotal),
+    taxAmount: Number(quotation.taxAmount),
+    total: Number(quotation.total),
+    items: quotation.items.map((item) => ({
+      ...item,
+      unitPrice: Number(item.unitPrice),
+      taxRate: Number(item.taxRate),
+      taxAmount: Number(item.taxAmount),
+      total: Number(item.total),
+    })),
+    lead: quotation.lead
+      ? {
+          ...quotation.lead,
+          estimatedValue:
+            quotation.lead.estimatedValue !== null
+              ? Number(quotation.lead.estimatedValue)
+              : null,
+        }
+      : null,
+  }
 }
 
 export async function deleteQuotation(quotationId: string) {
@@ -418,50 +472,59 @@ export async function respondToQuotation(
   response: "ACCEPTED" | "REJECTED",
   rejectionReason?: string
 ) {
-  const quotation = await prisma.quotation.findUnique({ where: { token } })
-  if (!quotation) return { error: "Quotation not found." }
-  if (!["SENT", "VIEWED"].includes(quotation.status)) {
-    return { error: "This quotation is no longer available for a response." }
-  }
+  try {
+    const quotation = await prisma.quotation.findUnique({ where: { token } })
+    if (!quotation) return { error: "Quotation not found." }
+    if (!["SENT", "VIEWED"].includes(quotation.status)) {
+      return { error: "This quotation is no longer available for a response." }
+    }
 
-  const now = new Date()
-  await prisma.quotation.update({
-    where: { id: quotation.id },
-    data: {
-      status: response,
-      respondedAt: now,
-      rejectionReason: response === "REJECTED" ? (rejectionReason || null) : null,
-    },
-  })
-
-  // Update lead status
-  if (quotation.leadId) {
-    await prisma.lead.update({
-      where: { id: quotation.leadId },
-      data: { status: response === "ACCEPTED" ? "WON" : "NEGOTIATION" },
+    const now = new Date()
+    await prisma.quotation.update({
+      where: { id: quotation.id },
+      data: {
+        status: response,
+        respondedAt: now,
+        // Public endpoint — cap the free-text reason to avoid unbounded storage.
+        rejectionReason:
+          response === "REJECTED"
+            ? (rejectionReason?.trim().slice(0, 1000) || null)
+            : null,
+      },
     })
+
+    // Update lead status
+    if (quotation.leadId) {
+      await prisma.lead.update({
+        where: { id: quotation.leadId },
+        data: { status: response === "ACCEPTED" ? "WON" : "NEGOTIATION" },
+      })
+    }
+
+    // Skip pending follow-ups
+    await prisma.quotationFollowUp.updateMany({
+      where: { quotationId: quotation.id, status: "PENDING" },
+      data: { status: "SKIPPED" },
+    })
+
+    // Notify partners
+    const partners = await prisma.user.findMany({ where: { role: "PARTNER" } })
+    const statusVerb = response === "ACCEPTED" ? "✅ ACCEPTED" : "❌ Rejected"
+    await prisma.notification.createMany({
+      data: partners.map((p) => ({
+        userId: p.id,
+        title: `Quotation ${statusVerb}`,
+        message: `${quotation.clientName} ${response === "ACCEPTED" ? "accepted" : "rejected"} Quotation #${quotation.quotationNumber} (₹${Number(quotation.total).toLocaleString("en-IN")}).`,
+        type: response === "ACCEPTED" ? ("INFO" as const) : ("WARNING" as const),
+      })),
+    })
+
+    revalidatePath("/proposals")
+    return { success: true }
+  } catch (err) {
+    console.error("respondToQuotation error:", err)
+    return { error: "Something went wrong — please try again or contact the firm." }
   }
-
-  // Skip pending follow-ups
-  await prisma.quotationFollowUp.updateMany({
-    where: { quotationId: quotation.id, status: "PENDING" },
-    data: { status: "SKIPPED" },
-  })
-
-  // Notify partners
-  const partners = await prisma.user.findMany({ where: { role: "PARTNER" } })
-  const statusVerb = response === "ACCEPTED" ? "✅ ACCEPTED" : "❌ Rejected"
-  await prisma.notification.createMany({
-    data: partners.map((p) => ({
-      userId: p.id,
-      title: `Quotation ${statusVerb}`,
-      message: `${quotation.clientName} ${response === "ACCEPTED" ? "accepted" : "rejected"} Quotation #${quotation.quotationNumber} (₹${Number(quotation.total).toLocaleString("en-IN")}).`,
-      type: response === "ACCEPTED" ? ("INFO" as const) : ("WARNING" as const),
-    })),
-  })
-
-  revalidatePath("/proposals")
-  return { success: true }
 }
 
 export async function markQuotationViewed(token: string) {

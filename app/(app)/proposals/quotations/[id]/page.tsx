@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { ChevronLeft } from "lucide-react"
 import { requirePartnerOrManager } from "@/lib/auth/guards"
 import { getSession } from "@/lib/auth/session"
+import { getFirmSettings } from "@/lib/firm-settings"
 import { getQuotationById } from "@/app/actions/proposals"
 import { QuotationDetailClient } from "@/components/proposals/quotation-detail-client"
 import { PageHeader } from "@/components/layout/page-header"
@@ -22,9 +23,10 @@ export default async function QuotationDetailPage({
   }
 
   const { id } = await params
-  const [quotation, session] = await Promise.all([
+  const [quotation, session, cfg] = await Promise.all([
     getQuotationById(id),
     getSession(),
+    getFirmSettings(),
   ])
 
   if (!quotation || !session) notFound()
@@ -46,6 +48,14 @@ export default async function QuotationDetailPage({
       <QuotationDetailClient
         quotation={quotation}
         isPartner={session.user.role === "PARTNER"}
+        firm={{
+          name: cfg.firmName,
+          address: cfg.firmAddress,
+          phone: cfg.firmPhone,
+          email: cfg.replyToEmail || cfg.fromEmail || null,
+          gstin: cfg.gstin,
+          website: cfg.website,
+        }}
       />
     </PageContainer>
   )

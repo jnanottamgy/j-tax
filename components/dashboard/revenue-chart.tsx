@@ -12,11 +12,9 @@ import {
 
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { SectionHeading } from "@/components/ui/section-heading"
+import { formatINRCompact } from "@/lib/india/format"
 
-function formatCurrency(n: number) {
-  if (n >= 100_000) return `₹${(n / 100_000).toFixed(1)}L`
-  return `₹${n.toLocaleString("en-IN")}`
-}
+const formatCurrency = formatINRCompact
 
 function ChartTooltip({
   active,

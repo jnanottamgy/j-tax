@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Download,
   Eye,
   Filter,
   MoreHorizontal,
@@ -20,9 +21,9 @@ import {
   Search,
   SlidersHorizontal,
   Mail,
-  UserPlus,
   Trash2,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { deleteClient } from "@/app/actions/clients"
 import {
@@ -35,6 +36,7 @@ import { ServiceBadgeList } from "@/components/clients/service-badges"
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -175,6 +177,48 @@ function compareClients(
   }
 
   return direction === "asc" ? result : -result
+}
+
+// Quote every cell and neutralize spreadsheet formula-injection: a value
+// beginning with = + - @ is prefixed with a single quote so Excel/Sheets
+// treat it as text, not a formula.
+function escapeCsvCell(value: string): string {
+  const safe = /^[=+\-@]/.test(value) ? `'${value}` : value
+  return `"${safe.replace(/"/g, '""')}"`
+}
+
+function downloadClientsCsv(clients: ClientListItem[]) {
+  const headers = [
+    "Name", "Code", "GSTIN", "PAN", "Email", "Phone",
+    "Assigned Employee", "Priority", "Status", "Next Due",
+  ]
+  const rows = clients.map((c) => [
+    c.name,
+    c.code,
+    c.gstin ?? "",
+    c.pan ?? "",
+    c.email ?? "",
+    c.phone ?? "",
+    c.assignedEmployee,
+    c.priority,
+    c.status,
+    c.nextDueDate ? format(parseISO(c.nextDueDate), "yyyy-MM-dd") : "",
+  ])
+
+  const csv = [headers, ...rows]
+    .map((row) => row.map((cell) => escapeCsvCell(String(cell))).join(","))
+    .join("\n")
+
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = `clients-${new Date().toISOString().split("T")[0]}.csv`
+  link.style.visibility = "hidden"
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 type ClientsTableProps = {
@@ -368,6 +412,27 @@ export function ClientsTable({
               Clear all
             </Button>
           )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => downloadClientsCsv(filteredClients)}
+            disabled={filteredClients.length === 0}
+            className="input-premium h-9 gap-1.5 rounded-xl border-white/[0.07] bg-transparent"
+            title={
+              hasActiveFilters
+                ? "Export the filtered clients to CSV"
+                : "Export all clients to CSV"
+            }
+          >
+            <Download className="size-3.5" />
+            Export
+            {hasActiveFilters && (
+              <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">
+                {filteredClients.length}
+              </Badge>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -570,17 +635,21 @@ function RowActions({
 }) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
   const handleDelete = async () => {
-    if (!confirm(`Delete "${client.name}"? This will remove all associated tasks, documents, invoices, and compliance records. This cannot be undone.`)) return
     setIsDeleting(true)
-    const result = await deleteClient(client.id)
-    setIsDeleting(false)
-    if (result.success) {
-      router.refresh()
-    } else {
-      alert(result.error ?? "Failed to delete client")
+    try {
+      const result = await deleteClient(client.id)
+      if (result.success) {
+        toast.success(`Client "${client.name}" deleted`)
+        router.refresh()
+      } else {
+        toast.error(result.error ?? "Failed to delete client")
+      }
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -612,19 +681,21 @@ function RowActions({
               View profile
             </Link>
           </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href={`/messaging?clientId=${client.id}&compose=1`}>
+              <Mail className="size-4" />
+              Send reminder
+            </Link>
+          </DropdownMenuItem>
           {canManage && (
             <>
               <DropdownMenuItem onSelect={() => setEditOpen(true)}>
                 <Pencil className="size-4" />
                 Edit client
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-                <UserPlus className="size-4" />
-                Reassign employee
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={handleDelete}
+                onSelect={() => setConfirmingDelete(true)}
                 className="text-destructive focus:text-destructive focus:bg-destructive/10"
               >
                 <Trash2 className="size-4" />
@@ -632,12 +703,18 @@ function RowActions({
               </DropdownMenuItem>
             </>
           )}
-          <DropdownMenuItem>
-            <Mail className="size-4" />
-            Send reminder
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title={`Delete "${client.name}"?`}
+        description="All associated tasks, documents, invoices, and compliance records will be permanently removed. This cannot be undone."
+        confirmLabel="Delete client"
+        destructive
+        onConfirm={handleDelete}
+      />
 
       {canManage && (
         <EditClientDialog

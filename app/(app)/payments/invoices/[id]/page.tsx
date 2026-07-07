@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { getSession } from "@/lib/auth/session"
+import { getFirmSettings } from "@/lib/firm-settings"
+import { stateFromGstin } from "@/lib/invoices/gst"
 import { InvoiceDetailClient } from "./invoice-detail-client"
 
 export default async function InvoiceDetailPage({
@@ -26,12 +28,22 @@ export default async function InvoiceDetailPage({
 
   if (!invoice) notFound()
 
+  // Firm's own GST state — the edit dialog needs it for the split preview.
+  const firmSettings = await getFirmSettings()
+  const firmState = stateFromGstin(firmSettings.gstin)
+
   // Serialize Decimal and Date fields for the client component
   const serialized = {
     ...invoice,
     amount: Number(invoice.amount),
     paidAmount: Number(invoice.paidAmount),
     outstandingAmount: Number(invoice.outstandingAmount),
+    professionalFee: invoice.professionalFee !== null ? Number(invoice.professionalFee) : null,
+    taxRate: invoice.taxRate !== null ? Number(invoice.taxRate) : null,
+    taxAmount: invoice.taxAmount !== null ? Number(invoice.taxAmount) : null,
+    cgstAmount: invoice.cgstAmount !== null ? Number(invoice.cgstAmount) : null,
+    sgstAmount: invoice.sgstAmount !== null ? Number(invoice.sgstAmount) : null,
+    igstAmount: invoice.igstAmount !== null ? Number(invoice.igstAmount) : null,
     issueDate: invoice.issueDate.toISOString(),
     dueDate: invoice.dueDate.toISOString(),
     createdAt: invoice.createdAt.toISOString(),
@@ -49,5 +61,5 @@ export default async function InvoiceDetailPage({
     })),
   }
 
-  return <InvoiceDetailClient invoice={serialized} />
+  return <InvoiceDetailClient invoice={serialized} firmState={firmState} />
 }

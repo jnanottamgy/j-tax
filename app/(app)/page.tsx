@@ -238,18 +238,21 @@ function makeManagerDashboardFetcher(userId: string) {
       const now = new Date()
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
-      const [employees, invoiceAgg, pendingCompliance] = await Promise.all([
-        prisma.employee.findMany({
-          where: { isActive: true },
-          select: { id: true, name: true, department: true },
-          orderBy: { name: "asc" },
-          take: 20,
-        }),
-        prisma.invoice.aggregate({
-          _sum: { amount: true, paidAmount: true, outstandingAmount: true },
-        }),
-        prisma.complianceEvent.count({ where: { status: "PENDING" } }),
-      ])
+      const [employees, invoiceAgg, pendingCompliance, documentCount, invoiceCount] =
+        await Promise.all([
+          prisma.employee.findMany({
+            where: { isActive: true },
+            select: { id: true, name: true, department: true },
+            orderBy: { name: "asc" },
+            take: 20,
+          }),
+          prisma.invoice.aggregate({
+            _sum: { amount: true, paidAmount: true, outstandingAmount: true },
+          }),
+          prisma.complianceEvent.count({ where: { status: "PENDING" } }),
+          prisma.document.count(),
+          prisma.invoice.count(),
+        ])
 
       const employeeIds = employees.map((e) => e.id)
 
@@ -340,7 +343,20 @@ function makeManagerDashboardFetcher(userId: string) {
       const collectionRate =
         totalRevenue > 0 ? Math.round((totalCollected / totalRevenue) * 100) : 0
 
-      const totalClients = await prisma.client.count()
+      const [totalClients, recentActivityRaw] = await Promise.all([
+        prisma.client.count(),
+        prisma.activityLog.findMany({
+          orderBy: { timestamp: "desc" },
+          take: 8,
+          select: {
+            id: true,
+            action: true,
+            description: true,
+            timestamp: true,
+            entityType: true,
+          },
+        }),
+      ])
 
       return {
         teamStats: {
@@ -352,10 +368,18 @@ function makeManagerDashboardFetcher(userId: string) {
           pendingCompliance,
           collectionRate,
           totalOutstanding: Number(invoiceAgg._sum.outstandingAmount ?? 0),
+          hasDocuments: documentCount > 0,
+          hasInvoices: invoiceCount > 0,
         },
         teamWorkload,
         urgentItems,
-        recentActivity: [] as Array<{id: string; action: string; description: string; timestamp: string; entityType: string}>,
+        recentActivity: recentActivityRaw.map((a) => ({
+          id: a.id,
+          action: a.action,
+          description: a.description,
+          timestamp: a.timestamp.toISOString(),
+          entityType: a.entityType,
+        })),
       }
     },
     [`dashboard-manager-${userId}-${todayKey}`],
@@ -400,6 +424,9 @@ function makeEmployeeDashboardFetcher(userId: string) {
         overdueTasks,
         upcomingComplianceRaw,
         pendingCompliance,
+        openTaskCount,
+        clientCount,
+        activeClientCount,
       ] = await Promise.all([
         prisma.task.findMany({
           where: { assignedEmployeeId: empId, status: { not: "FILED_DONE" } },
@@ -434,10 +461,18 @@ function makeEmployeeDashboardFetcher(userId: string) {
         prisma.complianceEvent.count({
           where: { client: { assignedEmployeeId: empId }, status: "PENDING" },
         }),
+        // Real counts — the findMany lists above are display-capped at 20,
+        // so deriving totals from their lengths understates busy employees.
+        prisma.task.count({
+          where: { assignedEmployeeId: empId, status: { not: "FILED_DONE" } },
+        }),
+        prisma.client.count({ where: { assignedEmployeeId: empId } }),
+        prisma.client.count({
+          where: { assignedEmployeeId: empId, status: "ACTIVE" },
+        }),
       ])
 
-      const totalTasks = myTasksRaw.length + completedTasks
-      const activeClients = myClientsRaw.filter((c) => c.status === "ACTIVE").length
+      const totalTasks = openTaskCount + completedTasks
 
       return {
         myEmployee: { id: myEmployee.id, name: myEmployee.name },
@@ -446,8 +481,8 @@ function makeEmployeeDashboardFetcher(userId: string) {
           completedTasks,
           overdueTasks,
           tasksDueToday: todayTasksRaw.length,
-          totalClients: myClientsRaw.length,
-          activeClients,
+          totalClients: clientCount,
+          activeClients: activeClientCount,
           pendingCompliance,
         },
         todayTasks: todayTasksRaw.map((t) => ({
@@ -528,8 +563,8 @@ export default async function DashboardPage() {
             hasEmployees: data.teamStats.totalEmployees > 0,
             hasClients: data.teamStats.totalClients > 0,
             hasTasks: data.teamStats.totalActiveTasks > 0,
-            hasDocuments: true,
-            hasInvoices: true,
+            hasDocuments: data.teamStats.hasDocuments,
+            hasInvoices: data.teamStats.hasInvoices,
             hasCompliance: data.teamStats.pendingCompliance > 0,
           }}
         />
@@ -565,7 +600,6 @@ export default async function DashboardPage() {
     taskStatusCounts,
     overdueTasksCount,
     upcomingDeadlinesCount,
-    totalTasks,
     totalDocuments,
     setupChecklist,
     commandCenter,
@@ -580,8 +614,14 @@ export default async function DashboardPage() {
     totalCompliance > 0
       ? Math.round((completedComplianceCount / totalCompliance) * 100)
       : 100
-  const workload =
-    activeClients > 0 ? Math.round((totalTasks / activeClients) * 10) : 0
+  // Honest capacity metric: open (not filed/done) tasks per active employee.
+  const openTasks = taskStatusCounts
+    .filter((t) => t.status !== "FILED_DONE")
+    .reduce((sum, t) => sum + t._count, 0)
+  const openTasksPerMember =
+    commandCenter.activeEmployees > 0
+      ? Math.round((openTasks / commandCenter.activeEmployees) * 10) / 10
+      : 0
 
   const kpiData = {
     totalClients,
@@ -620,7 +660,7 @@ export default async function DashboardPage() {
         outstandingInvoices={overdueCount}
         pendingDocuments={totalDocuments}
         complianceScore={complianceScore}
-        workload={Math.min(workload, 100)}
+        openTasksPerMember={openTasksPerMember}
       />
 
       <div className="grid gap-5 lg:grid-cols-4">

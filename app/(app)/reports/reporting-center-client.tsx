@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { addDays, format, subDays } from "date-fns"
 import {
   Bar,
@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { Download, FileSpreadsheet, FileText } from "lucide-react"
+import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react"
 
 import {
   getReportFilterOptions,
@@ -33,18 +33,18 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { toast } from "sonner"
+import { formatINR } from "@/lib/india/format"
 import { cn } from "@/lib/utils"
 
 type ReportKey = "compliance" | "payments" | "employees" | "clients"
+type ExportFormat = "csv" | "xlsx" | "pdf"
 
 function toIsoDateTime(d: Date) {
   // Use end-of-day / start-of-day semantics by keeping full ISO; filters parse as Date.
   return d.toISOString()
 }
 
-function currencyINR(n: number) {
-  return `₹${Math.round(n).toLocaleString("en-IN")}`
-}
+const currencyINR = (n: number) => formatINR(n)
 
 function StatBarChart({
   data,
@@ -120,6 +120,8 @@ export function ReportingCenterClient() {
 
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<any>(null)
+  const [exporting, setExporting] = useState<ExportFormat | null>(null)
+  const requestIdRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -137,14 +139,17 @@ export function ReportingCenterClient() {
   }, [])
 
   const load = async (next: ReportFilters) => {
+    const requestId = ++requestIdRef.current
     setLoading(true)
     try {
       const payload = await getReportingCenterData(next)
+      if (requestId !== requestIdRef.current) return // stale response; ignore
       setData(payload)
     } catch (e: any) {
+      if (requestId !== requestIdRef.current) return
       toast.error(e?.message ?? "Failed to load reports")
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) setLoading(false)
     }
   }
 
@@ -163,7 +168,7 @@ export function ReportingCenterClient() {
     setFilters((f) => ({ ...f, [key]: toIsoDateTime(d) }))
   }
 
-  const exportUrl = (formatKey: "csv" | "xlsx" | "pdf") => {
+  const exportUrl = (formatKey: ExportFormat) => {
     const params = new URLSearchParams()
     params.set("report", activeReport)
     params.set("format", formatKey)
@@ -173,6 +178,41 @@ export function ReportingCenterClient() {
     if (filters.clientId) params.set("clientId", filters.clientId)
     if (filters.department) params.set("department", filters.department)
     return `/reports/export?${params.toString()}`
+  }
+
+  const handleExport = async (formatKey: ExportFormat) => {
+    if (exporting) return
+    setExporting(formatKey)
+    try {
+      const res = await fetch(exportUrl(formatKey))
+      if (!res.ok) {
+        if (res.status === 429) {
+          toast.error("Too many export requests. Please wait a moment and try again.")
+        } else if (res.status === 401 || res.status === 403) {
+          toast.error("You don't have permission to export this report.")
+        } else {
+          toast.error("Export failed. Please try again.")
+        }
+        return
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get("Content-Disposition") ?? ""
+      const match = disposition.match(/filename="?([^";]+)"?/)
+      const filename = match?.[1] ?? `report.${formatKey}`
+      const blobUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = blobUrl
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(blobUrl)
+      toast.success("Report downloaded")
+    } catch (_e) {
+      toast.error("Export failed. Check your connection and try again.")
+    } finally {
+      setExporting(null)
+    }
   }
 
   const reportNav = [
@@ -200,28 +240,43 @@ export function ReportingCenterClient() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => window.open(exportUrl("pdf"), "_blank", "noopener,noreferrer")}
+            onClick={() => handleExport("pdf")}
+            disabled={exporting !== null}
             className="h-9 rounded-xl gap-2"
           >
-            <FileText className="h-4 w-4" />
+            {exporting === "pdf" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4" />
+            )}
             PDF
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => window.open(exportUrl("xlsx"), "_blank", "noopener,noreferrer")}
+            onClick={() => handleExport("xlsx")}
+            disabled={exporting !== null}
             className="h-9 rounded-xl gap-2"
           >
-            <FileSpreadsheet className="h-4 w-4" />
+            {exporting === "xlsx" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4" />
+            )}
             Excel
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => window.open(exportUrl("csv"), "_blank", "noopener,noreferrer")}
+            onClick={() => handleExport("csv")}
+            disabled={exporting !== null}
             className="h-9 rounded-xl gap-2"
           >
-            <Download className="h-4 w-4" />
+            {exporting === "csv" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
             CSV
           </Button>
         </div>
@@ -264,8 +319,9 @@ export function ReportingCenterClient() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Department</Label>
+            <Label htmlFor="report-filter-department">Department</Label>
             <select
+              id="report-filter-department"
               value={filters.department ?? ""}
               onChange={(e) =>
                 setFilters((f) => ({
@@ -285,8 +341,9 @@ export function ReportingCenterClient() {
             </select>
           </div>
           <div className="space-y-2">
-            <Label>Employee</Label>
+            <Label htmlFor="report-filter-employee">Employee</Label>
             <select
+              id="report-filter-employee"
               value={filters.employeeId ?? ""}
               onChange={(e) =>
                 setFilters((f) => ({ ...f, employeeId: e.target.value || undefined }))
@@ -304,8 +361,9 @@ export function ReportingCenterClient() {
             </select>
           </div>
           <div className="space-y-2">
-            <Label>Client</Label>
+            <Label htmlFor="report-filter-client">Client</Label>
             <select
+              id="report-filter-client"
               value={filters.clientId ?? ""}
               onChange={(e) =>
                 setFilters((f) => ({ ...f, clientId: e.target.value || undefined }))
@@ -326,16 +384,31 @@ export function ReportingCenterClient() {
         </div>
       </Card>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          Loading reports…
-        </div>
-      ) : !data ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          No data.
-        </div>
+      {!data ? (
+        loading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading reports…
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-16 text-muted-foreground">
+            No data.
+          </div>
+        )
       ) : (
-        <>
+        <div
+          aria-busy={loading}
+          className={cn(
+            "space-y-6 transition-opacity",
+            loading && "pointer-events-none opacity-50"
+          )}
+        >
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Updating reports…
+            </div>
+          )}
           {/* Executive summary chart */}
           <GlassCard hover={false} className="p-6">
             <SectionHeading
@@ -400,15 +473,26 @@ export function ReportingCenterClient() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selected.upcoming as any[]).map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>{row.client?.name ?? "-"}</TableCell>
-                        <TableCell className="max-w-[280px] truncate">
-                          {row.title}
+                    {(selected.upcoming as any[]).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={3}
+                          className="py-8 text-center text-muted-foreground"
+                        >
+                          No data for the selected filters.
                         </TableCell>
-                        <TableCell>{format(new Date(row.dueDate), "PPP")}</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      (selected.upcoming as any[]).map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>{row.client?.name ?? "-"}</TableCell>
+                          <TableCell className="max-w-[280px] truncate">
+                            {row.title}
+                          </TableCell>
+                          <TableCell>{format(new Date(row.dueDate), "PPP")}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </Card>
@@ -427,15 +511,26 @@ export function ReportingCenterClient() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selected.overdue as any[]).map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>{row.client?.name ?? "-"}</TableCell>
-                        <TableCell className="max-w-[280px] truncate">
-                          {row.title}
+                    {(selected.overdue as any[]).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={3}
+                          className="py-8 text-center text-muted-foreground"
+                        >
+                          No data for the selected filters.
                         </TableCell>
-                        <TableCell>{format(new Date(row.dueDate), "PPP")}</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      (selected.overdue as any[]).map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>{row.client?.name ?? "-"}</TableCell>
+                          <TableCell className="max-w-[280px] truncate">
+                            {row.title}
+                          </TableCell>
+                          <TableCell>{format(new Date(row.dueDate), "PPP")}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </Card>
@@ -459,16 +554,27 @@ export function ReportingCenterClient() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selected.outstandingInvoices as any[]).slice(0, 20).map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>{row.invoiceNumber}</TableCell>
-                        <TableCell>{row.client?.name ?? "-"}</TableCell>
-                        <TableCell>{format(new Date(row.dueDate), "PPP")}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {currencyINR(Number(row.outstandingAmount))}
+                    {(selected.outstandingInvoices as any[]).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="py-8 text-center text-muted-foreground"
+                        >
+                          No data for the selected filters.
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      (selected.outstandingInvoices as any[]).slice(0, 20).map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>{row.invoiceNumber}</TableCell>
+                          <TableCell>{row.client?.name ?? "-"}</TableCell>
+                          <TableCell>{format(new Date(row.dueDate), "PPP")}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {currencyINR(Number(row.outstandingAmount))}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </Card>
@@ -485,16 +591,27 @@ export function ReportingCenterClient() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selected.paidInvoices as any[]).slice(0, 20).map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>{row.invoiceNumber}</TableCell>
-                        <TableCell>{row.client?.name ?? "-"}</TableCell>
-                        <TableCell>{format(new Date(row.issueDate), "PPP")}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {currencyINR(Number(row.paidAmount))}
+                    {(selected.paidInvoices as any[]).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="py-8 text-center text-muted-foreground"
+                        >
+                          No data for the selected filters.
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      (selected.paidInvoices as any[]).slice(0, 20).map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>{row.invoiceNumber}</TableCell>
+                          <TableCell>{row.client?.name ?? "-"}</TableCell>
+                          <TableCell>{format(new Date(row.issueDate), "PPP")}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {currencyINR(Number(row.paidAmount))}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </Card>
@@ -519,16 +636,27 @@ export function ReportingCenterClient() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(selected.employees as any[]).map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell>{row.name}</TableCell>
-                      <TableCell>{row.department ?? "-"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.assigned}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.completed}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.overdue}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.productivity}%</TableCell>
+                  {(selected.employees as any[]).length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="py-8 text-center text-muted-foreground"
+                      >
+                        No data for the selected filters.
+                      </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    (selected.employees as any[]).map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>{row.name}</TableCell>
+                        <TableCell>{row.department ?? "-"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.assigned}</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.completed}</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.overdue}</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.productivity}%</TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </Card>
@@ -551,24 +679,35 @@ export function ReportingCenterClient() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(selected.clients as any[]).map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {row.assignedEmployeeName ?? "-"}
+                  {(selected.clients as any[]).length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="py-8 text-center text-muted-foreground"
+                      >
+                        No data for the selected filters.
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{row.complianceScore}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {currencyINR(row.outstandingPayments)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{row.openTasks}</TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    (selected.clients as any[]).map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {row.assignedEmployeeName ?? "-"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{row.complianceScore}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {currencyINR(row.outstandingPayments)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{row.openTasks}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </Card>
           )}
-        </>
+        </div>
       )}
     </div>
   )

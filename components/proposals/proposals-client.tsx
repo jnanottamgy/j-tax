@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Plus, Users, FileText, BarChart3 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -19,7 +20,20 @@ type Props = {
 }
 
 export function ProposalsClient({ initialLeads, initialQuotations, initialAnalytics }: Props) {
+  const searchParams = useSearchParams()
   const [showAddLead, setShowAddLead] = useState(false)
+  const tabParam = searchParams.get("tab")
+  const [tab, setTab] = useState(
+    tabParam === "quotations" || tabParam === "analytics" ? tabParam : "leads"
+  )
+
+  // Quick actions elsewhere deep-link here with ?new=1 to open Add Lead.
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      setTab("leads")
+      setShowAddLead(true)
+    }
+  }, [searchParams])
 
   const pipeline = initialAnalytics.revenuePipeline
   const won = initialAnalytics.wonRevenue
@@ -48,7 +62,7 @@ export function ProposalsClient({ initialLeads, initialQuotations, initialAnalyt
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="leads">
+      <Tabs value={tab} onValueChange={setTab}>
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <TabsList>
             <TabsTrigger value="leads">

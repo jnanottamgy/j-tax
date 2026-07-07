@@ -33,6 +33,15 @@ export const PROTECTED_ROUTE_PREFIXES = [
   "/activity",
   "/workforce",
   "/proposals",
+  "/templates",
+  "/timesheet",
+  "/registers",
+  "/groups",
+  "/trash",
+  "/gst-reconciliation",
+  "/itr-computation",
+  "/notices",
+  "/financial-statements",
 ] as const
 
 /**
@@ -63,9 +72,18 @@ export const ROUTE_ACCESS: Record<string, AppRole[]> = {
   "/notifications": [...STAFF_ROLES],
   "/settings": [...STAFF_ROLES],
   "/activity": ["PARTNER"],          // Audit logs — PARTNER only
-  "/workforce": ["PARTNER"],         // Employee intelligence — PARTNER only
+  "/workforce": ["PARTNER", "MANAGER"], // Team performance — managers run the team day-to-day
   "/proposals": ["PARTNER", "MANAGER"],
   "/docs": [...STAFF_ROLES],         // Help / setup documentation
+  "/templates": ["PARTNER", "MANAGER"], // Job templates — define firm workflows
+  "/timesheet": [...STAFF_ROLES],       // Time tracking — every staff member
+  "/registers": ["PARTNER", "MANAGER"], // Credential vault + DSC/UDIN/registrations
+  "/groups": ["PARTNER", "MANAGER"],    // Client groups — full-roster view, management only
+  "/trash": ["PARTNER", "MANAGER"],     // Recycle bin — restore/purge
+  "/gst-reconciliation": [...STAFF_ROLES], // GSTR-2B ↔ purchase register workbench
+  "/itr-computation": [...STAFF_ROLES],    // ITR old-vs-new regime computation sheets
+  "/notices": [...STAFF_ROLES],            // Tax notice & litigation register
+  "/financial-statements": [...STAFF_ROLES], // Schedule III statements from TB import
   // Client portal — CLIENT role only
   "/client": ["CLIENT"],
 }

@@ -9,8 +9,8 @@ export default function MessagingPage() {
       <Breadcrumb items={[{ label: "Messaging" }]} />
       <PageHeader
         label="Communication"
-        title="Messaging Dashboard"
-        description="WhatsApp automation and communication management."
+        title="Messaging"
+        description="Branded client emails, WhatsApp messages, reusable templates, and bulk reminders."
       />
       <MessagingDashboardClient />
     </PageContainer>
