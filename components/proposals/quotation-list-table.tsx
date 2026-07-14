@@ -61,7 +61,9 @@ export function QuotationListTable({ initialQuotations }: { initialQuotations: Q
   const counts: Record<string, number> = { ALL: initialQuotations.length }
   for (const q of initialQuotations) counts[q.status] = (counts[q.status] ?? 0) + 1
 
-  const filterOptions = ["ALL", "DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "VIEWED", "ACCEPTED", "REJECTED"]
+  // Filter tabs intentionally limited to these 5. SENT/VIEWED/ACCEPTED/EXPIRED
+  // are still valid statuses (badges render under "All") but are not filterable.
+  const filterOptions = ["ALL", "DRAFT", "PENDING_APPROVAL", "REJECTED", "APPROVED"]
 
   return (
     <div className="space-y-4">

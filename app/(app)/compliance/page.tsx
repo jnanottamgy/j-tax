@@ -9,6 +9,11 @@ import { Breadcrumb } from "@/components/navigation/breadcrumb"
 export default async function CompliancePage() {
   const session = await getSession()
   if (!session) redirect("/login")
+  // Compliance Operations is a management view — employees are routed away
+  // (defense-in-depth; the route ACL + middleware already block them).
+  if (session.user.role !== "PARTNER" && session.user.role !== "MANAGER") {
+    redirect("/unauthorized")
+  }
 
   const data = await getComplianceDashboard()
 

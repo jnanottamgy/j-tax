@@ -2,29 +2,23 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { LayoutGrid, Table, CheckSquare } from "lucide-react"
+import { CheckSquare } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
-import { KanbanBoard } from "@/components/work-tracker/kanban-board"
 import { TaskTable } from "@/components/work-tracker/task-table"
 import { TaskDetailDrawer } from "@/components/work-tracker/task-detail-drawer"
 import { TaskFilters } from "@/components/work-tracker/task-filters"
 import { AddTaskDialog, type EditableTask } from "@/components/work-tracker/add-task-dialog"
 import { getTasksData, getTaskDetail, updateTaskStatus, deleteTask, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DATA_AWAITED" | "UNDER_REVIEW" | "FILED_DONE" | "ON_HOLD"
 
-type ViewMode = "kanban" | "table"
-
 export function WorkTrackerClient() {
   const searchParams = useSearchParams()
-  const [viewMode, setViewMode] = useState<ViewMode>("kanban")
   const [tasks, setTasks] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([])
@@ -161,10 +155,6 @@ export function WorkTrackerClient() {
     setFilters(newFilters)
   }
 
-  const handleAddTask = (_status: TaskStatus) => {
-    setAddTaskDialogOpen(true)
-  }
-
   const handleEditTask = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId)
     if (!task) return
@@ -227,41 +217,15 @@ export function WorkTrackerClient() {
 
   return (
     <div className="space-y-6">
-      {/* Filters and View Toggle */}
+      {/* Filters */}
       <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
         <TaskFilters
           onFiltersChange={handleFiltersChange}
           employees={employees}
         />
-        <div className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.08] rounded-xl p-1">
-          <Button
-            variant={viewMode === "kanban" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setViewMode("kanban")}
-            className={cn(
-              "h-8 rounded-lg gap-2",
-              viewMode === "kanban" && "btn-glow"
-            )}
-          >
-            <LayoutGrid className="h-4 w-4" />
-            Kanban
-          </Button>
-          <Button
-            variant={viewMode === "table" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setViewMode("table")}
-            className={cn(
-              "h-8 rounded-lg gap-2",
-              viewMode === "table" && "btn-glow"
-            )}
-          >
-            <Table className="h-4 w-4" />
-            Table
-          </Button>
-        </div>
       </div>
 
-      {/* Task View */}
+      {/* Task View — table only */}
       {tasks.length === 0 ? (
         <GlassCard hover={false} className="p-12">
           <EmptyState
@@ -282,15 +246,6 @@ export function WorkTrackerClient() {
             }
           />
         </GlassCard>
-      ) : viewMode === "kanban" ? (
-        <KanbanBoard
-          tasks={tasks}
-          onTaskClick={handleTaskClick}
-          onStatusChange={handleStatusChange}
-          onAddTask={canManage ? handleAddTask : undefined}
-          onEditTask={canManage ? handleEditTask : undefined}
-          onDeleteTask={canManage ? setDeletingTaskId : undefined}
-        />
       ) : (
         <TaskTable
           tasks={tasks}

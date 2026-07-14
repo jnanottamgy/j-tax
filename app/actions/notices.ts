@@ -11,18 +11,10 @@ import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import { canAccessClientById, getClientScopeWhere } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
 import { recordTimelineEvent } from "@/lib/timeline/events"
-
-export const NOTICE_STATUSES = [
-  "OPEN",
-  "REPLY_DRAFTED",
-  "REPLIED",
-  "HEARING",
-  "CLOSED_FAVOURABLE",
-  "CLOSED_UNFAVOURABLE",
-  "CLOSED_PARTIAL",
-] as const
-
-export type NoticeStatus = (typeof NOTICE_STATUSES)[number]
+// NOTE: NOTICE_STATUSES lives in a separate no-directive module. A "use server"
+// file may only EXPORT async functions, so we import it here for internal use
+// (z.enum below) and consumers import it from "./notice-statuses" directly.
+import { NOTICE_STATUSES } from "./notice-statuses"
 
 const dateField = z
   .string()

@@ -39,6 +39,16 @@ const STATUS_COLORS: Record<string, string> = {
   LOST: "bg-red-500/10 text-red-400 border-red-500/20",
 }
 
+// The only lead statuses offered as filters + status-change options, with the
+// user-facing labels. Other enum values still exist in the DB and render with
+// their STATUS_LABELS badge, but are not selectable here.
+const FILTER_STATUSES = [
+  { value: "FOLLOW_UP_REQUIRED", label: "Follow-up required" },
+  { value: "PROPOSAL_SENT", label: "Quotation sent" },
+  { value: "WON", label: "Success" },
+  { value: "LOST", label: "Reject" },
+] as const
+
 export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
   const [leads, setLeads] = useState(initialLeads)
   const [filter, setFilter] = useState("ALL")
@@ -95,8 +105,8 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
       {/* Status filter pills */}
       <div className="flex gap-2 flex-wrap">
         <FilterPill label="All" count={leads.length} active={filter === "ALL"} onClick={() => setFilter("ALL")} />
-        {STATUSES.map((s) => (
-          <FilterPill key={s} label={STATUS_LABELS[s]} count={countByStatus[s]} active={filter === s} onClick={() => setFilter(s)} />
+        {FILTER_STATUSES.map((s) => (
+          <FilterPill key={s.value} label={s.label} count={countByStatus[s.value] ?? 0} active={filter === s.value} onClick={() => setFilter(s.value)} />
         ))}
       </div>
 

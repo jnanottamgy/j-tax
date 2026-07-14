@@ -323,7 +323,6 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "My Tasks", href: "/work-tracker", icon: ClipboardList, description: "Tasks assigned to you" },
           { title: "My Timesheet", href: "/timesheet", icon: Timer, description: "Log your hours" },
           { title: "My Clients", href: "/clients", icon: Building2, description: "Clients you manage" },
-          { title: "Compliance Work", href: "/compliance", icon: ShieldCheck, description: "Compliance for your clients" },
           { title: "GST Recon", href: "/gst-reconciliation", icon: GitCompareArrows, description: "Reconcile your clients' GSTR-2B" },
           { title: "ITR Computation", href: "/itr-computation", icon: Calculator, description: "Tax computations for your clients" },
           { title: "Notices", href: "/notices", icon: FileWarning, description: "Notices for your clients" },

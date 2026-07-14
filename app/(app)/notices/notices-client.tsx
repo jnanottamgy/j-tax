@@ -27,9 +27,9 @@ import {
   deleteNotice,
   listNotices,
   getNoticeFormOptions,
-  NOTICE_STATUSES,
   type NoticeInput,
 } from "@/app/actions/notices"
+import { NOTICE_STATUSES } from "@/app/actions/notice-statuses"
 import { useAuth } from "@/components/auth/auth-provider"
 import { formatINRCompact } from "@/lib/india/format"
 import { cn } from "@/lib/utils"
