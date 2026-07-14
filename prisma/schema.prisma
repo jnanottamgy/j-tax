@@ -313,6 +313,14 @@ enum TaskPriority {
   URGENT
 }
 
+/// Whether the assigned employee has accepted the task. Kept separate from
+/// TaskStatus so it doesn't entangle the review/dependency gates.
+enum TaskAcceptance {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 model Task {
   firmId String  @default("")
   firm   Firm    @relation(fields: [firmId], references: [id], onDelete: Cascade)
@@ -328,6 +336,11 @@ model Task {
   serviceType       ServiceType?
   assignedEmployeeId String?
   assignedEmployee  Employee?        @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  /// Assignment acceptance by the employee (accept/decline workflow).
+  acceptanceStatus  TaskAcceptance   @default(PENDING)
+  acceptedAt        DateTime?
+  declinedAt        DateTime?
+  declinedReason    String?
   remarks           String?
   isOverdue         Boolean          @default(false)
   escalated         Boolean          @default(false)
@@ -361,6 +374,7 @@ model Task {
   @@index([clientId, status])
   @@index([dueDate, status])
   @@index([title])
+  @@index([assignedEmployeeId, acceptanceStatus])
   @@map("tasks")
   @@index([firmId])
 }
@@ -787,6 +801,14 @@ model Invoice {
   cgstAmount         Decimal?     @db.Decimal(12, 2)
   sgstAmount         Decimal?     @db.Decimal(12, 2)
   igstAmount         Decimal?     @db.Decimal(12, 2)
+  /// Revision chain: a sent invoice is never edited — a revised copy is created
+  /// instead. revisedFromId points at the original; both are kept & displayed.
+  revisedFromId      String?
+  revisedFrom        Invoice?      @relation("InvoiceRevisions", fields: [revisedFromId], references: [id], onDelete: SetNull)
+  revisions          Invoice[]     @relation("InvoiceRevisions")
+  revisionNumber     Int           @default(0)
+  /// The task this invoice was auto-created from (task→invoice workflow).
+  sourceTaskId       String?
   /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
   deletedAt          DateTime?
   createdAt         DateTime      @default(now())
@@ -800,6 +822,7 @@ model Invoice {
   @@index([status])
   @@index([dueDate])
   @@index([deletedAt])
+  @@index([revisedFromId])
   @@map("invoices")
   @@index([firmId])
   @@unique([firmId, invoiceNumber])
