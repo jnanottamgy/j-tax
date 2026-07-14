@@ -64,10 +64,10 @@ describe("canAccessRoute — privilege boundaries", () => {
     assert.equal(canAccessRoute("EMPLOYEE", "/workforce"), false)
   })
 
-  // /payments — PARTNER + MANAGER only
-  test("/payments excludes EMPLOYEE and CLIENT", () => {
+  // /payments (analytics dashboard) — PARTNER only; managers keep invoices
+  test("/payments dashboard is PARTNER-only", () => {
     assert.equal(canAccessRoute("PARTNER", "/payments"), true)
-    assert.equal(canAccessRoute("MANAGER", "/payments"), true)
+    assert.equal(canAccessRoute("MANAGER", "/payments"), false)
     assert.equal(canAccessRoute("EMPLOYEE", "/payments"), false)
     assert.equal(canAccessRoute("CLIENT", "/payments"), false)
   })
@@ -80,10 +80,11 @@ describe("canAccessRoute — privilege boundaries", () => {
     }
   })
 
-  // Inherited (nested) routes follow their parent
-  test("nested payment route inherits parent restriction", () => {
-    assert.equal(canAccessRoute("EMPLOYEE", "/payments/invoices"), false)
+  // Invoices list has its own ACL — managers keep it even though /payments is PARTNER-only
+  test("/payments/invoices is PARTNER+MANAGER, not EMPLOYEE", () => {
+    assert.equal(canAccessRoute("PARTNER", "/payments/invoices"), true)
     assert.equal(canAccessRoute("MANAGER", "/payments/invoices"), true)
+    assert.equal(canAccessRoute("EMPLOYEE", "/payments/invoices"), false)
   })
 
   // Staff routes are open to EMPLOYEE

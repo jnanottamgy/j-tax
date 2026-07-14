@@ -292,7 +292,6 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
         id: "finance",
         label: "Finance",
         items: [
-          { title: "Payments", href: "/payments", icon: Wallet, description: "Payment tracking" },
           { title: "Invoices", href: "/payments/invoices", icon: Receipt, description: "Invoice management" },
         ],
       },

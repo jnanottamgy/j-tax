@@ -146,7 +146,7 @@ const QUICK_CREATE = [
   { label: "New Filing", href: "/compliance?new=1", access: "/compliance", icon: CalendarClock, managerial: true },
   { label: "New Lead", href: "/proposals?new=1", access: "/proposals", icon: UserPlus, managerial: false },
   { label: "New Quotation", href: "/proposals/quotations/new", access: "/proposals", icon: FileText, managerial: false },
-  { label: "New Invoice", href: "/payments/invoices?new=1", access: "/payments", icon: Receipt, managerial: false },
+  { label: "New Invoice", href: "/payments/invoices?new=1", access: "/payments/invoices", icon: Receipt, managerial: false },
 ] as const
 
 export function DashboardHeader() {

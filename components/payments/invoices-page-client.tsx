@@ -7,6 +7,7 @@ import { Download, Eye, Plus, Receipt, Search, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { deleteInvoice } from "@/app/actions/invoices"
+import { useAuth } from "@/components/auth/auth-provider"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { AddInvoiceDialog } from "@/components/payments/add-invoice-dialog"
@@ -51,6 +52,8 @@ export function InvoicesPageClient({
 }: InvoicesPageClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { role } = useAuth()
+  const canDelete = role === "PARTNER" // managers can manage invoices but not delete
   const [invoices, _setInvoices] = useState(initialInvoices)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("ALL")
@@ -203,8 +206,8 @@ export function InvoicesPageClient({
                           <Download className="h-4 w-4" />
                         </a>
                       </Button>
-                      {/* Only unpaid, payment-free invoices can be deleted (server enforces too) */}
-                      {invoice.status !== "PAID" && Number(invoice.paidAmount ?? 0) === 0 && (
+                      {/* Delete is PARTNER-only; only unpaid, payment-free invoices (server enforces too) */}
+                      {canDelete && invoice.status !== "PAID" && Number(invoice.paidAmount ?? 0) === 0 && (
                         <Button
                           variant="ghost"
                           size="icon"

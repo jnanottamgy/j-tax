@@ -16,7 +16,7 @@ import {
   recordPaymentSchema,
 } from "@/lib/validations/invoice"
 
-import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
+import { requireAuth, requirePartner, requirePartnerOrManager } from "@/lib/auth/guards"
 import { toUserError } from "@/lib/forms/errors"
 
 const VALID_INVOICE_STATUSES = [
@@ -520,9 +520,9 @@ export async function updateInvoiceStatus(
 }
 
 export async function deleteInvoice(invoiceId: string): Promise<FormActionState> {
-  let session: Awaited<ReturnType<typeof requirePartnerOrManager>>
+  // Deleting invoices is PARTNER-only (managers can create/manage but not delete).
   try {
-    session = await requirePartnerOrManager()
+    await requirePartner()
   } catch {
     return { error: "You do not have permission to delete invoices." }
   }
@@ -546,22 +546,6 @@ export async function deleteInvoice(invoiceId: string): Promise<FormActionState>
       where: { id: invoiceId },
       data: { deletedAt: new Date() },
     })
-
-    // Partners hear about Manager-deleted invoices (restorable from the bin).
-    if (session.user.role === "MANAGER") {
-      const { notifyRoles } = await import("@/lib/notifications/notify")
-      await notifyRoles(
-        ["PARTNER"],
-        {
-          title: `Invoice moved to recycle bin: ${invoice.invoiceNumber}`,
-          message: `${session.user.name} deleted ${invoice.invoiceNumber} (${invoice.client.name}, ₹${Number(invoice.amount).toLocaleString("en-IN")}). It can be restored from the Recycle Bin.`,
-          type: "WARNING",
-          entityType: "INVOICE",
-          entityId: invoiceId,
-        },
-        { excludeUserId: session.user.id }
-      )
-    }
 
     revalidatePath("/payments/invoices")
     revalidatePath("/payments")

@@ -16,7 +16,11 @@ export default async function PaymentsPage() {
   if (!session) {
     redirect("/login")
   }
-  if (session.user.role !== "PARTNER" && session.user.role !== "MANAGER") {
+  // Payment analytics dashboard is PARTNER-only; managers keep the invoices list.
+  if (session.user.role === "MANAGER") {
+    redirect("/payments/invoices")
+  }
+  if (session.user.role !== "PARTNER") {
     redirect("/unauthorized")
   }
 
