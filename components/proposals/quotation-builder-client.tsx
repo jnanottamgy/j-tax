@@ -34,6 +34,7 @@ const SERVICE_TYPES = [
   "GST Filing (Quarterly)",
   "Income Tax Return",
   "TDS Filing",
+  "Incorporation",
   "Company Registration",
   "ROC Compliance",
   "Payroll Processing",
@@ -318,6 +319,11 @@ export function QuotationBuilderClient({
                             {SERVICE_TYPES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                           </SelectContent>
                         </Select>
+                        {item.serviceType === "Custom Service" && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Enter the custom service name in the description above.
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>Professional Fee (₹) *</Label>
