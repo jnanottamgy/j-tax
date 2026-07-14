@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import {
   Activity,
@@ -18,6 +19,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatINRCompact } from "@/lib/india/format"
+import { AmountBreakdownDialog } from "@/components/dashboard/amount-breakdown-dialog"
+import type { AmountMetric } from "@/app/actions/dashboard-drilldown"
 
 interface PartnerCommandCenterProps {
   stats: {
@@ -60,6 +63,7 @@ function MetricTile({
   color,
   href,
   trend,
+  onDrillDown,
 }: {
   label: string
   value: string | number
@@ -68,6 +72,7 @@ function MetricTile({
   color: string
   href?: string
   trend?: "up" | "down" | "neutral"
+  onDrillDown?: () => void
 }) {
   const inner = (
     <div className="flex items-center gap-3">
@@ -88,6 +93,18 @@ function MetricTile({
       </div>
     </div>
   )
+
+  if (onDrillDown) {
+    return (
+      <button
+        type="button"
+        onClick={onDrillDown}
+        className="block w-full rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 text-left transition-all hover:border-white/[0.1] hover:bg-white/[0.04]"
+      >
+        {inner}
+      </button>
+    )
+  }
 
   if (href) {
     return (
@@ -114,6 +131,7 @@ export function PartnerCommandCenter({
   crmMetrics,
 }: PartnerCommandCenterProps) {
   const formatCurrency = formatINRCompact
+  const [drilldown, setDrilldown] = useState<AmountMetric | null>(null)
 
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
@@ -132,26 +150,26 @@ export function PartnerCommandCenter({
           <MetricTile
             label="Total Revenue"
             value={formatCurrency(stats.totalRevenue)}
-            subtext={`${stats.collectionRate}% collected`}
+            subtext={`${stats.collectionRate}% collected · tap for clients`}
             icon={IndianRupee}
             color="bg-green-500/10 text-green-400"
-            href="/payments"
+            onDrillDown={() => setDrilldown("revenue")}
           />
           <MetricTile
             label="Outstanding"
             value={formatCurrency(stats.totalOutstanding)}
-            subtext="across all clients"
+            subtext="tap for client breakdown"
             icon={TrendingDown}
             color="bg-amber-500/10 text-amber-400"
-            href="/payments"
+            onDrillDown={() => setDrilldown("outstanding")}
           />
           <MetricTile
             label="Overdue Amount"
             value={formatCurrency(stats.totalOverdue)}
-            subtext="requires follow-up"
+            subtext="tap for client breakdown"
             icon={AlertTriangle}
             color="bg-red-500/10 text-red-400"
-            href="/payments"
+            onDrillDown={() => setDrilldown("overdue")}
             trend={stats.totalOverdue > 50000 ? "down" : "neutral"}
           />
           <MetricTile
@@ -322,6 +340,12 @@ export function PartnerCommandCenter({
           ))}
         </div>
       </CardContent>
+
+      <AmountBreakdownDialog
+        metric={drilldown}
+        open={drilldown !== null}
+        onOpenChange={(open) => !open && setDrilldown(null)}
+      />
     </Card>
   )
 }
