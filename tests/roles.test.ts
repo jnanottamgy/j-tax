@@ -91,7 +91,13 @@ describe("canAccessRoute — privilege boundaries", () => {
     assert.equal(canAccessRoute("EMPLOYEE", "/"), true)
     assert.equal(canAccessRoute("EMPLOYEE", "/clients"), true)
     assert.equal(canAccessRoute("EMPLOYEE", "/work-tracker"), true)
-    assert.equal(canAccessRoute("EMPLOYEE", "/compliance"), true)
+  })
+
+  // Compliance Operations is management-only (partners + managers)
+  test("compliance is restricted to PARTNER/MANAGER", () => {
+    assert.equal(canAccessRoute("EMPLOYEE", "/compliance"), false)
+    assert.equal(canAccessRoute("MANAGER", "/compliance"), true)
+    assert.equal(canAccessRoute("PARTNER", "/compliance"), true)
   })
 
   // CLIENT is blocked from all staff routes, allowed on /client
