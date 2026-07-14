@@ -191,6 +191,22 @@ export function ClientOnboardingWizard({
       return () => window.clearTimeout(timer)
     }
 
+    if (state.duplicate) {
+      // Send the user back to the identity step where the offending field lives,
+      // and offer to jump straight to the existing client.
+      setStep(0)
+      toast.error(state.error ?? "This client already exists.", {
+        action: {
+          label: "Edit existing",
+          onClick: () => {
+            setOpen(false)
+            window.location.href = `/clients/${state.duplicate!.clientId}`
+          },
+        },
+      })
+      return
+    }
+
     if (state.error) {
       toast.error(state.error)
     }

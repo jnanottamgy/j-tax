@@ -378,6 +378,10 @@ export async function createClientFromOnboarding(data: {
       },
     })
 
+    // Best-effort welcome email (no-op without an email; never throws).
+    const { sendClientWelcomeEmail } = await import("@/lib/clients/welcome-email")
+    await sendClientWelcomeEmail({ name: client.name, email: client.email })
+
     revalidatePath("/clients")
     return { success: true, clientId: client.id, clientName: client.name }
   } catch (error) {

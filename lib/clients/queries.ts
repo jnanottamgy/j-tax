@@ -109,6 +109,38 @@ export async function listClients(opts?: {
   return clients.map(mapClientToListItem)
 }
 
+/**
+ * Find an existing (non-deleted, same-firm) client that collides with the given
+ * email / GSTIN / PAN. Runs through the tenant-scoped client, so it's per-firm
+ * and excludes recycled rows automatically. Used to block duplicate adds with a
+ * friendly message before we ever hit a DB unique-constraint error.
+ */
+export async function findDuplicateClient(input: {
+  email?: string
+  gstin?: string
+  pan?: string
+}): Promise<{ id: string; name: string; field: "email" | "gstin" | "pan" } | null> {
+  const or: Prisma.ClientWhereInput[] = []
+  if (input.email) or.push({ email: { equals: input.email, mode: "insensitive" } })
+  if (input.gstin) or.push({ gstin: input.gstin })
+  if (input.pan) or.push({ pan: input.pan })
+  if (or.length === 0) return null
+
+  const existing = await prisma.client.findFirst({
+    where: { OR: or },
+    select: { id: true, name: true, email: true, gstin: true, pan: true },
+  })
+  if (!existing) return null
+
+  const field: "email" | "gstin" | "pan" =
+    input.email && existing.email?.toLowerCase() === input.email.toLowerCase()
+      ? "email"
+      : input.gstin && existing.gstin === input.gstin
+        ? "gstin"
+        : "pan"
+  return { id: existing.id, name: existing.name, field }
+}
+
 export async function createClientWithOnboarding(
   input: CreateClientInput
 ): Promise<ClientListItem> {

@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/guards"
 import {
   createClientWithOnboarding,
+  findDuplicateClient,
   getClientDetail,
   listClients,
   listEmployees,
@@ -25,6 +26,8 @@ export type ClientActionState = {
   success?: boolean
   error?: string
   fieldErrors?: Record<string, string[]>
+  /** Set when the add was blocked because a matching client already exists. */
+  duplicate?: { clientId: string; clientName: string }
 }
 
 export async function getClientsData() {
@@ -95,8 +98,27 @@ export async function createClient(
       }
     }
 
+    // Block duplicates (same firm) with a clear message before hitting the DB.
+    const dup = await findDuplicateClient({
+      email: parsed.data.email,
+      gstin: parsed.data.gstin,
+      pan: parsed.data.pan,
+    })
+    if (dup) {
+      const label = dup.field === "email" ? "email" : dup.field.toUpperCase()
+      return {
+        fieldErrors: { [dup.field]: [`Already used by "${dup.name}"`] },
+        error: `A client "${dup.name}" already exists with this ${label}. Edit that client instead of creating a duplicate.`,
+        duplicate: { clientId: dup.id, clientName: dup.name },
+      }
+    }
+
     const client = await createClientWithOnboarding(parsed.data)
-    
+
+    // Best-effort welcome email (no-op without an email; never throws).
+    const { sendClientWelcomeEmail } = await import("@/lib/clients/welcome-email")
+    await sendClientWelcomeEmail({ name: client.name, email: client.email })
+
     // Log activity
     await logClientActivity(
       client.id,
