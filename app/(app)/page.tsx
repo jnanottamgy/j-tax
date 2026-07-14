@@ -50,7 +50,6 @@ function makePartnerDashboardFetcher(userId: string) {
         checklistEmployeeCount,
         checklistClientCount,
         checklistTaskCount,
-        checklistDocCount,
         checklistInvoiceCount,
         checklistComplianceCount,
         pendingApprovals,
@@ -62,7 +61,6 @@ function makePartnerDashboardFetcher(userId: string) {
         crmLostLeads,
         crmQuotationsSent,
         crmRevenuePipeline,
-        expiredDocuments,
       ] = await Promise.all([
         prisma.client.count(),
         prisma.client.count({ where: { status: "ACTIVE" } }),
@@ -104,7 +102,6 @@ function makePartnerDashboardFetcher(userId: string) {
         prisma.employee.count(),
         prisma.client.count(),
         prisma.task.count(),
-        prisma.document.count(),
         prisma.invoice.count(),
         prisma.complianceEvent.count(),
         // Pending quotation approvals
@@ -136,7 +133,6 @@ function makePartnerDashboardFetcher(userId: string) {
         prisma.lead.count({ where: { status: "LOST" } }),
         prisma.quotation.count({ where: { status: { in: ["SENT", "VIEWED"] } } }),
         prisma.quotation.aggregate({ where: { status: { in: ["SENT", "VIEWED", "PENDING_APPROVAL", "APPROVED"] } }, _sum: { total: true } }),
-        prisma.document.count({ where: { expiryDate: { lte: now } } }),
       ])
 
       const serializedOutstandingInvoices = outstandingInvoicesRaw.map((inv) => ({
@@ -178,13 +174,11 @@ function makePartnerDashboardFetcher(userId: string) {
         overdueTasksCount,
         upcomingDeadlinesCount,
         totalTasks,
-        totalDocuments: checklistDocCount,
         collectionRate,
         setupChecklist: {
           hasEmployees: checklistEmployeeCount > 0,
           hasClients: checklistClientCount > 0,
           hasTasks: checklistTaskCount > 0,
-          hasDocuments: checklistDocCount > 0,
           hasInvoices: checklistInvoiceCount > 0,
           hasCompliance: checklistComplianceCount > 0,
         },
@@ -207,7 +201,6 @@ function makePartnerDashboardFetcher(userId: string) {
           lostLeads: crmLostLeads,
           quotationsSent: crmQuotationsSent,
           revenuePipeline: Number(crmRevenuePipeline._sum.total ?? 0),
-          expiredDocuments,
         },
         pendingApprovalsList: pendingApprovalsList.map((q) => ({
           id: q.id,
@@ -238,7 +231,7 @@ function makeManagerDashboardFetcher(userId: string) {
       const now = new Date()
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
-      const [employees, invoiceAgg, pendingCompliance, documentCount, invoiceCount] =
+      const [employees, invoiceAgg, pendingCompliance, invoiceCount] =
         await Promise.all([
           prisma.employee.findMany({
             where: { isActive: true },
@@ -250,7 +243,6 @@ function makeManagerDashboardFetcher(userId: string) {
             _sum: { amount: true, paidAmount: true, outstandingAmount: true },
           }),
           prisma.complianceEvent.count({ where: { status: "PENDING" } }),
-          prisma.document.count(),
           prisma.invoice.count(),
         ])
 
@@ -368,7 +360,6 @@ function makeManagerDashboardFetcher(userId: string) {
           pendingCompliance,
           collectionRate,
           totalOutstanding: Number(invoiceAgg._sum.outstandingAmount ?? 0),
-          hasDocuments: documentCount > 0,
           hasInvoices: invoiceCount > 0,
         },
         teamWorkload,
@@ -563,7 +554,6 @@ export default async function DashboardPage() {
             hasEmployees: data.teamStats.totalEmployees > 0,
             hasClients: data.teamStats.totalClients > 0,
             hasTasks: data.teamStats.totalActiveTasks > 0,
-            hasDocuments: data.teamStats.hasDocuments,
             hasInvoices: data.teamStats.hasInvoices,
             hasCompliance: data.teamStats.pendingCompliance > 0,
           }}
@@ -600,7 +590,6 @@ export default async function DashboardPage() {
     taskStatusCounts,
     overdueTasksCount,
     upcomingDeadlinesCount,
-    totalDocuments,
     setupChecklist,
     commandCenter,
     pendingApprovalsList,
@@ -658,7 +647,6 @@ export default async function DashboardPage() {
         overdueTasks={overdueTasksCount}
         upcomingDeadlines={upcomingDeadlinesCount}
         outstandingInvoices={overdueCount}
-        pendingDocuments={totalDocuments}
         complianceScore={complianceScore}
         openTasksPerMember={openTasksPerMember}
       />

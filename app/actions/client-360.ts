@@ -6,7 +6,6 @@ import {
   getExecutiveEmployeeId,
 } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
-import { getClientDocumentCompleteness } from "./documents"
 
 export async function getClient360Data(clientId: string) {
   const session = await requireAuth()
@@ -30,10 +29,8 @@ export async function getClient360Data(clientId: string) {
     client,
     tasks,
     invoices,
-    documents,
     services,
     complianceEvents,
-    documentCompleteness,
     timelineEvents,
     documentChecklist,
   ] = await Promise.all([
@@ -54,11 +51,6 @@ export async function getClient360Data(clientId: string) {
       orderBy: { dueDate: "desc" },
       take: 500,
     }),
-    prisma.document.findMany({
-      where: { clientId },
-      orderBy: { createdAt: "desc" },
-      take: 500,
-    }),
     prisma.clientService.findMany({
       where: { clientId },
     }),
@@ -67,12 +59,12 @@ export async function getClient360Data(clientId: string) {
       orderBy: { dueDate: "asc" },
       include: { task: { select: { id: true, title: true, status: true } } },
     }),
-    getClientDocumentCompleteness(clientId),
     prisma.clientTimelineEvent.findMany({
       where: { clientId },
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
+    // Onboarding document checklist stays (separate from the removed vault).
     prisma.clientDocumentChecklistItem.findMany({
       where: { clientId },
       orderBy: [{ collected: "asc" }, { createdAt: "asc" }],
@@ -111,7 +103,6 @@ export async function getClient360Data(clientId: string) {
     outstandingPayments: serializedInvoices
       .filter((i: any) => i.status === "OVERDUE" || i.status === "SENT")
       .reduce((sum: number, i: any) => sum + i.outstandingAmount, 0),
-    documentsUploaded: documents.length,
     activeServices: services.filter((s: any) => s.isActive).length,
     upcomingCompliance: complianceEvents.filter(
       (e) => e.dueDate >= now && e.status !== "COMPLETED"
@@ -124,10 +115,8 @@ export async function getClient360Data(clientId: string) {
     client,
     tasks,
     invoices: serializedInvoices,
-    documents,
     services,
     complianceEvents,
-    documentCompleteness,
     timelineEvents,
     documentChecklist,
     metrics,

@@ -42,16 +42,6 @@ const mainNavItems = [
     icon: FileText,
   },
   {
-    title: "Documents",
-    href: "/client/documents",
-    icon: Upload,
-  },
-  {
-    title: "Document Requests",
-    href: "/client/requests",
-    icon: ClipboardList,
-  },
-  {
     title: "Invoices",
     href: "/client/invoices",
     icon: Receipt,

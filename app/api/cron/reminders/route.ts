@@ -26,10 +26,7 @@ function safeCompare(a: string, b: string): boolean {
  * canonical reminder either way.
  */
 async function sendWhatsAppReminderIfEnabled(opts: {
-  templateEnv:
-    | "WHATSAPP_TEMPLATE_COMPLIANCE_REMINDER"
-    | "WHATSAPP_TEMPLATE_DOCUMENT_EXPIRY"
-    | "WHATSAPP_TEMPLATE_DOCUMENT_REQUEST"
+  templateEnv: "WHATSAPP_TEMPLATE_COMPLIANCE_REMINDER"
   to: string | null | undefined
   variables: Record<string, string>
   clientId: string
@@ -85,9 +82,7 @@ export async function GET(request: Request) {
 
     const results = {
       complianceReminders: 0,
-      documentReminders: 0,
       overdueAlerts: 0,
-      documentRequestChasers: 0,
       whatsappReminders: 0,
       noticeAlerts: 0,
       errors: [] as string[],
@@ -270,188 +265,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // 3. Document expiry reminders
-    const expiringDocs = await prisma.document.findMany({
-      where: {
-        expiryDate: { gte: now, lte: addDays(now, 30) },
-      },
-      include: {
-        client: { select: { id: true, name: true, email: true, whatsapp: true, phone: true, assignedEmployeeId: true } },
-      },
-    })
-
-    for (const doc of expiringDocs) {
-      if (!doc.client?.email) continue
-
-      try {
-        const alreadySent = await prisma.message.findFirst({
-          where: {
-            clientId: doc.clientId,
-            metadata: { path: ["type"], equals: "document_expiry_reminder" },
-            content: { contains: doc.title },
-            sentAt: { gte: addDays(now, -7) },
-          },
-        })
-        if (alreadySent) continue
-
-        await notificationService.send({
-          channel: "email",
-          to: doc.client.email,
-          subject: `Document Expiring Soon: ${doc.title}`,
-          content: buildDocumentExpiryEmail(doc.client.name, doc.title, doc.expiryDate!, cfg),
-        })
-
-        await prisma.message.create({
-          data: {
-            clientId: doc.clientId,
-            phoneNumber: doc.client.email,
-            content: `Document expiry reminder: ${doc.title} expires ${format(doc.expiryDate!, "dd MMM yyyy")}`,
-            status: "SENT",
-            sentAt: now,
-            sentBy: "SYSTEM",
-            metadata: { type: "document_expiry_reminder", documentId: doc.id, provider: "EMAIL" },
-          },
-        })
-
-        if (
-          await sendWhatsAppReminderIfEnabled({
-            templateEnv: "WHATSAPP_TEMPLATE_DOCUMENT_EXPIRY",
-            to: doc.client.whatsapp || doc.client.phone,
-            variables: {
-              client_name: doc.client.name,
-              document_title: doc.title,
-              expiry_date: format(doc.expiryDate!, "dd MMM yyyy"),
-            },
-            clientId: doc.clientId,
-            logContent: `WhatsApp document expiry reminder: ${doc.title} expires ${format(doc.expiryDate!, "dd MMM yyyy")}`,
-            metadata: { type: "document_expiry_reminder", documentId: doc.id },
-            now,
-          })
-        ) {
-          results.whatsappReminders++
-        }
-
-        if (doc.client.assignedEmployeeId) {
-          const emp = await prisma.employee.findUnique({
-            where: { id: doc.client.assignedEmployeeId },
-            select: { userId: true },
-          })
-          if (emp?.userId) {
-            await prisma.notification.create({
-              data: {
-                userId: emp.userId,
-                title: "Document Expiring Soon",
-                message: `${doc.title} for ${doc.client.name} expires on ${format(doc.expiryDate!, "dd MMM yyyy")}`,
-                type: "WARNING",
-                entityType: "DOCUMENT",
-                entityId: doc.id,
-              },
-            })
-          }
-        }
-
-        results.documentReminders++
-      } catch (err) {
-        results.errors.push(`Doc expiry ${doc.id}: ${err instanceof Error ? err.message : "Unknown"}`)
-      }
-    }
-
-    // 4. Document request auto-chasers (PBC lists)
-    // Chase cadence: first reminder 1 day after creation, then every 3 days.
-    // Reminders stop naturally once no PENDING/REJECTED items remain (or the
-    // request is completed/cancelled). Wrapped so a failure here never breaks
-    // the other reminder steps.
-    try {
-      const openRequests = await prisma.documentRequest.findMany({
-        where: {
-          status: "OPEN",
-          client: { deletedAt: null },
-          items: { some: { status: { in: ["PENDING", "REJECTED"] } } },
-          OR: [
-            { lastRemindedAt: null, createdAt: { lt: addDays(now, -1) } },
-            { lastRemindedAt: { lt: addDays(now, -3) } },
-          ],
-        },
-        include: {
-          client: { select: { id: true, name: true, email: true, whatsapp: true, phone: true } },
-          items: {
-            where: { status: { in: ["PENDING", "REJECTED"] } },
-            orderBy: { sortOrder: "asc" },
-            select: { title: true, status: true, rejectionReason: true },
-          },
-        },
-      })
-
-      for (const request of openRequests) {
-        if (!request.client?.email) continue
-
-        try {
-          await notificationService.send({
-            channel: "email",
-            to: request.client.email,
-            subject: `Documents Awaited: ${request.title}`,
-            content: buildDocumentRequestChaserEmail(
-              request.client.name,
-              request.title,
-              request.dueDate,
-              request.items,
-              cfg
-            ),
-          })
-
-          await prisma.message.create({
-            data: {
-              clientId: request.client.id,
-              phoneNumber: request.client.email,
-              content: `Document request chaser: ${request.items.length} item(s) outstanding for "${request.title}"`,
-              status: "SENT",
-              sentAt: now,
-              sentBy: "SYSTEM",
-              metadata: {
-                type: "document_request_chaser",
-                documentRequestId: request.id,
-                provider: "EMAIL",
-              },
-            },
-          })
-
-          if (
-            await sendWhatsAppReminderIfEnabled({
-              templateEnv: "WHATSAPP_TEMPLATE_DOCUMENT_REQUEST",
-              to: request.client.whatsapp || request.client.phone,
-              variables: {
-                client_name: request.client.name,
-                request_title: request.title,
-                pending_count: String(request.items.length),
-              },
-              clientId: request.client.id,
-              logContent: `WhatsApp document request chaser: ${request.items.length} item(s) outstanding for "${request.title}"`,
-              metadata: { type: "document_request_chaser", documentRequestId: request.id },
-              now,
-            })
-          ) {
-            results.whatsappReminders++
-          }
-
-          await prisma.documentRequest.update({
-            where: { id: request.id },
-            data: { lastRemindedAt: now },
-          })
-
-          results.documentRequestChasers++
-        } catch (err) {
-          results.errors.push(
-            `Document request chaser ${request.id}: ${err instanceof Error ? err.message : "Unknown"}`
-          )
-        }
-      }
-    } catch (err) {
-      results.errors.push(
-        `Document request chaser step: ${err instanceof Error ? err.message : "Unknown"}`
-      )
-    }
-
-    // ── 5. Tax-notice deadline alerts (staff, in-app) ────────────────────────
+    // ── 3. Tax-notice deadline alerts (staff, in-app) ────────────────────────
     // Reply deadlines at T−7/3/1/0 and hearings at T−3/1/0. Exact-day matching
     // on a daily cron means no dedupe table is needed.
     try {
@@ -575,66 +389,6 @@ function buildComplianceReminderEmail(clientName: string, title: string, dueDate
       <span style="color: #92400e;">Due Date: ${format(dueDate, "dd MMMM yyyy")}</span>
     </div>
     <p>Please submit any pending documents or information at your earliest convenience.</p>
-    <p>Best regards,<br/>${cfg.firmName}</p>
-    ${firmFooter(cfg)}
-  </div>
-</div>`
-}
-
-function buildDocumentRequestChaserEmail(
-  clientName: string,
-  requestTitle: string,
-  dueDate: Date | null,
-  items: { title: string; status: string; rejectionReason: string | null }[],
-  cfg: FirmConfig
-): string {
-  const itemRows = items
-    .map((item) => {
-      const note =
-        item.status === "REJECTED" && item.rejectionReason
-          ? `<br/><span style="color: #991b1b; font-size: 13px;">Please re-upload: ${item.rejectionReason}</span>`
-          : ""
-      return `<li style="margin: 6px 0;"><strong>${item.title}</strong>${note}</li>`
-    })
-    .join("")
-
-  return `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
-  <div style="background: #1e3a8a; color: white; padding: 24px; border-radius: 8px 8px 0 0;">
-    <h2 style="margin: 0;">Documents Awaited</h2>
-    <p style="margin: 6px 0 0; color: #bfdbfe; font-size: 13px;">${cfg.firmName}</p>
-  </div>
-  <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-    <p>Dear ${clientName},</p>
-    <p>The following documents are still awaited for <strong>${requestTitle}</strong>:</p>
-    <div style="background: #fef3c7; padding: 16px; border-radius: 8px; margin: 16px 0;">
-      <ul style="margin: 0; padding-left: 18px;">
-        ${itemRows}
-      </ul>
-      ${dueDate ? `<p style="margin: 12px 0 0; color: #92400e;">Due Date: ${format(dueDate, "dd MMMM yyyy")}</p>` : ""}
-    </div>
-    <p>Please sign in to your client portal and upload the pending documents under <strong>Document Requests</strong>.</p>
-    <p>Best regards,<br/>${cfg.firmName}</p>
-    ${firmFooter(cfg)}
-  </div>
-</div>`
-}
-
-function buildDocumentExpiryEmail(clientName: string, docTitle: string, expiryDate: Date, cfg: FirmConfig): string {
-  return `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
-  <div style="background: #1e3a8a; color: white; padding: 24px; border-radius: 8px 8px 0 0;">
-    <h2 style="margin: 0;">Document Expiring Soon</h2>
-    <p style="margin: 6px 0 0; color: #bfdbfe; font-size: 13px;">${cfg.firmName}</p>
-  </div>
-  <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-    <p>Dear ${clientName},</p>
-    <p>The following document is expiring soon and may need renewal:</p>
-    <div style="background: #fee2e2; padding: 16px; border-radius: 8px; margin: 16px 0;">
-      <strong>${docTitle}</strong><br/>
-      <span style="color: #991b1b;">Expires: ${format(expiryDate, "dd MMMM yyyy")}</span>
-    </div>
-    <p>Please arrange for renewal and submit the updated document.</p>
     <p>Best regards,<br/>${cfg.firmName}</p>
     ${firmFooter(cfg)}
   </div>

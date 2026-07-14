@@ -7,7 +7,6 @@ import {
   MessageSquare,
   Phone,
   Receipt,
-  Upload,
 } from "lucide-react"
 
 import { getFirmSettings } from "@/lib/firm-settings"
@@ -20,12 +19,6 @@ import {
 } from "@/components/ui/card"
 
 const FAQS = [
-  {
-    q: "How do I upload a document?",
-    a: "Go to Documents and use the upload box at the top. PDF, JPG, PNG, XLS and XLSX files up to 10MB are supported. Your tax team is notified automatically.",
-    href: "/client/documents",
-    icon: Upload,
-  },
   {
     q: "How do I pay an invoice?",
     a: "Open Invoices and press “Pay” next to any unpaid invoice — you'll see the firm's bank and UPI details with your invoice number to quote. Once you've paid, the team records it and the invoice updates.",

@@ -11,7 +11,6 @@ export type SetupChecklistData = {
   hasEmployees: boolean
   hasClients: boolean
   hasTasks: boolean
-  hasDocuments: boolean
   hasInvoices: boolean
   hasCompliance: boolean
 }
@@ -44,13 +43,6 @@ const STEPS = [
     description: "Check upcoming statutory due dates",
     href: "/compliance",
     key: "hasCompliance" as keyof SetupChecklistData,
-  },
-  {
-    id: "documents",
-    label: "Upload a document",
-    description: "Store a client document securely",
-    href: "/documents",
-    key: "hasDocuments" as keyof SetupChecklistData,
   },
   {
     id: "invoices",

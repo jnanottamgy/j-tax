@@ -151,7 +151,6 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
     ...(canManage
       ? [{ label: "Add Invoice", icon: IndianRupee, href: `/payments/invoices?clientId=${clientId}&new=1` }]
       : []),
-    { label: "Upload Document", icon: Folder, href: `/documents?clientId=${clientId}&upload=1` },
     { label: "Send Reminder", icon: Phone, href: `/messaging?clientId=${clientId}&compose=1` },
   ]
 
@@ -276,12 +275,6 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
             color="text-yellow-400"
           />
           <MetricCard
-            label="Documents"
-            value={metrics.documentsUploaded || 0}
-            icon={Folder}
-            color="text-purple-400"
-          />
-          <MetricCard
             label="Active Services"
             value={metrics.activeServices || 0}
             icon={Building2}
@@ -370,7 +363,6 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
                 transition={{ duration: 0.2 }}
               >
                 <DocumentsTab
-                  documents={data.documents}
                   checklist={data.documentChecklist ?? []}
                   clientId={data.client.id}
                 />
@@ -492,50 +484,6 @@ function OverviewTab({ data }: { data: any }) {
           </div>
         </div>
       </GlassCard>
-
-      {data.documentCompleteness && (
-        <GlassCard hover={false} className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Document Completeness</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Completeness Score</span>
-              <span className="text-xl font-bold">{data.documentCompleteness.score}%</span>
-            </div>
-            <div className="w-full bg-muted/30 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all ${data.documentCompleteness.score >= 80 ? "bg-emerald-500" : data.documentCompleteness.score >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                style={{ width: `${data.documentCompleteness.score}%` }}
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-3 text-sm">
-              <div>
-                <p className="text-muted-foreground">Received</p>
-                <p className="font-medium">{data.documentCompleteness.totalReceived} / {data.documentCompleteness.totalExpected}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Expiring Soon</p>
-                <p className="font-medium text-amber-400">{data.documentCompleteness.expiringSoon}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Expired</p>
-                <p className="font-medium text-red-400">{data.documentCompleteness.expired}</p>
-              </div>
-            </div>
-            {data.documentCompleteness.pendingCategories.length > 0 && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-2">Pending Document Categories</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {data.documentCompleteness.pendingCategories.map((cat: string) => (
-                    <Badge key={cat} variant="outline" className="text-[10px] border-amber-500/20 text-amber-400">
-                      {cat.replace(/_/g, " ")}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </GlassCard>
-      )}
 
       <GlassCard hover={false} className="p-6">
         <h3 className="text-lg font-semibold mb-4">Recent Tasks</h3>
@@ -660,40 +608,15 @@ function PaymentsTab({ invoices }: { invoices: any[] }) {
 }
 
 function DocumentsTab({
-  documents,
   checklist,
   clientId,
 }: {
-  documents: any[]
   checklist: any[]
   clientId: string
 }) {
   return (
     <div className="space-y-6">
       <DocumentChecklistCard checklist={checklist} clientId={clientId} />
-      <GlassCard hover={false} className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Uploaded documents</h3>
-        {documents.length === 0 ? (
-          <p className="text-muted-foreground">No documents found</p>
-        ) : (
-          <div className="space-y-3">
-            {documents.map((doc) => (
-              <div key={doc.id} className="flex items-start gap-3 p-4 rounded-lg bg-white/[0.02] border border-white/[0.08]">
-                <div className="p-2 rounded-lg bg-purple-500/10">
-                  <Folder className="h-4 w-4 text-purple-400" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium">{doc.title}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{doc.type}</p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Uploaded: {format(new Date(doc.createdAt), "MMM d, yyyy")}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </GlassCard>
     </div>
   )
 }

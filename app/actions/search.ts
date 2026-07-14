@@ -225,33 +225,6 @@ export async function globalSearch(query: string) {
     })
   }
 
-  // Search Documents
-  {
-    const docWhere: Record<string, unknown> = {
-      OR: [{ title: { contains: query, mode: "insensitive" } }],
-    }
-    if (role === "EMPLOYEE" && executiveEmployeeId) {
-      docWhere.client = { assignedEmployeeId: executiveEmployeeId }
-    }
-
-    const documents = await prisma.document.findMany({
-      where: docWhere as any,
-      include: { client: true },
-      take: 5,
-    })
-    documents.forEach((doc) => {
-      results.push({
-        type: "DOCUMENT",
-        id: doc.id,
-        title: doc.title,
-        subtitle: doc.category || "Document",
-        url: `/documents`,
-        icon: "FileText",
-        score: fuzzyMatch(doc.title, query),
-      })
-    })
-  }
-
   // Search Employees (PARTNER and MANAGER only)
   if (role === "PARTNER" || role === "MANAGER") {
     const employees = await prisma.employee.findMany({
@@ -321,7 +294,6 @@ export async function getQuickCommands() {
     { type: "NAVIGATION", id: "nav-clients", title: "Open Clients", url: "/clients", icon: "Users" },
     { type: "NAVIGATION", id: "nav-work-tracker", title: "Open Work Tracker", url: "/work-tracker", icon: "CheckSquare" },
     { type: "NAVIGATION", id: "nav-calendar", title: "Open Calendar", url: "/calendar", icon: "Calendar" },
-    { type: "NAVIGATION", id: "nav-documents", title: "Open Documents", url: "/documents", icon: "FileText" },
     { type: "NAVIGATION", id: "nav-messaging", title: "Open Messaging", url: "/messaging", icon: "MessageSquare" },
     { type: "NAVIGATION", id: "nav-activity", title: "Open Activity Timeline", url: "/activity", icon: "Activity" },
   ]
@@ -331,7 +303,6 @@ export async function getQuickCommands() {
       { type: "ACTION", id: "action-create-client", title: "Create Client", url: "/clients/new", icon: "Plus" },
       { type: "ACTION", id: "action-create-task", title: "Create Task", url: "/work-tracker?create=true", icon: "Plus" },
       { type: "ACTION", id: "action-create-invoice", title: "Create Invoice", url: "/invoices/new", icon: "Plus" },
-      { type: "ACTION", id: "action-upload-document", title: "Upload Document", url: "/documents/new", icon: "Upload" },
       { type: "ACTION", id: "action-add-employee", title: "Add Employee", url: "/employees/new", icon: "Plus" },
     )
   }

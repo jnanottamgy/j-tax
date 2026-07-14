@@ -26,7 +26,6 @@ export const PROTECTED_ROUTE_PREFIXES = [
   "/payments",
   "/calendar",
   "/employees",
-  "/documents",
   "/messaging",
   "/reports",
   "/notifications",
@@ -69,7 +68,6 @@ export const ROUTE_ACCESS: Record<string, AppRole[]> = {
   "/payments/invoices": ["PARTNER", "MANAGER"], // Invoices list — managers keep this
   "/calendar": [...STAFF_ROLES],
   "/employees": ["PARTNER", "MANAGER"],
-  "/documents": [...STAFF_ROLES],
   "/messaging": [...STAFF_ROLES],
   "/reports": ["PARTNER", "MANAGER"],
   "/notifications": [...STAFF_ROLES],

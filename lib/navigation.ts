@@ -205,18 +205,6 @@ export const navigationGroups: NavGroup[] = [
         description: "Activity history",
       },
       {
-        title: "Documents",
-        href: "/documents",
-        icon: FileText,
-        description: "Document vault",
-      },
-      {
-        title: "Doc Requests",
-        href: "/documents/requests",
-        icon: ClipboardCheck,
-        description: "PBC lists & client uploads",
-      },
-      {
         title: "Job Templates",
         href: "/templates",
         icon: LayoutTemplate,
@@ -306,8 +294,6 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
         id: "resources",
         label: "Resources",
         items: [
-          { title: "Documents", href: "/documents", icon: FileText, description: "Document vault" },
-          { title: "Doc Requests", href: "/documents/requests", icon: ClipboardCheck, description: "PBC lists & client uploads" },
           { title: "Job Templates", href: "/templates", icon: LayoutTemplate, description: "Reusable engagement checklists" },
           { title: "Registers", href: "/registers", icon: KeyRound, description: "Credentials, DSC, UDIN & registrations" },
           { title: "Reports", href: "/reports", icon: PieChart, description: "Analytics & exports" },
@@ -340,7 +326,6 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
         id: "resources",
         label: "Resources",
         items: [
-          { title: "Documents", href: "/documents", icon: FileText, description: "Client documents" },
           { title: "Messaging", href: "/messaging", icon: MessageSquare, description: "Communications" },
         ],
       },
@@ -369,7 +354,6 @@ export const mainNavigation: NavItem[] = [
   { title: "Calendar", href: "/calendar", icon: CalendarDays },
   { title: "Payments", href: "/payments", icon: Wallet },
   { title: "Invoices", href: "/payments/invoices", icon: Receipt },
-  { title: "Documents", href: "/documents", icon: FileText },
   { title: "Messaging", href: "/messaging", icon: MessageSquare },
   { title: "Reports", href: "/reports", icon: PieChart },
   { title: "Employees", href: "/employees", icon: Users },

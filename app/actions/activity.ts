@@ -105,30 +105,6 @@ export async function getInvoiceTimeline(invoiceId: string, limit: number = 50) 
   }
 }
 
-export async function getDocumentTimeline(documentId: string, limit: number = 50) {
-  const session = await requireAuth()
-
-  // EMPLOYEEs can only view timelines for documents on clients assigned to them
-  if (session.user.role === "EMPLOYEE") {
-    const executiveEmployeeId = await getExecutiveEmployeeId(session)
-    const doc = await prisma.document.findUnique({
-      where: { id: documentId },
-      select: { client: { select: { assignedEmployeeId: true } } },
-    })
-    if (!doc) throw new Error("Document not found")
-    if (doc.client.assignedEmployeeId !== executiveEmployeeId) {
-      throw new Error("You do not have permission to view this document's activity")
-    }
-  }
-
-  const logs = await getEntityActivityLogs("DOCUMENT", documentId, limit)
-
-  return {
-    logs,
-    user: session.user,
-  }
-}
-
 export async function getUserTimeline(userId: string, limit: number = 50) {
   const session = await requireAuth()
 

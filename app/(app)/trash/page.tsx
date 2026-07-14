@@ -8,7 +8,7 @@ import { TrashClient } from "./trash-client"
 import { getTrashData, type TrashData } from "@/app/actions/trash"
 
 export default async function TrashPage() {
-  let data: TrashData = { clients: [], documents: [], invoices: [] }
+  let data: TrashData = { clients: [], invoices: [] }
   let error: string | null = null
   let canPurge = false
 
@@ -29,7 +29,7 @@ export default async function TrashPage() {
       <PageHeader
         label="Operations"
         title="Recycle Bin"
-        description="Clients, documents, and invoices you delete land here. Restore them, or delete them permanently."
+        description="Clients and invoices you delete land here. Restore them, or delete them permanently."
       />
       {error ? (
         <div

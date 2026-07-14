@@ -21,8 +21,6 @@ export function notificationHref(
       return "/work-tracker"
     case "COMPLIANCE":
       return "/compliance"
-    case "DOCUMENT":
-      return "/documents"
     case "USER":
       return entityId ? `/employees/${entityId}` : "/employees"
     default:

@@ -8,7 +8,6 @@ import {
   BarChart3,
   CheckSquare,
   IndianRupee,
-  FileWarning,
   Shield,
   Target,
   TrendingDown,
@@ -51,7 +50,6 @@ interface PartnerCommandCenterProps {
     lostLeads: number
     quotationsSent: number
     revenuePipeline: number
-    expiredDocuments: number
   }
 }
 
@@ -242,14 +240,6 @@ export function PartnerCommandCenter({
                 icon={IndianRupee}
                 color="bg-purple-500/10 text-purple-400"
                 href="/proposals"
-              />
-              <MetricTile
-                label="Expired Documents"
-                value={crmMetrics.expiredDocuments}
-                subtext="need renewal"
-                icon={FileWarning}
-                color={crmMetrics.expiredDocuments > 0 ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}
-                href="/documents"
               />
             </div>
           </div>

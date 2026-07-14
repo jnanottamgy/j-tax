@@ -31,7 +31,6 @@ export type PerformanceMetrics = {
   completionRate: number
   overdueTasks: number
   activeClients: number
-  documentsProcessed: number
   complianceFilings: number
   revenueManaged: number
   avgCompletionDays: number
@@ -216,26 +215,6 @@ export async function getPerformanceMetrics(
     },
   })
 
-  // Documents per employee (via uploadedBy userId)
-  const employeeUserIds = await prisma.employee.findMany({
-    where: { isActive: true },
-    select: { id: true, userId: true },
-  })
-  const userIdToEmpId = new Map(
-    employeeUserIds.filter((e) => e.userId).map((e) => [e.userId!, e.id])
-  )
-
-  const docCounts = await prisma.document.groupBy({
-    by: ["uploadedBy"],
-    where: { createdAt: { gte: rangeStart } },
-    _count: true,
-  })
-  const docCountMap = new Map<string, number>()
-  for (const d of docCounts) {
-    const empId = userIdToEmpId.get(d.uploadedBy)
-    if (empId) docCountMap.set(empId, (docCountMap.get(empId) ?? 0) + d._count)
-  }
-
   // Compliance completions per client assigned to employee
   const complianceCounts = await prisma.complianceEvent.groupBy({
     by: ["clientId"],
@@ -302,10 +281,9 @@ export async function getPerformanceMetrics(
     const score = Math.min(
       100,
       Math.round(
-        completionRate * 0.4 +
-        Math.min(100, (emp.clients.length / 10) * 100) * 0.2 +
-        Math.min(100, (docCountMap.get(emp.id) ?? 0) * 5) * 0.2 +
-        Math.max(0, 100 - overdue * 10) * 0.2
+        completionRate * 0.5 +
+        Math.min(100, (emp.clients.length / 10) * 100) * 0.25 +
+        Math.max(0, 100 - overdue * 10) * 0.25
       )
     )
 
@@ -318,7 +296,6 @@ export async function getPerformanceMetrics(
       completionRate,
       overdueTasks: overdue,
       activeClients: emp.clients.length,
-      documentsProcessed: docCountMap.get(emp.id) ?? 0,
       complianceFilings: complianceCountMap.get(emp.id) ?? 0,
       revenueManaged: revenueMap.get(emp.id) ?? 0,
       avgCompletionDays: avgDays,

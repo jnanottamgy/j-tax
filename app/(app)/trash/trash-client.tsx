@@ -7,7 +7,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Building2, FileText, Receipt, RotateCcw, Trash2, Undo2 } from "lucide-react"
+import { Building2, Receipt, RotateCcw, Trash2, Undo2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -16,7 +16,7 @@ import { restoreItem, purgeItem, type TrashData, type TrashItemType } from "@/ap
 import { formatINR } from "@/lib/india/format"
 import { cn } from "@/lib/utils"
 
-type Section = "client" | "document" | "invoice"
+type Section = "client" | "invoice"
 
 function fmtWhen(d: Date | string) {
   return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
@@ -27,7 +27,7 @@ export function TrashClient({ data, canPurge = false }: { data: TrashData; canPu
   const [busyId, setBusyId] = useState<string | null>(null)
   const [purge, setPurge] = useState<null | { type: TrashItemType; id: string; label: string }>(null)
 
-  const total = data.clients.length + data.documents.length + data.invoices.length
+  const total = data.clients.length + data.invoices.length
 
   async function restore(type: TrashItemType, id: string) {
     setBusyId(id)
@@ -67,7 +67,7 @@ export function TrashClient({ data, canPurge = false }: { data: TrashData; canPu
         <Trash2 className="size-8 text-muted-foreground" />
         <p className="text-sm font-medium">The recycle bin is empty</p>
         <p className="max-w-sm text-xs text-muted-foreground">
-          Deleted clients, documents, and invoices appear here so you can restore them if a deletion was a mistake.
+          Deleted clients and invoices appear here so you can restore them if a deletion was a mistake.
         </p>
       </div>
     )
@@ -91,15 +91,6 @@ export function TrashClient({ data, canPurge = false }: { data: TrashData; canPu
       deletedAt: c.deletedAt,
       label: c.name,
     })),
-    ...data.documents.map((d) => ({
-      section: "document" as const,
-      id: d.id,
-      icon: FileText,
-      primary: d.title,
-      secondary: `${d.fileName} · ${d.clientName}`,
-      deletedAt: d.deletedAt,
-      label: d.title,
-    })),
     ...data.invoices.map((i) => ({
       section: "invoice" as const,
       id: i.id,
@@ -113,7 +104,6 @@ export function TrashClient({ data, canPurge = false }: { data: TrashData; canPu
 
   const SECTION_META: Record<Section, { label: string; count: number }> = {
     client: { label: "Clients", count: data.clients.length },
-    document: { label: "Documents", count: data.documents.length },
     invoice: { label: "Invoices", count: data.invoices.length },
   }
 

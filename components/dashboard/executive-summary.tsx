@@ -1,7 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { AlertTriangle, Clock, TrendingUp, CheckCircle2 } from "lucide-react"
+import { AlertTriangle, Clock, TrendingUp } from "lucide-react"
 
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { cn } from "@/lib/utils"
@@ -10,7 +10,6 @@ interface ExecutiveSummaryProps {
   overdueTasks: number
   upcomingDeadlines: number
   outstandingInvoices: number
-  pendingDocuments: number
   complianceScore: number
   /** Open (not filed/done) tasks per active team member */
   openTasksPerMember: number
@@ -20,7 +19,6 @@ export function ExecutiveSummary({
   overdueTasks,
   upcomingDeadlines,
   outstandingInvoices,
-  pendingDocuments,
   complianceScore,
   openTasksPerMember,
 }: ExecutiveSummaryProps) {
@@ -50,14 +48,6 @@ export function ExecutiveSummary({
       color: outstandingInvoices > 0 ? "text-orange-400" : "text-emerald-400",
       bgColor: outstandingInvoices > 0 ? "bg-orange-500/10" : "bg-emerald-500/10",
       trend: outstandingInvoices > 0 ? "up" : "down",
-    },
-    {
-      label: "Pending Documents",
-      value: pendingDocuments,
-      icon: CheckCircle2,
-      color: pendingDocuments > 0 ? "text-purple-400" : "text-emerald-400",
-      bgColor: pendingDocuments > 0 ? "bg-purple-500/10" : "bg-emerald-500/10",
-      trend: "neutral",
     },
   ]
 

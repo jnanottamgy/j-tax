@@ -53,14 +53,13 @@ export function PerformanceScorecardTable({ metrics, onEmployeeClick }: Props) {
                 <TableHead className="text-right">Rate</TableHead>
                 <TableHead className="text-right">Overdue</TableHead>
                 <TableHead className="text-right">Clients</TableHead>
-                <TableHead className="text-right">Docs</TableHead>
                 <TableHead className="text-right pr-4">Revenue</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {metrics.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8 text-sm">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8 text-sm">
                     No performance data for this period.
                   </TableCell>
                 </TableRow>
@@ -97,7 +96,6 @@ export function PerformanceScorecardTable({ metrics, onEmployeeClick }: Props) {
                       )}
                     </TableCell>
                     <TableCell className="text-right text-sm tabular-nums">{m.activeClients}</TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">{m.documentsProcessed}</TableCell>
                     <TableCell className="text-right text-sm tabular-nums pr-4">
                       {m.revenueManaged > 0
                         ? `₹${(m.revenueManaged / 1000).toFixed(0)}k`

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { format } from "date-fns"
-import { Calendar as CalendarIcon, FileText, Receipt, CheckCircle2, AlertCircle, Upload, MessageSquare } from "lucide-react"
+import { Calendar as CalendarIcon, FileText, Receipt, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react"
 
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
@@ -33,7 +33,6 @@ export default async function ClientDashboardPage() {
     overdueCompliance,
     upcomingDeadlines,
     invoices,
-    recentDocuments,
     recentMessages,
   ] = await Promise.all([
     // Pending compliance events
@@ -82,12 +81,6 @@ export default async function ClientDashboardPage() {
         outstandingAmount: { gt: 0 },
       },
       orderBy: { dueDate: "asc" },
-      take: 3,
-    }),
-    // Recent documents
-    prisma.document.findMany({
-      where: { clientId: clientRecord.id },
-      orderBy: { createdAt: "desc" },
       take: 3,
     }),
     // Recent messages
@@ -272,65 +265,8 @@ export default async function ClientDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity - Documents & Messages */}
+        {/* Recent Activity - Messages */}
         <div className="space-y-6">
-          {/* Recent Documents */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Upload className="size-5" />
-                    Recent Documents
-                  </CardTitle>
-                  <CardDescription>
-                    Recently uploaded or requested documents
-                  </CardDescription>
-                </div>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/client/documents">View All</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {recentDocuments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <Upload className="size-10 text-muted-foreground/30 mb-3" />
-                  <p className="font-medium">No documents yet</p>
-                  <p className="text-sm text-muted-foreground">
-                    Documents will appear here when uploaded.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentDocuments.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
-                          <FileText className="size-4" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm truncate max-w-[150px]">
-                            {doc.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {doc.category}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(doc.createdAt), "MMM d")}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Recent Messages */}
           <Card>
             <CardHeader>
