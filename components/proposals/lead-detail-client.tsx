@@ -25,8 +25,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { updateLeadStatus, convertLeadToClient } from "@/app/actions/proposals"
 import { EditLeadDialog } from "@/components/proposals/edit-lead-dialog"
+
+// The lead statuses selectable in the UI (others still render via STATUS_LABELS).
+const STATUS_OPTIONS = [
+  { value: "FOLLOW_UP_REQUIRED", label: "Follow-up required" },
+  { value: "PROPOSAL_SENT", label: "Quotation sent" },
+  { value: "WON", label: "Success" },
+  { value: "LOST", label: "Reject" },
+] as const
 
 const STATUS_LABELS: Record<string, string> = {
   NEW_LEAD: "New Lead",
@@ -73,6 +90,7 @@ interface Props {
     status: string
     estimatedValue: number | null
     notes: string | null
+    rejectionReason: string | null
     assignedTo: string | null
     convertedClientId: string | null
     createdAt: string | Date
@@ -103,12 +121,27 @@ export function LeadDetailClient({ lead, employees }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState(lead.status)
   const [editOpen, setEditOpen] = useState(false)
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [rejectReason, setRejectReason] = useState(lead.rejectionReason ?? "")
   const [isPending, startTransition] = useTransition()
 
   function handleStatusChange(newStatus: string) {
+    // Rejecting requires a reason — open the dialog instead of committing.
+    if (newStatus === "LOST") {
+      setRejectOpen(true)
+      return
+    }
     setStatus(newStatus)
     startTransition(async () => {
       await updateLeadStatus(lead.id, newStatus)
+    })
+  }
+
+  function confirmReject() {
+    setStatus("LOST")
+    setRejectOpen(false)
+    startTransition(async () => {
+      await updateLeadStatus(lead.id, "LOST", rejectReason)
     })
   }
 
@@ -132,8 +165,8 @@ export function LeadDetailClient({ lead, employees }: Props) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
+            {STATUS_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -166,6 +199,13 @@ export function LeadDetailClient({ lead, employees }: Props) {
           </Button>
         )}
       </div>
+
+      {status === "LOST" && lead.rejectionReason && (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3 text-sm">
+          <span className="font-medium text-red-400">Rejection reason: </span>
+          <span className="text-muted-foreground">{lead.rejectionReason}</span>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Lead Info */}
@@ -309,6 +349,31 @@ export function LeadDetailClient({ lead, employees }: Props) {
           router.refresh()
         }}
       />
+
+      {/* Reject reason capture */}
+      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject lead</DialogTitle>
+            <DialogDescription>Why is “{lead.name}” being rejected?</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="e.g. Budget too low, chose another firm, not proceeding…"
+            className="min-h-24"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={!rejectReason.trim()} onClick={confirmReject}>
+              Reject lead
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -11,6 +11,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -53,16 +62,29 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
   const [leads, setLeads] = useState(initialLeads)
   const [filter, setFilter] = useState("ALL")
   const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<Lead | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
   const [, startTransition] = useTransition()
 
   const filtered = filter === "ALL" ? leads : leads.filter((l) => l.status === filter)
 
-  function handleStatusChange(leadId: string, status: string) {
+  // Rejecting a lead requires a reason — open the dialog instead of committing.
+  function requestStatusChange(leadId: string, status: string) {
+    if (status === "LOST") {
+      const lead = leads.find((l) => l.id === leadId) ?? null
+      setRejectReason("")
+      setRejectTarget(lead)
+      return
+    }
+    handleStatusChange(leadId, status)
+  }
+
+  function handleStatusChange(leadId: string, status: string, reason?: string) {
     const previous = leads
     // Optimistic — but roll back and tell the user if the server rejects it.
     setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status: status as Lead["status"] } : l))
     startTransition(async () => {
-      const result = await updateLeadStatus(leadId, status)
+      const result = await updateLeadStatus(leadId, status, reason)
       if (result.error) {
         setLeads(previous)
         toast.error(result.error)
@@ -70,6 +92,12 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
         toast.success(`Lead moved to ${STATUS_LABELS[status] ?? status}`)
       }
     })
+  }
+
+  function confirmReject() {
+    if (!rejectTarget) return
+    handleStatusChange(rejectTarget.id, "LOST", rejectReason)
+    setRejectTarget(null)
   }
 
   async function handleDeleteConfirmed() {
@@ -148,10 +176,10 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {STATUSES.map((s) => (
-                      <DropdownMenuItem key={s} onClick={() => handleStatusChange(lead.id, s)}>
-                        {STATUS_LABELS[s]}
-                        {lead.status === s && " ✓"}
+                    {FILTER_STATUSES.map((s) => (
+                      <DropdownMenuItem key={s.value} onClick={() => requestStatusChange(lead.id, s.value)}>
+                        {s.label}
+                        {lead.status === s.value && " ✓"}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
@@ -219,6 +247,37 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
         destructive
         onConfirm={handleDeleteConfirmed}
       />
+
+      {/* Reject reason capture */}
+      <Dialog open={rejectTarget !== null} onOpenChange={(open) => !open && setRejectTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject lead</DialogTitle>
+            <DialogDescription>
+              {rejectTarget ? `Why is "${rejectTarget.name}" being rejected?` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="e.g. Budget too low, chose another firm, not proceeding…"
+            className="min-h-24"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim()}
+              onClick={confirmReject}
+            >
+              Reject lead
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -99,13 +99,21 @@ export async function updateLead(
 
 const VALID_LEAD_STATUSES_SET = new Set(["NEW_LEAD","CONTACTED","QUOTATION_REQUESTED","FOLLOW_UP_REQUIRED","CLIENT_WILL_REVERT","PROPOSAL_SENT","NEGOTIATION","WON","LOST"])
 
-export async function updateLeadStatus(leadId: string, status: string) {
+export async function updateLeadStatus(
+  leadId: string,
+  status: string,
+  rejectionReason?: string
+) {
   try {
     await requirePartnerOrManager()
     if (!VALID_LEAD_STATUSES_SET.has(status)) return { error: "Invalid lead status." }
     await prisma.lead.update({
       where: { id: leadId },
-      data: { status: status as any },
+      data: {
+        status: status as any,
+        // Store the reason only when rejecting; clear it otherwise.
+        rejectionReason: status === "LOST" ? rejectionReason?.trim() || null : null,
+      },
     })
     revalidatePath("/proposals")
     return { success: true }
