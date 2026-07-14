@@ -12,6 +12,7 @@ import { TaskTable } from "@/components/work-tracker/task-table"
 import { TaskDetailDrawer } from "@/components/work-tracker/task-detail-drawer"
 import { TaskFilters } from "@/components/work-tracker/task-filters"
 import { AddTaskDialog, type EditableTask } from "@/components/work-tracker/add-task-dialog"
+import { AddInvoiceDialog } from "@/components/payments/add-invoice-dialog"
 import { getTasksData, getTaskDetail, updateTaskStatus, acceptTask, declineTask, deleteTask, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
 import { toast } from "sonner"
 
@@ -21,7 +22,14 @@ export function WorkTrackerClient() {
   const searchParams = useSearchParams()
   const [tasks, setTasks] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
-  const [clients, setClients] = useState<Array<{ id: string; name: string }>>([])
+  const [clients, setClients] = useState<Array<{ id: string; name: string; gstin?: string | null }>>([])
+  // Task→invoice popup: opens after a manager marks a task Filed/Done.
+  const [invoicePrefill, setInvoicePrefill] = useState<{
+    clientId: string
+    serviceType?: string
+    serviceDescription: string
+    sourceTaskId: string
+  } | null>(null)
   const [user, setUser] = useState<any>(null)
   const [selectedTask, setSelectedTask] = useState<any>(null)
   const [userNameMap, setUserNameMap] = useState<Record<string, string>>({})
@@ -53,7 +61,7 @@ export function WorkTrackerClient() {
       // Fetch clients for task creation
       const { getClientsData } = await import("@/app/actions/clients")
       const clientsData = await getClientsData()
-      setClients(clientsData.clients.map((c: any) => ({ id: c.id, name: c.name })))
+      setClients(clientsData.clients.map((c: any) => ({ id: c.id, name: c.name, gstin: c.gstin })))
     } catch (error) {
       console.error("Failed to load tasks:", error)
       toast.error("Failed to load tasks")
@@ -83,6 +91,16 @@ export function WorkTrackerClient() {
       const result = await updateTaskStatus(taskId, newStatus)
       if (result.success) {
         toast.success("Task status updated")
+        // Task completed by a manager → offer to raise an invoice for the work.
+        const completed = tasks.find((t) => t.id === taskId)
+        if (newStatus === "FILED_DONE" && canManage && completed?.client?.id) {
+          setInvoicePrefill({
+            clientId: completed.client.id,
+            serviceType: completed.serviceType ?? undefined,
+            serviceDescription: completed.title ?? "",
+            sourceTaskId: taskId,
+          })
+        }
         await loadData()
         setTasks((freshTasks) => {
           const updated = freshTasks.find((t) => t.id === taskId)
@@ -315,6 +333,22 @@ export function WorkTrackerClient() {
         task={editingTask}
         initialClientId={initialClientId}
       />
+
+      {/* Task→invoice popup — opens after a manager marks a task Filed/Done */}
+      {invoicePrefill && (
+        <AddInvoiceDialog
+          open={invoicePrefill !== null}
+          onOpenChange={(open) => !open && setInvoicePrefill(null)}
+          onSuccess={() => setInvoicePrefill(null)}
+          clients={clients}
+          sourceTaskId={invoicePrefill.sourceTaskId}
+          initialValues={{
+            clientId: invoicePrefill.clientId,
+            serviceType: invoicePrefill.serviceType ?? "",
+            serviceDescription: invoicePrefill.serviceDescription,
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={deletingTaskId !== null}

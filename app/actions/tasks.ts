@@ -471,6 +471,25 @@ export async function updateTaskStatus(
       data: updateData,
     })
 
+    // Task completed → tell the management team so an invoice can be raised.
+    if (status === "FILED_DONE" && task.status !== "FILED_DONE") {
+      const client = await prisma.client.findUnique({
+        where: { id: task.clientId },
+        select: { name: true },
+      })
+      await notifyRoles(
+        ["PARTNER", "MANAGER"],
+        {
+          title: `Task completed — ready to invoice: ${task.title}`,
+          message: `"${task.title}"${client ? ` (${client.name})` : ""} is done. Create an invoice for the work.`,
+          type: "INFO",
+          entityType: "TASK",
+          entityId: taskId,
+        },
+        { excludeUserId: session.user.id }
+      )
+    }
+
     // ── Review-flow notifications (the Employee ↔ Manager reporting chain) ──
     // Employee submits → every Manager/Partner is told there's work to review.
     if (status === "UNDER_REVIEW" && session.user.role === "EMPLOYEE") {
