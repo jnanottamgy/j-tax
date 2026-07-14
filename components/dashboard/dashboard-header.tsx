@@ -2,10 +2,13 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   Building2,
   CalendarClock,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   FileText,
   Plus,
@@ -33,11 +36,103 @@ import { ThemeToggle } from "@/components/theme/theme-toggle"
 import { useAuth } from "@/components/auth/auth-provider"
 import { canAccessRoute } from "@/lib/auth/roles"
 
-/** Indian financial year runs Apr–Mar: Jul 2026 → "FY 2026-27". */
-function currentFinancialYear(): string {
+/** Indian financial year runs Apr–Mar: Jul 2026 → start year 2026. */
+function currentStartYear(): number {
   const now = new Date()
-  const startYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
-  return `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`
+  return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+}
+
+const GRANULARITIES = [
+  { value: "daily", label: "Daily" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+] as const
+
+/**
+ * Dashboard period control: shift the financial year with ◀/▶ and pick a
+ * Daily / Monthly / Yearly granularity. Selection lives in the URL (?fy&g) so
+ * the revenue trend chart can react. Only rendered on the dashboard route.
+ */
+function DashboardPeriodControl() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Only meaningful on the dashboard (route "/") where the trend chart lives.
+  const isDashboard = pathname === "/"
+
+  const fyParam = searchParams.get("fy")
+  const startYear = fyParam?.match(/(\d{4})/) ? Number(fyParam.match(/(\d{4})/)![1]) : currentStartYear()
+  const granularity = searchParams.get("g") ?? "monthly"
+  const fyShort = `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`
+
+  if (!isDashboard) {
+    return (
+      <Badge
+        variant="outline"
+        className="hidden border-white/[0.07] bg-white/[0.03] px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground sm:inline-flex"
+      >
+        FY {fyShort}
+      </Badge>
+    )
+  }
+
+  function setParams(next: { fy?: string; g?: string }) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (next.fy !== undefined) params.set("fy", next.fy)
+    if (next.g !== undefined) params.set("g", next.g)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
+  function shiftYear(delta: number) {
+    const y = startYear + delta
+    setParams({ fy: `${y}-${String((y + 1) % 100).padStart(2, "0")}` })
+  }
+
+  return (
+    <div className="hidden items-center gap-1.5 sm:flex">
+      <div className="flex items-center rounded-lg border border-white/[0.07] bg-white/[0.03]">
+        <button
+          type="button"
+          onClick={() => shiftYear(-1)}
+          className="flex size-7 items-center justify-center text-muted-foreground hover:text-foreground"
+          aria-label="Previous financial year"
+        >
+          <ChevronLeft className="size-3.5" />
+        </button>
+        <span className="px-1 text-[11px] font-medium tracking-wide text-muted-foreground tabular-nums">
+          FY {fyShort}
+        </span>
+        <button
+          type="button"
+          onClick={() => shiftYear(1)}
+          disabled={startYear >= currentStartYear()}
+          className="flex size-7 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+          aria-label="Next financial year"
+        >
+          <ChevronRight className="size-3.5" />
+        </button>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 gap-1 rounded-lg border-white/[0.07] bg-white/[0.03] px-2 text-[11px] font-medium text-muted-foreground">
+            {GRANULARITIES.find((g) => g.value === granularity)?.label ?? "Monthly"}
+            <ChevronDown className="size-3 opacity-70" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-36">
+          <DropdownMenuLabel>Granularity</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {GRANULARITIES.map((g) => (
+            <DropdownMenuItem key={g.value} onClick={() => setParams({ g: g.value })}>
+              {g.label}
+              {granularity === g.value && " ✓"}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
 }
 
 // Global quick-create actions. Each `access` route is checked against the
@@ -95,12 +190,7 @@ export function DashboardHeader() {
           <HelpButton onClick={() => setHelpOpen(true)} />
           <NotificationBell />
 
-          <Badge
-            variant="outline"
-            className="hidden border-white/[0.07] bg-white/[0.03] px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground sm:inline-flex"
-          >
-            {currentFinancialYear()}
-          </Badge>
+          <DashboardPeriodControl />
 
           {createActions.length > 0 && (
             <DropdownMenu>

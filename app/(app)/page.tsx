@@ -12,7 +12,7 @@ import { OutstandingPayments } from "@/components/dashboard/outstanding-payments
 import { PartnerCommandCenter } from "@/components/dashboard/partner-command-center"
 import { QuickActions } from "@/components/dashboard/quick-actions"
 import { RecentActivity } from "@/components/dashboard/recent-activity"
-import { RevenueChart } from "@/components/dashboard/revenue-chart"
+import { RevenueTrendChart } from "@/components/dashboard/revenue-trend-chart"
 import { SetupChecklist } from "@/components/dashboard/setup-checklist"
 import { TasksDueToday } from "@/components/dashboard/tasks-due-today"
 import { PageContainer } from "@/components/layout/page-container"
@@ -671,7 +671,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <RevenueChart collected={totalCollected} outstanding={totalOutstanding} />
+        <RevenueTrendChart />
         <FilingChart taskStatusCounts={taskStatusCounts} />
       </div>
 
