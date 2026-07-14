@@ -15,6 +15,7 @@ import {
   Settings2,
   Sparkles,
   UserRound,
+  X,
 } from "lucide-react"
 import type { ClientPriority, ServiceFrequency, ServiceType } from "@prisma/client"
 import { toast } from "sonner"
@@ -45,9 +46,11 @@ import {
   SERVICE_TYPE_LABELS,
   serviceLabel,
 } from "@/lib/clients/constants"
+import { CLIENT_TYPE_OPTIONS, ENTITY_TYPE_LABELS } from "@/lib/clients/master-data"
 import { buildDocumentChecklist } from "@/lib/clients/onboarding"
 import {
   useClientOnboardingStore,
+  type BasicInfo,
   type OnboardingServiceConfig,
 } from "@/lib/clients/onboarding-store"
 import type { EmployeeOption } from "@/lib/clients/types"
@@ -59,6 +62,7 @@ const serviceOptions: ServiceType[] = [
   "GST_RETURN",
   "TDS",
   "COMPANY_LAW",
+  "INCORPORATION",
   "BOOKKEEPING",
   "AUDIT",
   "INCOME_TAX",
@@ -139,16 +143,14 @@ export function ClientOnboardingWizard({
     [services]
   )
 
-  const checklist = useMemo(
-    () => buildDocumentChecklist(selectedServices),
-    [selectedServices]
-  )
+  // Fixed base checklist (Engagement Letter, Client Authorization Letter).
+  const checklist = useMemo(() => buildDocumentChecklist(), [])
 
-  // Only submit collected labels that are still part of the current checklist
-  // (services may have changed after some were ticked).
+  // Submit every collected label — base items that are ticked AND custom
+  // "Other" documents the user typed in (these are collected by definition).
   const collectedJson = useMemo(
-    () => JSON.stringify(collectedDocuments.filter((label) => checklist.includes(label))),
-    [collectedDocuments, checklist]
+    () => JSON.stringify(collectedDocuments),
+    [collectedDocuments]
   )
 
   const servicesJson = JSON.stringify(selectedServices)
@@ -264,6 +266,10 @@ export function ClientOnboardingWizard({
             <input type="hidden" name="services" value={servicesJson} />
             <input type="hidden" name="collectedDocuments" value={collectedJson} />
             <input type="hidden" name="name" value={basic.name} />
+            <input type="hidden" name="companyName" value={basic.companyName} />
+            <input type="hidden" name="clientType" value={basic.clientType} />
+            <input type="hidden" name="clientTypeCustom" value={basic.clientTypeCustom} />
+            <input type="hidden" name="isIncorporated" value={basic.isIncorporated ? "true" : "false"} />
             <input type="hidden" name="gstin" value={basic.gstin} />
             <input type="hidden" name="pan" value={basic.pan} />
             <input type="hidden" name="email" value={basic.email} />
@@ -396,7 +402,6 @@ export function ClientOnboardingWizard({
                     )}
                     {step === 3 && (
                       <ChecklistStep
-                        selectedServices={selectedServices}
                         checklist={checklist}
                         collectedDocuments={collectedDocuments}
                         toggleCollectedDocument={toggleCollectedDocument}
@@ -514,9 +519,9 @@ function BasicInfoStep({
   errors,
   updateBasic,
 }: {
-  basic: Record<string, string>
+  basic: BasicInfo
   errors?: Record<string, string[]>
-  updateBasic: (data: Partial<typeof basic>) => void
+  updateBasic: (data: Partial<BasicInfo>) => void
 }) {
   // Live statutory feedback — only once the field reaches full length, so we
   // don't nag mid-typing. Checksum + state decode happen fully offline.
@@ -531,13 +536,56 @@ function BasicInfoStep({
       description="Core identity, tax IDs, and contact details for the client master."
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Client name" required error={errors?.name?.[0]} className="sm:col-span-2">
+        <Field label="Client name" required error={errors?.name?.[0]}>
           <Input
             value={basic.name}
             onChange={(event) => updateBasic({ name: event.target.value })}
             placeholder="Acme Holdings Pvt Ltd"
             className="input-premium h-10 rounded-xl"
           />
+        </Field>
+        <Field label="Company name" error={errors?.companyName?.[0]}>
+          <Input
+            value={basic.companyName}
+            onChange={(event) => updateBasic({ companyName: event.target.value })}
+            placeholder="Registered legal name (if different)"
+            className="input-premium h-10 rounded-xl"
+          />
+        </Field>
+        <Field label="Client type" error={errors?.clientTypeCustom?.[0]}>
+          <select
+            value={basic.clientType}
+            onChange={(event) => updateBasic({ clientType: event.target.value })}
+            className="input-premium h-10 w-full rounded-xl bg-transparent px-3 text-sm"
+          >
+            <option value="">Select type…</option>
+            {CLIENT_TYPE_OPTIONS.map((t) => (
+              <option key={t} value={t} className="bg-background text-foreground">
+                {ENTITY_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+          {basic.clientType === "OTHER" && (
+            <Input
+              value={basic.clientTypeCustom}
+              onChange={(event) => updateBasic({ clientTypeCustom: event.target.value })}
+              placeholder="Enter the client type"
+              className="input-premium mt-2 h-10 rounded-xl"
+            />
+          )}
+        </Field>
+        <Field label="Incorporation status">
+          <label className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 text-sm">
+            <input
+              type="checkbox"
+              checked={basic.isIncorporated}
+              onChange={(event) => updateBasic({ isIncorporated: event.target.checked })}
+              className="size-4 rounded border-white/20 bg-transparent accent-primary"
+            />
+            <span className="text-muted-foreground">
+              {basic.isIncorporated ? "Already incorporated / registered" : "Not yet incorporated"}
+            </span>
+          </label>
         </Field>
         <Field label="GSTIN" error={errors?.gstin?.[0]}>
           <Input
@@ -824,70 +872,104 @@ function ConfigurationStep({
 }
 
 function ChecklistStep({
-  selectedServices,
   checklist,
   collectedDocuments,
   toggleCollectedDocument,
   checklistReview,
   updateChecklistReview,
 }: {
-  selectedServices: { serviceType: ServiceType; customName?: string }[]
   checklist: string[]
   collectedDocuments: string[]
   toggleCollectedDocument: (label: string) => void
   checklistReview: { reviewed: boolean }
   updateChecklistReview: (data: Partial<{ reviewed: boolean }>) => void
 }) {
-  const collectedCount = checklist.filter((item) => collectedDocuments.includes(item)).length
+  const [otherLabel, setOtherLabel] = useState("")
+  // Custom "Other" documents are anything collected that isn't a base item.
+  const customDocs = collectedDocuments.filter((d) => !checklist.includes(d))
+  const allItems = [...checklist, ...customDocs]
+  const collectedCount = collectedDocuments.length
+
+  function addOther() {
+    const label = otherLabel.trim()
+    if (!label) return
+    if (!collectedDocuments.includes(label) && !checklist.includes(label)) {
+      toggleCollectedDocument(label)
+    }
+    setOtherLabel("")
+  }
+
   return (
     <StepFrame
       title="Document Checklist"
-      description="Generated from the selected services. Tick the documents you've already collected — the rest are tracked on the client's profile."
+      description="Tick the documents you've collected. Use “Other” to add any additional document by name."
     >
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        {selectedServices.map((service) => (
-          <Badge
-            key={service.serviceType}
-            variant="outline"
-            className="border-primary/25 bg-primary/10 text-primary"
-          >
-            {serviceLabel(service.serviceType, service.customName)}
-          </Badge>
-        ))}
-        {checklist.length > 0 && (
-          <span className="ml-auto text-xs text-muted-foreground">
-            {collectedCount} of {checklist.length} collected
-          </span>
-        )}
+      <div className="mb-3 flex items-center">
+        <span className="ml-auto text-xs text-muted-foreground">
+          {collectedCount} collected
+        </span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {checklist.map((item) => {
+        {allItems.map((item) => {
           const collected = collectedDocuments.includes(item)
+          const isCustom = !checklist.includes(item)
           return (
-            <button
+            <div
               key={item}
-              type="button"
-              onClick={() => toggleCollectedDocument(item)}
-              aria-pressed={collected}
               className={cn(
                 "surface-elevated flex items-start gap-3 rounded-xl p-4 text-left transition-all duration-200",
                 collected && "border-emerald-500/30 bg-emerald-500/10 ring-1 ring-emerald-500/20"
               )}
             >
-              <span
-                className={cn(
-                  "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
-                  collected
-                    ? "border-emerald-500/40 bg-emerald-500 text-white"
-                    : "border-white/[0.15] bg-white/[0.03]"
-                )}
+              <button
+                type="button"
+                onClick={() => toggleCollectedDocument(item)}
+                aria-pressed={collected}
+                className="flex flex-1 items-start gap-3 text-left"
               >
-                {collected ? <Check className="size-3.5" /> : <FileCheck2 className="size-3 text-muted-foreground" />}
-              </span>
-              <span className={cn("text-sm", collected && "text-emerald-100")}>{item}</span>
-            </button>
+                <span
+                  className={cn(
+                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                    collected
+                      ? "border-emerald-500/40 bg-emerald-500 text-white"
+                      : "border-white/[0.15] bg-white/[0.03]"
+                  )}
+                >
+                  {collected ? <Check className="size-3.5" /> : <FileCheck2 className="size-3 text-muted-foreground" />}
+                </span>
+                <span className={cn("text-sm", collected && "text-emerald-100")}>{item}</span>
+              </button>
+              {isCustom && (
+                <button
+                  type="button"
+                  onClick={() => toggleCollectedDocument(item)}
+                  className="text-muted-foreground hover:text-red-400"
+                  aria-label={`Remove ${item}`}
+                >
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
           )
         })}
+      </div>
+      {/* Other — enter a custom document name */}
+      <div className="mt-4 flex items-center gap-2">
+        <Input
+          value={otherLabel}
+          onChange={(e) => setOtherLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              addOther()
+            }
+          }}
+          placeholder="Other — type a document name and add"
+          className="input-premium h-10 rounded-xl"
+        />
+        <Button type="button" variant="outline" onClick={addOther} className="h-10 shrink-0 gap-1.5">
+          <Plus className="size-4" /> Add
+        </Button>
       </div>
       <div className="mt-6 surface-elevated flex items-center gap-3 rounded-xl p-4">
         <input

@@ -16,8 +16,15 @@ export type OnboardingServiceConfig = {
   customName?: string
 }
 
-type BasicInfo = {
+export type BasicInfo = {
   name: string
+  companyName: string
+  /** Entity-type code (see CLIENT_TYPE_OPTIONS); "" = not chosen. */
+  clientType: string
+  /** Free-text label when clientType is OTHER. */
+  clientTypeCustom: string
+  /** Whether the entity is already incorporated. Defaults true. */
+  isIncorporated: boolean
   gstin: string
   pan: string
   email: string
@@ -67,6 +74,10 @@ type OnboardingState = {
 
 const emptyBasic: BasicInfo = {
   name: "",
+  companyName: "",
+  clientType: "",
+  clientTypeCustom: "",
+  isIncorporated: true,
   gstin: "",
   pan: "",
   email: "",

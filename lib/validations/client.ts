@@ -86,7 +86,12 @@ const clientBaseSchema = z.object({
     .max(120, "Client type is too long")
     .optional()
     .transform((v) => v?.trim() || undefined),
-  isIncorporated: z.coerce.boolean().default(true),
+  // Form sends the string "true"/"false"; z.coerce.boolean() would wrongly turn
+  // "false" into true, so parse explicitly. Missing → defaults to incorporated.
+  isIncorporated: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((v) => (typeof v === "boolean" ? v : v !== "false")),
   gstin: z
     .string()
     .optional()

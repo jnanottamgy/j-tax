@@ -85,6 +85,10 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
   const editableClient: ClientListItem = {
     id: data.client.id,
     name: data.client.name,
+    companyName: data.client.companyName ?? null,
+    clientType: data.client.entityType ?? null,
+    clientTypeCustom: data.client.entityTypeCustom ?? null,
+    isIncorporated: data.client.isIncorporated ?? true,
     code: data.client.clientCode,
     gstin: data.client.gstin ?? null,
     pan: data.client.pan ?? null,

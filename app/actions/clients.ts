@@ -68,6 +68,10 @@ export async function createClient(
 
     const raw = {
       name: formData.get("name"),
+      companyName: formData.get("companyName") || undefined,
+      clientType: formData.get("clientType") || undefined,
+      clientTypeCustom: formData.get("clientTypeCustom") || undefined,
+      isIncorporated: formData.get("isIncorporated") ?? "true",
       gstin: formData.get("gstin") || undefined,
       pan: formData.get("pan") || undefined,
       email: formData.get("email") || undefined,
@@ -163,6 +167,10 @@ export async function updateClient(
 
     const parsed = updateClientSchema.safeParse({
       name: formData.get("name"),
+      companyName: formData.get("companyName") || undefined,
+      clientType: formData.get("clientType") || undefined,
+      clientTypeCustom: formData.get("clientTypeCustom") || undefined,
+      isIncorporated: formData.get("isIncorporated") ?? "true",
       gstin: formData.get("gstin") || undefined,
       pan: formData.get("pan") || undefined,
       email: formData.get("email") || undefined,

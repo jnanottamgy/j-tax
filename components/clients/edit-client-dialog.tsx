@@ -40,7 +40,7 @@ import {
   SERVICE_TYPE_LABELS,
 } from "@/lib/clients/constants"
 import {
-  ENTITY_TYPES,
+  CLIENT_TYPE_OPTIONS,
   ENTITY_TYPE_LABELS,
 } from "@/lib/clients/master-data"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
@@ -75,6 +75,8 @@ export function EditClientDialog({
     updateClient,
     initialState
   )
+  const [clientType, setClientType] = useState(client.clientType ?? "")
+  const [isIncorporated, setIsIncorporated] = useState(client.isIncorporated ?? true)
 
   // Editable services — seeded from the client's current service mix.
   const [services, setServices] = useState<Partial<Record<ServiceType, ServiceCfg>>>(
@@ -193,7 +195,6 @@ export function EditClientDialog({
                   name="name"
                   required
                   error={state.fieldErrors?.name?.[0]}
-                  className="sm:col-span-2"
                 >
                   <Input
                     id="name"
@@ -203,6 +204,57 @@ export function EditClientDialog({
                     required
                     disabled={isPending}
                   />
+                </Field>
+                <Field label="Company name" name="companyName" error={state.fieldErrors?.companyName?.[0]}>
+                  <Input
+                    id="companyName"
+                    name="companyName"
+                    defaultValue={client.companyName ?? ""}
+                    placeholder="Registered legal name (if different)"
+                    className="input-premium h-10 rounded-xl"
+                    disabled={isPending}
+                  />
+                </Field>
+                <Field label="Client type" name="clientType" error={state.fieldErrors?.clientTypeCustom?.[0]}>
+                  <select
+                    id="clientType"
+                    name="clientType"
+                    value={clientType}
+                    onChange={(e) => setClientType(e.target.value)}
+                    disabled={isPending}
+                    className="input-premium h-10 w-full rounded-xl px-3 text-sm"
+                  >
+                    <option value="">Select type…</option>
+                    {CLIENT_TYPE_OPTIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {ENTITY_TYPE_LABELS[t]}
+                      </option>
+                    ))}
+                  </select>
+                  {clientType === "OTHER" && (
+                    <Input
+                      name="clientTypeCustom"
+                      defaultValue={client.clientTypeCustom ?? ""}
+                      placeholder="Enter the client type"
+                      className="input-premium mt-2 h-10 rounded-xl"
+                      disabled={isPending}
+                    />
+                  )}
+                </Field>
+                <Field label="Incorporation status">
+                  <label className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={isIncorporated}
+                      onChange={(e) => setIsIncorporated(e.target.checked)}
+                      disabled={isPending}
+                      className="size-4 rounded border-white/20 accent-primary"
+                    />
+                    <span className="text-muted-foreground">
+                      {isIncorporated ? "Already incorporated" : "Not yet incorporated"}
+                    </span>
+                  </label>
+                  <input type="hidden" name="isIncorporated" value={isIncorporated ? "true" : "false"} />
                 </Field>
                 <ReadOnlyField label="Client code" value={client.code} />
                 <Field

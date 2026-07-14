@@ -8,6 +8,11 @@ import type {
 export type ClientListItem = {
   id: string
   name: string
+  companyName: string | null
+  /** Entity-type code (see CLIENT_TYPE_OPTIONS), stored in Client.entityType. */
+  clientType: string | null
+  clientTypeCustom: string | null
+  isIncorporated: boolean
   code: string
   gstin: string | null
   pan: string | null

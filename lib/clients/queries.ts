@@ -29,6 +29,10 @@ function mapClientToListItem(
   return {
     id: client.id,
     name: client.name,
+    companyName: client.companyName,
+    clientType: client.entityType,
+    clientTypeCustom: client.entityTypeCustom,
+    isIncorporated: client.isIncorporated,
     code: client.clientCode,
     gstin: client.gstin,
     pan: client.pan,
@@ -124,6 +128,11 @@ export async function createClientWithOnboarding(
       data: {
         clientCode,
         name: input.name,
+        companyName: input.companyName,
+        entityType: input.clientType || undefined,
+        entityTypeCustom:
+          input.clientType === "OTHER" ? input.clientTypeCustom : undefined,
+        isIncorporated: input.isIncorporated,
         gstin: input.gstin,
         pan: input.pan,
         email: input.email,
@@ -229,17 +238,22 @@ export async function updateClient(id: string, data: UpdateClientInput) {
     }
   }
 
-  // Remove fields that are not scalar columns on the Client model
+  // Remove fields that are not scalar columns on the Client model. clientType /
+  // clientTypeCustom map onto the DB columns entityType / entityTypeCustom.
   const {
     assignedEmployeeId: _assignedEmployeeId,
     reminderDaysBefore: _reminderDaysBefore,
     notificationPreferences: _notificationPreferences,
+    clientType,
+    clientTypeCustom,
     services,
     ...clientData
   } = data;
 
   const clientUpdateData = {
     ...clientData,
+    ...(clientType !== undefined && { entityType: clientType || null }),
+    entityTypeCustom: clientType === "OTHER" ? clientTypeCustom ?? null : null,
     ...(assignedEmployeeName !== undefined && { assignedEmployeeName }),
     ...(assignedEmployeeUpdate !== undefined && { assignedEmployee: assignedEmployeeUpdate }),
   };
