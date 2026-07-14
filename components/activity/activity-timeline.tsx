@@ -7,7 +7,7 @@ import {
   User,
   Building2,
   CheckSquare,
-  DollarSign,
+  IndianRupee,
   FileText,
   Calendar,
   ChevronDown,
@@ -52,7 +52,7 @@ interface ActivityTimelineProps {
 const ENTITY_ICONS: Record<string, any> = {
   CLIENT: Building2,
   TASK: CheckSquare,
-  INVOICE: DollarSign,
+  INVOICE: IndianRupee,
   DOCUMENT: FileText,
   EMPLOYEE: User,
   COMPLIANCE: Calendar,

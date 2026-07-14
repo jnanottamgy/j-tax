@@ -6,7 +6,7 @@ import {
   AlertTriangle,
   BarChart3,
   CheckSquare,
-  DollarSign,
+  IndianRupee,
   FileWarning,
   Shield,
   Target,
@@ -133,7 +133,7 @@ export function PartnerCommandCenter({
             label="Total Revenue"
             value={formatCurrency(stats.totalRevenue)}
             subtext={`${stats.collectionRate}% collected`}
-            icon={DollarSign}
+            icon={IndianRupee}
             color="bg-green-500/10 text-green-400"
             href="/payments"
           />
@@ -221,7 +221,7 @@ export function PartnerCommandCenter({
                 label="Revenue Pipeline"
                 value={formatCurrency(crmMetrics.revenuePipeline)}
                 subtext={`${crmMetrics.quotationsSent} quotes pending`}
-                icon={DollarSign}
+                icon={IndianRupee}
                 color="bg-purple-500/10 text-purple-400"
                 href="/proposals"
               />

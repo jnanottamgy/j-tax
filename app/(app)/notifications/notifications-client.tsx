@@ -13,7 +13,7 @@ import {
   Clock,
   AlertCircle,
   Calendar,
-  DollarSign,
+  IndianRupee,
   FileText,
   X,
 } from "lucide-react"
@@ -45,7 +45,7 @@ function getNotificationIcon(type: string) {
     case "COMPLIANCE_DUE":
       return <Calendar className="size-4" />
     case "PAYMENT_RECEIVED":
-      return <DollarSign className="size-4" />
+      return <IndianRupee className="size-4" />
     case "INVOICE_OVERDUE":
       return <AlertCircle className="size-4" />
     case "DOCUMENT_UPLOADED":

@@ -9,7 +9,7 @@ import {
   ArrowLeft,
   FileText,
   CheckSquare,
-  DollarSign,
+  IndianRupee,
   Folder,
   Calendar,
   Activity,
@@ -138,7 +138,7 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
     { id: "overview" as TabType, label: "Overview", icon: Activity },
     { id: "services" as TabType, label: "Services", icon: Building2 },
     { id: "tasks" as TabType, label: "Tasks", icon: CheckSquare },
-    { id: "payments" as TabType, label: "Payments", icon: DollarSign },
+    { id: "payments" as TabType, label: "Payments", icon: IndianRupee },
     { id: "documents" as TabType, label: "Documents", icon: Folder },
     { id: "compliance" as TabType, label: "Compliance", icon: Calendar },
     { id: "activity" as TabType, label: "Activity", icon: Activity },
@@ -149,7 +149,7 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
     { label: "Add Task", icon: CheckSquare, href: `/work-tracker?clientId=${clientId}&new=1` },
     // Payments is PARTNER/MANAGER-only — don't show employees a door they can't open
     ...(canManage
-      ? [{ label: "Add Invoice", icon: DollarSign, href: `/payments/invoices?clientId=${clientId}&new=1` }]
+      ? [{ label: "Add Invoice", icon: IndianRupee, href: `/payments/invoices?clientId=${clientId}&new=1` }]
       : []),
     { label: "Upload Document", icon: Folder, href: `/documents?clientId=${clientId}&upload=1` },
     { label: "Send Reminder", icon: Phone, href: `/messaging?clientId=${clientId}&compose=1` },
@@ -272,7 +272,7 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
           <MetricCard
             label="Outstanding"
             value={`₹${(metrics.outstandingPayments || 0).toLocaleString()}`}
-            icon={DollarSign}
+            icon={IndianRupee}
             color="text-yellow-400"
           />
           <MetricCard
@@ -632,7 +632,7 @@ function PaymentsTab({ invoices }: { invoices: any[] }) {
           {invoices.map((invoice) => (
             <div key={invoice.id} className="flex items-start gap-3 p-4 rounded-lg bg-white/[0.02] border border-white/[0.08]">
               <div className="p-2 rounded-lg bg-green-500/10">
-                <DollarSign className="h-4 w-4 text-green-400" />
+                <IndianRupee className="h-4 w-4 text-green-400" />
               </div>
               <div className="flex-1">
                 <p className="font-medium">{invoice.invoiceNumber}</p>

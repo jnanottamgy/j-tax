@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ArrowRight, BarChart3, CreditCard, DollarSign, Receipt } from "lucide-react"
+import { ArrowRight, BarChart3, CreditCard, IndianRupee, Receipt } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/dashboard/glass-card"
@@ -114,7 +114,7 @@ export default async function PaymentsPage() {
               <p className="text-xs text-muted-foreground mt-1">Lifetime collections</p>
             </div>
             <div className="p-3 rounded-xl bg-emerald-500/10">
-              <DollarSign className="h-5 w-5 text-emerald-400" />
+              <IndianRupee className="h-5 w-5 text-emerald-400" />
             </div>
           </div>
         </GlassCard>

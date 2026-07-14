@@ -216,7 +216,7 @@ export async function globalSearch(query: string) {
         title: invoice.invoiceNumber,
         subtitle: invoice.client?.name || "Unknown",
         url: `/payments/invoices/${invoice.id}`,
-        icon: "DollarSign",
+        icon: "IndianRupee",
         score: Math.max(
           fuzzyMatch(invoice.invoiceNumber, query),
           fuzzyMatch(invoice.client?.name || "", query),

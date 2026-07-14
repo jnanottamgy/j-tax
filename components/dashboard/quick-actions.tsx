@@ -1,7 +1,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { FileText, Calendar, DollarSign, Users, Search } from "lucide-react"
+import { FileText, Calendar, IndianRupee, Users, Search } from "lucide-react"
 import Link from "next/link"
 
 import { GlassCard } from "@/components/dashboard/glass-card"
@@ -37,7 +37,7 @@ const quickActions: QuickAction[] = [
   {
     label: "Add Invoice",
     description: "Generate invoice",
-    icon: DollarSign,
+    icon: IndianRupee,
     href: "/payments/invoices",
     color: "text-emerald-400",
     bgColor: "bg-emerald-500/10",
