@@ -6,7 +6,7 @@ import { format } from "date-fns"
 import { toast } from "sonner"
 import {
   Download, Send, CheckCircle2, XCircle, Clock, Eye,
-  Copy, ExternalLink, FileText, Mail, AlertCircle, Loader2,
+  Copy, ExternalLink, FileText, Mail, AlertCircle, Loader2, UserPlus,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -149,6 +149,17 @@ export function QuotationDetailClient({
               Approve & Send
             </Button>
           )}
+          {quotation.convertedClientId ? (
+            <Button size="sm" variant="outline" onClick={() => router.push(`/clients/${quotation.convertedClientId}`)}>
+              <ExternalLink className="size-3.5 mr-1.5" />
+              View Client
+            </Button>
+          ) : ["ACCEPTED", "APPROVED"].includes(quotation.status) ? (
+            <Button size="sm" onClick={() => router.push(`/clients?fromQuotation=${quotation.id}`)}>
+              <UserPlus className="size-3.5 mr-1.5" />
+              Create Client
+            </Button>
+          ) : null}
           {["DRAFT", "PENDING_APPROVAL"].includes(quotation.status) && (
             <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setConfirmingDelete(true)}>
               Delete

@@ -1,6 +1,8 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 
 import { AddClientDialog } from "@/components/clients/add-client-dialog"
 import {
@@ -9,6 +11,7 @@ import {
 } from "@/components/clients/import-clients-dialog"
 import { ClientsTable } from "@/components/clients/clients-table"
 import { PageHeader } from "@/components/layout/page-header"
+import { useClientOnboardingStore } from "@/lib/clients/onboarding-store"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 
 type ClientsPageClientProps = {
@@ -26,6 +29,35 @@ export function ClientsPageClient({
   const searchParams = useSearchParams()
   // Sidebar "New Client" quick action deep-links here with ?new=1
   const openWizardOnLoad = searchParams.get("new") === "1"
+  const fromQuotation = searchParams.get("fromQuotation")
+  const [prefillReady, setPrefillReady] = useState(false)
+
+  // Onboard-from-quotation: seed the wizard store, then open it prefilled + locked.
+  useEffect(() => {
+    if (!fromQuotation || !canManage) return
+    let cancelled = false
+    void (async () => {
+      const { getQuotationClientPrefill } = await import("@/app/actions/proposals")
+      const prefill = await getQuotationClientPrefill(fromQuotation)
+      if (cancelled || !prefill) return
+      if (prefill.alreadyConverted && prefill.convertedClientId) {
+        toast.info("This quotation was already converted to a client.")
+        router.push(`/clients/${prefill.convertedClientId}`)
+        return
+      }
+      useClientOnboardingStore.getState().hydrate({
+        basic: prefill.basic,
+        services: prefill.services,
+        sourceQuotationId: prefill.quotationId,
+        lockServices: true,
+      })
+      setPrefillReady(true)
+      toast.success(`Onboarding from quotation ${prefill.quotationNumber} — review and finish.`)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [fromQuotation, canManage, router])
 
   return (
     <>
@@ -39,9 +71,10 @@ export function ClientsPageClient({
               <ExportClientsButton />
               <ImportClientsDialog onSuccess={() => router.refresh()} />
               <AddClientDialog
+                key={prefillReady ? "from-quotation" : "fresh"}
                 employees={employees}
                 onSuccess={() => router.refresh()}
-                defaultOpen={openWizardOnLoad}
+                defaultOpen={openWizardOnLoad || prefillReady}
               />
             </div>
           ) : undefined

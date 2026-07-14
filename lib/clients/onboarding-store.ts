@@ -45,6 +45,19 @@ type ChecklistReview = {
   reviewed: boolean
 }
 
+/** Prefill payload used when converting an accepted quotation into a client. */
+export type OnboardingPrefill = {
+  basic?: Partial<BasicInfo>
+  services?: Array<{
+    serviceType: ServiceType
+    frequency: ServiceFrequency
+    customName?: string
+  }>
+  sourceQuotationId?: string
+  /** When true, the services step is locked (must raise a new quotation to change). */
+  lockServices?: boolean
+}
+
 type OnboardingState = {
   step: number
   basic: BasicInfo
@@ -55,6 +68,10 @@ type OnboardingState = {
   priority: ClientPriority
   compliance: ComplianceSetup
   checklistReview: ChecklistReview
+  /** Set when prefilled from a quotation — locks the services step. */
+  lockedServices: boolean
+  /** The quotation this onboarding was seeded from (marks it converted on save). */
+  sourceQuotationId: string | null
   setStep: (step: number) => void
   updateBasic: (data: Partial<BasicInfo>) => void
   toggleService: (serviceType: ServiceType) => void
@@ -69,6 +86,7 @@ type OnboardingState = {
   }) => void
   updateCompliance: (data: Partial<ComplianceSetup>) => void
   updateChecklistReview: (data: Partial<ChecklistReview>) => void
+  hydrate: (prefill: OnboardingPrefill) => void
   reset: () => void
 }
 
@@ -109,6 +127,8 @@ export const useClientOnboardingStore = create<OnboardingState>()(
       priority: "MEDIUM",
       compliance: emptyCompliance,
       checklistReview: emptyChecklistReview,
+      lockedServices: false,
+      sourceQuotationId: null,
       setStep: (step) => set({ step }),
       updateBasic: (data) =>
         set((state) => ({ basic: { ...state.basic, ...data } })),
@@ -157,6 +177,30 @@ export const useClientOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           checklistReview: { ...state.checklistReview, ...data },
         })),
+      hydrate: (prefill) =>
+        set(() => {
+          const services: Partial<Record<ServiceType, OnboardingServiceConfig>> = {}
+          for (const s of prefill.services ?? []) {
+            services[s.serviceType] = {
+              selected: true,
+              frequency: s.frequency,
+              nextDueDate: "",
+              customName: s.customName,
+            }
+          }
+          return {
+            step: 0,
+            basic: { ...emptyBasic, ...prefill.basic },
+            services,
+            collectedDocuments: [],
+            assignedEmployeeId: "",
+            priority: "MEDIUM",
+            compliance: emptyCompliance,
+            checklistReview: emptyChecklistReview,
+            lockedServices: prefill.lockServices ?? false,
+            sourceQuotationId: prefill.sourceQuotationId ?? null,
+          }
+        }),
       reset: () =>
         set({
           step: 0,
@@ -167,6 +211,8 @@ export const useClientOnboardingStore = create<OnboardingState>()(
           priority: "MEDIUM",
           compliance: emptyCompliance,
           checklistReview: emptyChecklistReview,
+          lockedServices: false,
+          sourceQuotationId: null,
         }),
     }),
     {
@@ -180,6 +226,8 @@ export const useClientOnboardingStore = create<OnboardingState>()(
         priority: state.priority,
         compliance: state.compliance,
         checklistReview: state.checklistReview,
+        lockedServices: state.lockedServices,
+        sourceQuotationId: state.sourceQuotationId,
       }),
     }
   )

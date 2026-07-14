@@ -459,6 +459,49 @@ export async function getQuotationById(id: string) {
   }
 }
 
+/**
+ * Prefill payload for onboarding a client from an accepted quotation.
+ * Services are derived from the quotation line items (locked in the wizard).
+ */
+export async function getQuotationClientPrefill(quotationId: string) {
+  await requirePartnerOrManager()
+  const q = await prisma.quotation.findUnique({
+    where: { id: quotationId },
+    include: { items: { orderBy: { sortOrder: "asc" } } },
+  })
+  if (!q) return null
+
+  const { mapQuotationItemsToServices } = await import("@/lib/proposals/quotation-to-client")
+  return {
+    quotationId: q.id,
+    quotationNumber: q.quotationNumber,
+    alreadyConverted: Boolean(q.convertedClientId),
+    convertedClientId: q.convertedClientId,
+    basic: {
+      name: q.clientCompany?.trim() || q.clientName,
+      companyName: q.clientCompany ?? "",
+      email: q.clientEmail ?? "",
+      phone: q.clientPhone ?? "",
+    },
+    services: mapQuotationItemsToServices(q.items),
+  }
+}
+
+/** Marks a quotation as converted into a client (blocks double-conversion). */
+export async function markQuotationConverted(quotationId: string, clientId: string) {
+  try {
+    await requirePartnerOrManager()
+    await prisma.quotation.update({
+      where: { id: quotationId },
+      data: { convertedClientId: clientId },
+    })
+    revalidatePath("/proposals")
+    return { success: true }
+  } catch (err) {
+    return { error: toUserError(err) }
+  }
+}
+
 export async function deleteQuotation(quotationId: string) {
   try {
     await requirePartnerOrManager()

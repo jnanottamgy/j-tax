@@ -115,6 +115,17 @@ export async function createClient(
 
     const client = await createClientWithOnboarding(parsed.data)
 
+    // If onboarded from an accepted quotation, mark it converted (best-effort).
+    const sourceQuotationId = formData.get("sourceQuotationId")
+    if (typeof sourceQuotationId === "string" && sourceQuotationId) {
+      try {
+        const { markQuotationConverted } = await import("@/app/actions/proposals")
+        await markQuotationConverted(sourceQuotationId, client.id)
+      } catch (convErr) {
+        console.error("mark quotation converted failed:", convErr)
+      }
+    }
+
     // Best-effort welcome email (no-op without an email; never throws).
     const { sendClientWelcomeEmail } = await import("@/lib/clients/welcome-email")
     await sendClientWelcomeEmail({ name: client.name, email: client.email })

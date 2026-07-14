@@ -106,6 +106,8 @@ export function ClientOnboardingWizard({
     priority,
     compliance,
     checklistReview,
+    lockedServices,
+    sourceQuotationId,
     setStep,
     updateBasic,
     toggleService,
@@ -281,6 +283,9 @@ export function ClientOnboardingWizard({
           >
             <input type="hidden" name="services" value={servicesJson} />
             <input type="hidden" name="collectedDocuments" value={collectedJson} />
+            {sourceQuotationId && (
+              <input type="hidden" name="sourceQuotationId" value={sourceQuotationId} />
+            )}
             <input type="hidden" name="name" value={basic.name} />
             <input type="hidden" name="companyName" value={basic.companyName} />
             <input type="hidden" name="clientType" value={basic.clientType} />
@@ -404,6 +409,7 @@ export function ClientOnboardingWizard({
                       <ServicesStep
                         selected={services}
                         toggleService={toggleService}
+                        locked={lockedServices}
                       />
                     )}
                     {step === 2 && (
@@ -701,26 +707,39 @@ function BasicInfoStep({
 function ServicesStep({
   selected,
   toggleService,
+  locked = false,
 }: {
   selected: Partial<Record<ServiceType, OnboardingServiceConfig>>
   toggleService: (serviceType: ServiceType) => void
+  locked?: boolean
 }) {
+  // When locked (converting a quotation), only the quotation's services show and
+  // toggling is disabled — a new quotation is required to change scope.
+  const visibleOptions = locked
+    ? serviceOptions.filter((s) => selected[s]?.selected)
+    : serviceOptions
   return (
     <StepFrame
       title="Services Selection"
-      description="Choose the services that will be provisioned for this client."
+      description={
+        locked
+          ? "Services are locked to the accepted quotation. Raise a new quotation to change the scope."
+          : "Choose the services that will be provisioned for this client."
+      }
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {serviceOptions.map((serviceType) => {
+        {visibleOptions.map((serviceType) => {
           const isSelected = Boolean(selected[serviceType]?.selected)
           return (
             <button
               key={serviceType}
               type="button"
-              onClick={() => toggleService(serviceType)}
+              onClick={() => { if (!locked) toggleService(serviceType) }}
+              disabled={locked}
               className={cn(
                 "surface-elevated min-h-28 rounded-xl p-4 text-left transition-all duration-300",
-                isSelected && "border-primary/30 bg-primary/10 ring-1 ring-primary/20"
+                isSelected && "border-primary/30 bg-primary/10 ring-1 ring-primary/20",
+                locked && "cursor-not-allowed opacity-90"
               )}
             >
               <div className="flex items-start justify-between gap-3">
