@@ -44,13 +44,8 @@ export async function signIn(
 ): Promise<AuthActionState> {
   const ip = await getClientIp()
 
-  // HIGH-02: Enforce rate limiting on login
-  const rateLimit = checkLoginRateLimit(ip)
-  if (!rateLimit.success) {
-    return {
-      error: `Too many login attempts. Please try again in ${rateLimit.retryAfter ?? 60} seconds.`,
-    }
-  }
+  // Login rate limiting temporarily disabled — was locking out legitimate
+  // users (whole offices share an IP). Re-add with IP+email keying later.
 
   const raw = {
     email: formData.get("email"),
