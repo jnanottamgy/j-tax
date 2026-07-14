@@ -31,7 +31,10 @@ export const GST_RATES = ["0", "5", "12", "18", "28"] as const
 export const invoiceSchema = z
   .object({
     clientId: z.string().min(1, "Client is required"),
-    invoiceNumber: z.string().trim().min(1, "Invoice number is required"),
+    // Auto-generated server-side; never user-supplied. Optional here so the
+    // create path (which sends no number) and the edit path (which resubmits
+    // the read-only existing number) both validate.
+    invoiceNumber: z.string().trim().optional(),
     serviceDescription: z
       .string()
       .trim()
@@ -82,7 +85,7 @@ export type InvoiceFormValues = z.infer<typeof invoiceSchema>
 export function parseInvoiceFormData(formData: FormData) {
   return invoiceSchema.safeParse({
     clientId: formData.get("clientId"),
-    invoiceNumber: formData.get("invoiceNumber"),
+    invoiceNumber: formData.get("invoiceNumber") || undefined,
     serviceDescription: formData.get("serviceDescription"),
     serviceType: (formData.get("serviceType") as string) || undefined,
     professionalFee: formData.get("professionalFee"),

@@ -50,8 +50,9 @@ describe("invoiceSchema", () => {
     assert.equal(invoiceSchema.safeParse({ ...baseInvoice, professionalFee: "100000001" }).success, false)
   })
 
-  test("rejects an empty invoice number", () => {
-    assert.equal(invoiceSchema.safeParse({ ...baseInvoice, invoiceNumber: "" }).success, false)
+  test("invoice number is optional (auto-generated server-side)", () => {
+    const { invoiceNumber: _omit, ...noNumber } = baseInvoice
+    assert.equal(invoiceSchema.safeParse(noNumber).success, true)
   })
 
   test("rejects a missing service description", () => {

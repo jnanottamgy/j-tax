@@ -25,6 +25,30 @@ const VALID_INVOICE_STATUSES = [
 type InvoiceStatus = typeof VALID_INVOICE_STATUSES[number]
 
 /**
+ * Generate the next continuous, per-firm invoice number (INV-<FY>-NNNN).
+ * Invoice numbers are auto-generated and never user-editable.
+ *
+ * Includes soft-deleted rows in the max (passing an explicit `deletedAt` key
+ * opts out of the soft-delete filter) so a recycled invoice's number is never
+ * reused — its `@@unique([firmId, invoiceNumber])` row still exists.
+ * Query is firm-scoped by the tenant extension.
+ */
+async function generateInvoiceNumber(): Promise<string> {
+  const all = await prisma.invoice.findMany({
+    where: { deletedAt: undefined },
+    select: { invoiceNumber: true },
+  })
+  let max = 0
+  for (const { invoiceNumber } of all) {
+    const m = invoiceNumber.match(/(\d+)\s*$/)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  const now = new Date()
+  const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+  return `INV-${fyStart}-${String(max + 1).padStart(4, "0")}`
+}
+
+/**
  * Resolve everything the GST split needs for an invoice:
  *   - clientGstin snapshot (from the client row at issue time)
  *   - placeOfSupply: explicit form value || client stateCode || client GSTIN
@@ -136,49 +160,57 @@ export async function createInvoice(
   const taxAmount = Math.round(professionalFee * taxRate) / 100
   const totalAmount = professionalFee + taxAmount
 
+  // Optional: the task this invoice is being raised from (task→invoice flow).
+  const sourceTaskRaw = formData.get("sourceTaskId")
+  const sourceTaskId = typeof sourceTaskRaw === "string" && sourceTaskRaw ? sourceTaskRaw : null
+
   try {
-    // Invoice numbers are unique per firm now — findFirst is tenant-scoped.
-    const existingInvoice = await prisma.invoice.findFirst({
-      where: { invoiceNumber: data.invoiceNumber },
-    })
-
-    if (existingInvoice) {
-      return { error: "An invoice with this number already exists." }
-    }
-
     // GST tax-invoice fields: recipient GSTIN snapshot, place of supply, and
     // the CGST/SGST vs IGST split derived from taxAmount.
     const gst = await resolveGstFields(data.clientId, data.placeOfSupply, taxAmount)
 
-    const newInvoice = await prisma.invoice.create({
-      data: {
-        clientId: data.clientId,
-        invoiceNumber: data.invoiceNumber,
-        amount: totalAmount,
-        serviceDescription: data.serviceDescription,
-        serviceType: data.serviceType ?? null,
-        professionalFee,
-        taxRate,
-        taxAmount,
-        clientGstin: gst.clientGstin,
-        placeOfSupply: gst.placeOfSupply,
-        hsnSac: data.hsnSac || "9982",
-        cgstAmount: gst.cgstAmount,
-        sgstAmount: gst.sgstAmount,
-        igstAmount: gst.igstAmount,
-        remarks: data.remarks?.trim() ? data.remarks : null,
-        issueDate: new Date(data.issueDate),
-        dueDate: new Date(data.dueDate),
-        status: data.status as any,
-        outstandingAmount: totalAmount,
-        paidAmount: 0,
-      },
-    })
+    // Auto-generate a continuous invoice number; retry on the rare unique race.
+    let newInvoice: Awaited<ReturnType<typeof prisma.invoice.create>> | null = null
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const invoiceNumber = await generateInvoiceNumber()
+      try {
+        newInvoice = await prisma.invoice.create({
+          data: {
+            clientId: data.clientId,
+            invoiceNumber,
+            sourceTaskId,
+            amount: totalAmount,
+            serviceDescription: data.serviceDescription,
+            serviceType: data.serviceType ?? null,
+            professionalFee,
+            taxRate,
+            taxAmount,
+            clientGstin: gst.clientGstin,
+            placeOfSupply: gst.placeOfSupply,
+            hsnSac: data.hsnSac || "9982",
+            cgstAmount: gst.cgstAmount,
+            sgstAmount: gst.sgstAmount,
+            igstAmount: gst.igstAmount,
+            remarks: data.remarks?.trim() ? data.remarks : null,
+            issueDate: new Date(data.issueDate),
+            dueDate: new Date(data.dueDate),
+            status: data.status as any,
+            outstandingAmount: totalAmount,
+            paidAmount: 0,
+          },
+        })
+        break
+      } catch (e: any) {
+        if (e?.code === "P2002" && attempt < 4) continue
+        throw e
+      }
+    }
+    if (!newInvoice) return { error: "Could not generate an invoice number. Please try again." }
 
     await recordTimelineEvent({
       clientId: data.clientId,
       eventType: "INVOICE_CREATED",
-      title: `Invoice ${data.invoiceNumber} created`,
+      title: `Invoice ${newInvoice.invoiceNumber} created`,
       description: `${data.serviceDescription} — ₹${totalAmount.toLocaleString("en-IN")} (incl. GST)`,
       performedBy: session.user.id,
     })

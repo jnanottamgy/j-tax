@@ -64,7 +64,6 @@ const defaultIssueDate = new Date().toISOString().split("T")[0]
 
 const emptyForm = {
   clientId: "",
-  invoiceNumber: "",
   serviceDescription: "",
   serviceType: "",
   professionalFee: "",
@@ -99,7 +98,6 @@ export function AddInvoiceDialog({
     onSubmit: async (data) => {
       const fd = new FormData()
       fd.set("clientId", data.clientId)
-      fd.set("invoiceNumber", data.invoiceNumber)
       fd.set("serviceDescription", data.serviceDescription)
       if (data.serviceType) fd.set("serviceType", data.serviceType)
       fd.set("professionalFee", data.professionalFee)
@@ -190,21 +188,10 @@ export function AddInvoiceDialog({
               </select>
             </FormField>
 
-            <FormField
-              label="Invoice Number"
-              htmlFor="invoiceNumber"
-              required
-              error={getError("invoiceNumber")}
-            >
-              <Input
-                id="invoiceNumber"
-                value={formData.invoiceNumber}
-                onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
-                placeholder="INV-2026-001"
-                className="input-premium h-10 rounded-xl"
-                disabled={isPending}
-                aria-invalid={!!getError("invoiceNumber")}
-              />
+            <FormField label="Invoice Number" htmlFor="invoiceNumber">
+              <div className="input-premium flex h-10 items-center rounded-xl px-3 text-sm text-muted-foreground">
+                Auto-generated on save
+              </div>
             </FormField>
           </div>
 
