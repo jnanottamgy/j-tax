@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 
-import { createInvoice } from "@/app/actions/invoices"
+import { createInvoice, createRevisedInvoice } from "@/app/actions/invoices"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
 import { SubmitButton } from "@/components/forms/submit-button"
@@ -38,6 +38,22 @@ type AddInvoiceDialogProps = {
   }>
   /** Firm's own GST state code — drives the CGST/SGST vs IGST preview. */
   firmState?: string | null
+  /** Prefill the form (task→invoice popup, or seeding a revised invoice). */
+  initialValues?: Partial<{
+    clientId: string
+    serviceDescription: string
+    serviceType: string
+    professionalFee: string
+    taxRate: (typeof GST_RATES)[number]
+    placeOfSupply: string
+    hsnSac: string
+    dueDate: string
+    remarks: string
+  }>
+  /** When set, submit creates a REVISED copy of this invoice (editable). */
+  revisedFromId?: string | null
+  /** When set, the created invoice is linked to the completed task. */
+  sourceTaskId?: string | null
 }
 
 type InvoiceStatus =
@@ -57,6 +73,7 @@ const SERVICE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "BOOKKEEPING", label: "Bookkeeping" },
   { value: "AUDIT", label: "Audit & Assurance" },
   { value: "COMPANY_LAW", label: "Company Law / ROC" },
+  { value: "INCORPORATION", label: "Incorporation" },
   { value: "OTHER", label: "Other Professional Service" },
 ]
 
@@ -84,14 +101,19 @@ export function AddInvoiceDialog({
   onSuccess,
   clients,
   firmState = null,
+  initialValues,
+  revisedFromId = null,
+  sourceTaskId = null,
 }: AddInvoiceDialogProps) {
-  const [formData, setFormData] = useState(emptyForm)
+  const isRevision = Boolean(revisedFromId)
+  const seed = () => ({ ...emptyForm, issueDate: defaultIssueDate, ...initialValues })
+  const [formData, setFormData] = useState(seed)
 
   const { submit, getError, isPending, formError, clearErrors } = useValidatedForm({
     schema: invoiceSchema,
-    successMessage: "Invoice created successfully",
+    successMessage: isRevision ? "Revised invoice created" : "Invoice created successfully",
     onSuccess: () => {
-      setFormData({ ...emptyForm, issueDate: defaultIssueDate })
+      setFormData(seed())
       onOpenChange(false)
       onSuccess?.()
     },
@@ -108,15 +130,17 @@ export function AddInvoiceDialog({
       fd.set("dueDate", data.dueDate)
       fd.set("status", data.status)
       fd.set("remarks", data.remarks ?? "")
-      return createInvoice({}, fd)
+      if (sourceTaskId) fd.set("sourceTaskId", sourceTaskId)
+      return isRevision ? createRevisedInvoice(revisedFromId!, fd) : createInvoice({}, fd)
     },
   })
 
   useEffect(() => {
     if (open) {
       clearErrors()
-      setFormData({ ...emptyForm, issueDate: defaultIssueDate })
+      setFormData(seed())
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clearErrors])
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -160,9 +184,11 @@ export function AddInvoiceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg border-white/[0.08] bg-popover/95 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] backdrop-blur-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl">New Invoice</DialogTitle>
+          <DialogTitle className="text-xl">{isRevision ? "Revised Invoice" : "New Invoice"}</DialogTitle>
           <DialogDescription>
-            Bill a client for professional services — GST is added on top of the fee.
+            {isRevision
+              ? "Edit the details and save — a new revised invoice is created; the original is kept."
+              : "Bill a client for professional services — GST is added on top of the fee."}
           </DialogDescription>
         </DialogHeader>
 

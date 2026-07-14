@@ -551,6 +551,102 @@ export async function updateInvoiceStatus(
   }
 }
 
+/**
+ * Create a REVISED copy of a non-draft invoice. The original is kept and both
+ * are displayed; the revision is a fresh editable DRAFT the firm can re-send.
+ * This is the only sanctioned way to "change" an already-issued invoice.
+ */
+export async function createRevisedInvoice(
+  originalId: string,
+  formData: FormData
+): Promise<FormActionState> {
+  let session: Awaited<ReturnType<typeof requirePartnerOrManager>>
+  try {
+    session = await requirePartnerOrManager()
+  } catch {
+    return { error: "You do not have permission to revise invoices." }
+  }
+
+  const original = await prisma.invoice.findUnique({ where: { id: originalId } })
+  if (!original) return { error: "Original invoice not found." }
+  if (original.status === "DRAFT") {
+    return { error: "Draft invoices can be edited directly — no revision needed." }
+  }
+
+  const validation = parseInvoiceFormData(formData)
+  if (!validation.success) {
+    return { fieldErrors: validation.error.flatten().fieldErrors }
+  }
+  const data = validation.data
+  const professionalFee = parseFloat(data.professionalFee)
+  if (isNaN(professionalFee) || professionalFee <= 0) {
+    return { fieldErrors: { professionalFee: ["Professional fee must be greater than zero."] } }
+  }
+  const taxRate = parseFloat(data.taxRate)
+  const taxAmount = Math.round(professionalFee * taxRate) / 100
+  const totalAmount = professionalFee + taxAmount
+
+  try {
+    // Same client as the original; place-of-supply may be re-derived.
+    const gst = await resolveGstFields(original.clientId, data.placeOfSupply, taxAmount)
+
+    let revised: Awaited<ReturnType<typeof prisma.invoice.create>> | null = null
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const invoiceNumber = await generateInvoiceNumber()
+      try {
+        revised = await prisma.invoice.create({
+          data: {
+            clientId: original.clientId,
+            invoiceNumber,
+            revisedFromId: original.id,
+            revisionNumber: original.revisionNumber + 1,
+            sourceTaskId: original.sourceTaskId,
+            amount: totalAmount,
+            serviceDescription: data.serviceDescription,
+            serviceType: data.serviceType ?? null,
+            professionalFee,
+            taxRate,
+            taxAmount,
+            clientGstin: gst.clientGstin,
+            placeOfSupply: gst.placeOfSupply,
+            hsnSac: data.hsnSac || "9982",
+            cgstAmount: gst.cgstAmount,
+            sgstAmount: gst.sgstAmount,
+            igstAmount: gst.igstAmount,
+            remarks: data.remarks?.trim() ? data.remarks : null,
+            issueDate: new Date(data.issueDate),
+            dueDate: new Date(data.dueDate),
+            status: "DRAFT",
+            outstandingAmount: totalAmount,
+            paidAmount: 0,
+          },
+        })
+        break
+      } catch (e: any) {
+        if (e?.code === "P2002" && attempt < 4) continue
+        throw e
+      }
+    }
+    if (!revised) return { error: "Could not generate an invoice number. Please try again." }
+
+    await recordTimelineEvent({
+      clientId: original.clientId,
+      eventType: "INVOICE_CREATED",
+      title: `Revised invoice ${revised.invoiceNumber} created`,
+      description: `Revision of ${original.invoiceNumber} — ₹${totalAmount.toLocaleString("en-IN")} (incl. GST)`,
+      performedBy: session.user.id,
+    })
+
+    revalidatePath("/payments/invoices")
+    revalidatePath(`/payments/invoices/${original.id}`)
+    revalidatePath(`/clients/${original.clientId}`)
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to create revised invoice:", error)
+    return { error: "Failed to create revised invoice. Please try again." }
+  }
+}
+
 export async function deleteInvoice(invoiceId: string): Promise<FormActionState> {
   // Deleting invoices is PARTNER-only (managers can create/manage but not delete).
   try {

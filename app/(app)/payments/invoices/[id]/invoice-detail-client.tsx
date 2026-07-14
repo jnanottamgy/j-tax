@@ -37,6 +37,7 @@ import {
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
 import { EditInvoiceDialog } from "@/components/payments/edit-invoice-dialog"
+import { AddInvoiceDialog } from "@/components/payments/add-invoice-dialog"
 import { useValidatedForm } from "@/hooks/use-validated-form"
 import { stateName } from "@/lib/invoices/gst"
 import { followUpSchema, recordPaymentSchema } from "@/lib/validations/invoice"
@@ -80,7 +81,10 @@ interface Invoice {
   sgstAmount?: number | null
   igstAmount?: number | null
   remarks?: string | null
-  client: { name: string }
+  revisionNumber?: number
+  revisedFrom?: { id: string; invoiceNumber: string; revisionNumber: number } | null
+  revisions?: Array<{ id: string; invoiceNumber: string; revisionNumber: number; status: string }>
+  client: { name: string; gstin?: string | null }
   payments: Payment[]
   followUps: FollowUp[]
 }
@@ -107,6 +111,8 @@ export function InvoiceDetailClient({
 
   // Edit dialog (DRAFT invoices only)
   const [editOpen, setEditOpen] = useState(false)
+  // Revised-invoice dialog (non-DRAFT invoices — the "edit after sent" path)
+  const [reviseOpen, setReviseOpen] = useState(false)
 
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -219,10 +225,16 @@ export function InvoiceDetailClient({
           <p className="text-muted-foreground">{invoice.client.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          {invoice.status === "DRAFT" && (
+          {invoice.status === "DRAFT" ? (
             <Button variant="outline" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-2 h-4 w-4" />
               Edit
+            </Button>
+          ) : (
+            // Sent/issued invoices are immutable — changes go through a revision.
+            <Button variant="outline" onClick={() => setReviseOpen(true)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Create revised invoice
             </Button>
           )}
           <Button
@@ -241,6 +253,36 @@ export function InvoiceDetailClient({
           )}
         </div>
       </div>
+
+      {/* Revision chain */}
+      {(invoice.revisedFrom || (invoice.revisions?.length ?? 0) > 0) && (
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/[0.06] px-4 py-3 text-sm">
+          {invoice.revisedFrom && (
+            <p>
+              <span className="text-muted-foreground">Revised from </span>
+              <Link href={`/payments/invoices/${invoice.revisedFrom.id}`} className="font-medium text-blue-400 hover:underline">
+                {invoice.revisedFrom.invoiceNumber}
+              </Link>
+              {(invoice.revisionNumber ?? 0) > 0 && (
+                <Badge className="ml-2 border-blue-500/30 bg-blue-500/10 text-blue-400">Revision {invoice.revisionNumber}</Badge>
+              )}
+            </p>
+          )}
+          {(invoice.revisions?.length ?? 0) > 0 && (
+            <p className="mt-1">
+              <span className="text-muted-foreground">Revised by: </span>
+              {invoice.revisions!.map((r, i) => (
+                <span key={r.id}>
+                  {i > 0 && ", "}
+                  <Link href={`/payments/invoices/${r.id}`} className="font-medium text-blue-400 hover:underline">
+                    {r.invoiceNumber}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Details + Quick Actions */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -638,6 +680,25 @@ export function InvoiceDetailClient({
         onClose={() => {
           setEditOpen(false)
           router.refresh()
+        }}
+      />
+
+      <AddInvoiceDialog
+        open={reviseOpen}
+        onOpenChange={setReviseOpen}
+        onSuccess={() => router.refresh()}
+        clients={[{ id: invoice.clientId, name: invoice.client.name, gstin: invoice.client.gstin ?? null }]}
+        firmState={firmState}
+        revisedFromId={invoice.id}
+        initialValues={{
+          clientId: invoice.clientId,
+          serviceDescription: invoice.serviceDescription ?? "",
+          serviceType: invoice.serviceType ?? "",
+          professionalFee: invoice.professionalFee != null ? String(invoice.professionalFee) : "",
+          taxRate: (invoice.taxRate != null ? String(invoice.taxRate) : "18") as any,
+          placeOfSupply: invoice.placeOfSupply ?? "",
+          hsnSac: invoice.hsnSac ?? "9982",
+          remarks: invoice.remarks ?? "",
         }}
       />
     </div>

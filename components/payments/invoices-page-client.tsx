@@ -172,7 +172,16 @@ export function InvoicesPageClient({
             ) : (
               filtered.map((invoice) => (
                 <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      {invoice.invoiceNumber}
+                      {(invoice.revisionNumber ?? 0) > 0 && (
+                        <Badge className="border-blue-500/30 bg-blue-500/10 text-[10px] text-blue-400">
+                          Rev {invoice.revisionNumber}
+                        </Badge>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell>{invoice.client.name}</TableCell>
                   <TableCell className="hidden lg:table-cell max-w-[220px]">
                     <span className="block truncate text-muted-foreground">

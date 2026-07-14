@@ -23,6 +23,11 @@ export default async function InvoiceDetailPage({
       client: true,
       payments: { orderBy: { paymentDate: "desc" } },
       followUps: { orderBy: { date: "desc" } },
+      revisedFrom: { select: { id: true, invoiceNumber: true, revisionNumber: true } },
+      revisions: {
+        select: { id: true, invoiceNumber: true, revisionNumber: true, status: true },
+        orderBy: { revisionNumber: "asc" },
+      },
     },
   })
 
