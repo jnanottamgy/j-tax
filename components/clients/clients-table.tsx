@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
-import type { ClientPriority, ClientStatus } from "@prisma/client"
+import type { ClientPriority, ClientStatus, ServiceType } from "@prisma/client"
 import {
   ArrowDown,
   ArrowUp,
@@ -58,11 +58,25 @@ import {
 import {
   ALL_CLIENT_PRIORITIES,
   ALL_CLIENT_STATUSES,
+  ALL_SERVICE_TYPES,
   CLIENT_PRIORITY_LABELS,
   CLIENT_STATUS_LABELS,
+  SERVICE_TYPE_LABELS,
   PAGE_SIZE,
 } from "@/lib/clients/constants"
+import { CLIENT_TYPE_OPTIONS, ENTITY_TYPE_LABELS } from "@/lib/clients/master-data"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
+
+const ONBOARDED_OPTIONS = [
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+  { value: "365", label: "Last 12 months" },
+] as const
+
+const GST_OPTIONS = [
+  { value: "registered", label: "GST-registered" },
+  { value: "unregistered", label: "Not registered" },
+] as const
 
 type SortKey =
   | "name"
@@ -235,6 +249,10 @@ export function ClientsTable({
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<ClientStatus[]>([])
   const [priorityFilter, setPriorityFilter] = useState<ClientPriority[]>([])
+  const [serviceFilter, setServiceFilter] = useState<ServiceType[]>([])
+  const [typeFilter, setTypeFilter] = useState<string[]>([])
+  const [gstFilter, setGstFilter] = useState<"" | "registered" | "unregistered">("")
+  const [onboardedWithin, setOnboardedWithin] = useState<"" | "30" | "90" | "365">("")
   const [sortKey, setSortKey] = useState<SortKey | null>("dueDate")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [page, setPage] = useState(1)
@@ -242,10 +260,18 @@ export function ClientsTable({
   const hasActiveFilters =
     search.length > 0 ||
     statusFilter.length > 0 ||
-    priorityFilter.length > 0
+    priorityFilter.length > 0 ||
+    serviceFilter.length > 0 ||
+    typeFilter.length > 0 ||
+    gstFilter !== "" ||
+    onboardedWithin !== ""
 
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase()
+    const onboardedCutoff =
+      onboardedWithin === ""
+        ? null
+        : new Date(Date.now() - Number(onboardedWithin) * 86_400_000)
 
     let result = clients.filter((client) => {
       const matchesSearch =
@@ -264,7 +290,30 @@ export function ClientsTable({
         priorityFilter.length === 0 ||
         priorityFilter.includes(client.priority)
 
-      return matchesSearch && matchesStatus && matchesPriority
+      const matchesService =
+        serviceFilter.length === 0 ||
+        client.services.some((s) => serviceFilter.includes(s.type))
+
+      const matchesType =
+        typeFilter.length === 0 ||
+        (client.clientType != null && typeFilter.includes(client.clientType))
+
+      const matchesGst =
+        gstFilter === "" ||
+        (gstFilter === "registered" ? Boolean(client.gstin) : !client.gstin)
+
+      const matchesOnboarded =
+        !onboardedCutoff || parseISO(client.createdAt) >= onboardedCutoff
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesPriority &&
+        matchesService &&
+        matchesType &&
+        matchesGst &&
+        matchesOnboarded
+      )
     })
 
     if (sortKey) {
@@ -274,7 +323,18 @@ export function ClientsTable({
     }
 
     return result
-  }, [clients, search, statusFilter, priorityFilter, sortKey, sortDirection])
+  }, [
+    clients,
+    search,
+    statusFilter,
+    priorityFilter,
+    serviceFilter,
+    typeFilter,
+    gstFilter,
+    onboardedWithin,
+    sortKey,
+    sortDirection,
+  ])
 
   const totalPages = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -316,10 +376,28 @@ export function ClientsTable({
     setPage(1)
   }
 
+  function toggleService(t: ServiceType) {
+    setServiceFilter((prev) =>
+      prev.includes(t) ? prev.filter((s) => s !== t) : [...prev, t]
+    )
+    setPage(1)
+  }
+
+  function toggleType(t: string) {
+    setTypeFilter((prev) =>
+      prev.includes(t) ? prev.filter((s) => s !== t) : [...prev, t]
+    )
+    setPage(1)
+  }
+
   function clearFilters() {
     setSearch("")
     setStatusFilter([])
     setPriorityFilter([])
+    setServiceFilter([])
+    setTypeFilter([])
+    setGstFilter("")
+    setOnboardedWithin("")
     setPage(1)
   }
 
@@ -397,6 +475,99 @@ export function ClientsTable({
                   onCheckedChange={() => togglePriority(priority)}
                 >
                   {CLIENT_PRIORITY_LABELS[priority]}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="input-premium h-9 gap-1.5 rounded-xl border-white/[0.07] bg-transparent">
+                <Filter className="size-3.5" />
+                Services
+                {serviceFilter.length > 0 && (
+                  <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">{serviceFilter.length}</Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel>Filter by service</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {ALL_SERVICE_TYPES.map((t) => (
+                <DropdownMenuCheckboxItem
+                  key={t}
+                  checked={serviceFilter.includes(t)}
+                  onCheckedChange={() => toggleService(t)}
+                >
+                  {SERVICE_TYPE_LABELS[t]}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="input-premium h-9 gap-1.5 rounded-xl border-white/[0.07] bg-transparent">
+                <Filter className="size-3.5" />
+                Type
+                {typeFilter.length > 0 && (
+                  <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">{typeFilter.length}</Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>Filter by client type</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {CLIENT_TYPE_OPTIONS.map((t) => (
+                <DropdownMenuCheckboxItem
+                  key={t}
+                  checked={typeFilter.includes(t)}
+                  onCheckedChange={() => toggleType(t)}
+                >
+                  {ENTITY_TYPE_LABELS[t]}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="input-premium h-9 gap-1.5 rounded-xl border-white/[0.07] bg-transparent">
+                <SlidersHorizontal className="size-3.5" />
+                More
+                {(gstFilter !== "" || onboardedWithin !== "") && (
+                  <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">
+                    {(gstFilter !== "" ? 1 : 0) + (onboardedWithin !== "" ? 1 : 0)}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>GST registration</DropdownMenuLabel>
+              {GST_OPTIONS.map((o) => (
+                <DropdownMenuCheckboxItem
+                  key={o.value}
+                  checked={gstFilter === o.value}
+                  onCheckedChange={() => {
+                    setGstFilter((prev) => (prev === o.value ? "" : o.value))
+                    setPage(1)
+                  }}
+                >
+                  {o.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Onboarded</DropdownMenuLabel>
+              {ONBOARDED_OPTIONS.map((o) => (
+                <DropdownMenuCheckboxItem
+                  key={o.value}
+                  checked={onboardedWithin === o.value}
+                  onCheckedChange={() => {
+                    setOnboardedWithin((prev) => (prev === o.value ? "" : o.value))
+                    setPage(1)
+                  }}
+                >
+                  {o.label}
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>
