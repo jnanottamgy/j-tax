@@ -7,7 +7,7 @@ import { validateGSTIN, validatePAN, gstinPanMismatch } from "@/lib/india/valida
  * a generic "invalid format". Runs after field transforms (trim + uppercase).
  */
 function indiaStatutoryChecks(
-  data: { gstin?: string; pan?: string },
+  data: { gstin?: string; pan?: string; clientType?: string; clientTypeCustom?: string },
   ctx: z.RefinementCtx
 ) {
   if (data.gstin) {
@@ -28,6 +28,13 @@ function indiaStatutoryChecks(
   if (mismatch) {
     ctx.addIssue({ code: "custom", path: ["pan"], message: mismatch })
   }
+  if (data.clientType === "OTHER" && !data.clientTypeCustom) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["clientTypeCustom"],
+      message: "Enter the client type",
+    })
+  }
 }
 
 export const serviceAssignmentSchema = z.object({
@@ -39,6 +46,7 @@ export const serviceAssignmentSchema = z.object({
     "BOOKKEEPING",
     "AUDIT",
     "COMPANY_LAW",
+    "INCORPORATION",
     "OTHER",
   ]),
   frequency: z.enum(["MONTHLY", "QUARTERLY", "ANNUAL", "ONE_TIME"]),
@@ -64,6 +72,21 @@ const clientBaseSchema = z.object({
     .string()
     .min(2, "Client name must be at least 2 characters")
     .max(200, "Client name is too long"),
+  companyName: z
+    .string()
+    .max(200, "Company name is too long")
+    .optional()
+    .transform((v) => v?.trim() || undefined),
+  clientType: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined),
+  clientTypeCustom: z
+    .string()
+    .max(120, "Client type is too long")
+    .optional()
+    .transform((v) => v?.trim() || undefined),
+  isIncorporated: z.coerce.boolean().default(true),
   gstin: z
     .string()
     .optional()

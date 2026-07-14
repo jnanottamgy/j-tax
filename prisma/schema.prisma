@@ -173,6 +173,7 @@ enum ServiceType {
   BOOKKEEPING
   AUDIT
   COMPANY_LAW
+  INCORPORATION
   OTHER
 }
 
@@ -202,8 +203,15 @@ model Client {
   assignedEmployeeName String?
   assignedEmployee     Employee?      @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
   phoneNumber          String?
-  /// Constitution: PROPRIETORSHIP, PARTNERSHIP, LLP, PVT_LTD, PUBLIC_LTD, HUF, TRUST, AOP, INDIVIDUAL
+  /// Legal/registered company name (may differ from display `name`)
+  companyName          String?
+  /// Whether the entity is already incorporated/registered. Defaults true;
+  /// unchecked for entities being freshly incorporated via our Incorporation service.
+  isIncorporated       Boolean        @default(true)
+  /// Constitution: PROPRIETORSHIP, PARTNERSHIP, LLP, PVT_LTD, PUBLIC_LTD, SECTION_8, HUF, TRUST, AOP, INDIVIDUAL, OTHER
   entityType           String?
+  /// Free-text label when entityType is OTHER
+  entityTypeCustom     String?
   /// GST place-of-supply state (falls back to the state encoded in gstin)
   stateCode            String?
   groupId              String?
@@ -1261,6 +1269,8 @@ model Lead {
   status          LeadStatus @default(NEW_LEAD)
   estimatedValue  Decimal?   @db.Decimal(12, 2)
   notes           String?
+  /// Reason captured when a lead is marked LOST (Reject)
+  rejectionReason String?
   assignedTo      String?
   convertedClientId String?
   createdBy       String
@@ -1305,6 +1315,9 @@ model Quotation {
   viewedAt        DateTime?
   respondedAt     DateTime?
   rejectionReason String?
+  /// Set once this (accepted) quotation has been converted into a client —
+  /// blocks double-conversion and flips the "Create client" CTA to "View client".
+  convertedClientId String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 

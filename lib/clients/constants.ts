@@ -29,6 +29,7 @@ export const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
   BOOKKEEPING: "Bookkeeping",
   AUDIT: "Audit",
   COMPANY_LAW: "ROC",
+  INCORPORATION: "Incorporation",
   OTHER: "Other",
 }
 

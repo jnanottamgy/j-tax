@@ -13,25 +13,46 @@ export const ENTITY_TYPES = [
   "LLP",
   "PVT_LTD",
   "PUBLIC_LTD",
-  "HUF",
+  "SECTION_8",
   "TRUST",
   "AOP",
+  "OTHER",
+  // Retained for backward compatibility with existing client records.
+  "HUF",
   "INDIVIDUAL",
 ] as const
 
 export type EntityType = (typeof ENTITY_TYPES)[number]
 
 export const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
-  PROPRIETORSHIP: "Proprietorship",
+  PROPRIETORSHIP: "Sole Proprietorship",
   PARTNERSHIP: "Partnership Firm",
   LLP: "LLP",
-  PVT_LTD: "Private Limited",
-  PUBLIC_LTD: "Public Limited",
-  HUF: "HUF",
+  PVT_LTD: "Private Limited Company",
+  PUBLIC_LTD: "Public Company",
+  SECTION_8: "Section 8 Company",
   TRUST: "Trust",
-  AOP: "AOP / BOI",
+  AOP: "AOP",
+  OTHER: "Others",
+  HUF: "HUF",
   INDIVIDUAL: "Individual",
 }
+
+/**
+ * The ordered Client Type options shown in the add/edit-client dropdown.
+ * "OTHER" reveals a free-text field (stored in Client.entityTypeCustom).
+ */
+export const CLIENT_TYPE_OPTIONS = [
+  "PROPRIETORSHIP",
+  "PARTNERSHIP",
+  "LLP",
+  "PVT_LTD",
+  "PUBLIC_LTD",
+  "SECTION_8",
+  "TRUST",
+  "AOP",
+  "OTHER",
+] as const satisfies readonly EntityType[]
 
 export const CONTACT_ROLES = [
   "Director",

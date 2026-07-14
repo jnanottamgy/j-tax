@@ -15,55 +15,15 @@ type ServiceInput = {
   customName?: string
 }
 
-const DOCUMENT_CHECKLIST: Record<ServiceType, string[]> = {
-  GST_RETURN: [
-    "GST registration certificate",
-    "Latest GSTR-1 and GSTR-3B filings",
-    "Sales and purchase register",
-    "Input tax credit reconciliation",
-  ],
-  TDS: [
-    "TAN allotment letter",
-    "Challan payment history",
-    "Deductee master list",
-    "Previous TDS returns",
-  ],
-  COMPANY_LAW: [
-    "Certificate of incorporation",
-    "MOA and AOA",
-    "Director KYC documents",
-    "Latest ROC annual filing",
-  ],
-  BOOKKEEPING: [
-    "Bank statements",
-    "Opening balance sheet",
-    "Chart of accounts",
-    "Purchase and sales invoices",
-  ],
-  AUDIT: [
-    "Trial balance",
-    "Fixed asset register",
-    "Loan confirmations",
-    "Previous audit report",
-  ],
-  INCOME_TAX: [
-    "PAN card",
-    "Previous income tax return",
-    "Form 26AS/AIS",
-    "Investment and deduction proofs",
-  ],
-  PAYROLL: [
-    "Employee master data",
-    "Salary structure",
-    "PF/ESI registrations",
-    "Attendance records",
-  ],
-  OTHER: [
-    "Engagement scope note",
-    "Client authorization letter",
-    "Supporting documents",
-  ],
-}
+/**
+ * Fixed onboarding document checklist. Per product decision the checklist is no
+ * longer derived from the client's service mix — only these two standard docs
+ * are offered by default, plus any "Other" documents the user types in.
+ */
+export const BASE_DOCUMENT_CHECKLIST = [
+  "Engagement Letter",
+  "Client Authorization Letter",
+] as const
 
 export function calculateNextDueDate(
   frequency: ServiceFrequency,
@@ -164,8 +124,17 @@ export function buildOnboardingArtifacts(
   }
 
   const now2 = new Date()
+  // Checklist rows = the fixed base docs + any custom "Other" docs the user
+  // typed in (these arrive through collectedDocuments and are shown as
+  // collected). Preserve order and de-dupe.
+  const customLabels = [...collectedSet].filter(
+    (l) => !BASE_DOCUMENT_CHECKLIST.includes(l as (typeof BASE_DOCUMENT_CHECKLIST)[number])
+  )
+  const checklistLabels = Array.from(
+    new Set<string>([...BASE_DOCUMENT_CHECKLIST, ...customLabels])
+  )
   const documentChecklist: Prisma.ClientDocumentChecklistItemCreateManyInput[] =
-    buildDocumentChecklist(services).map((label) => ({
+    checklistLabels.map((label) => ({
       clientId,
       label,
       collected: collectedSet.has(label),
@@ -181,10 +150,10 @@ export function buildOnboardingArtifacts(
   }
 }
 
-export function buildDocumentChecklist(services: ServiceInput[]): string[] {
-  return Array.from(
-    new Set(
-      services.flatMap((service) => DOCUMENT_CHECKLIST[service.serviceType])
-    )
-  )
+/**
+ * The default document checklist. No longer service-derived — always the fixed
+ * base list. Custom "Other" documents are added by the user, not generated here.
+ */
+export function buildDocumentChecklist(_services?: ServiceInput[]): string[] {
+  return [...BASE_DOCUMENT_CHECKLIST]
 }
