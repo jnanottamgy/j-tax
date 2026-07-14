@@ -103,10 +103,16 @@ export const navigationGroups: NavGroup[] = [
         description: "P&L + Balance Sheet from trial balance",
       },
       {
-        title: "Calendar",
+        title: "Compliance Calendar",
+        href: "/compliance-calendar",
+        icon: CalendarDays,
+        description: "Statutory, as-per-law due dates",
+      },
+      {
+        title: "Firm Calendar",
         href: "/calendar",
         icon: CalendarDays,
-        description: "Compliance calendar",
+        description: "Firm-set custom due dates",
       },
       {
         title: "Timesheet",
@@ -268,7 +274,8 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "ITR Computation", href: "/itr-computation", icon: Calculator, description: "Old vs new regime, side by side" },
           { title: "Notices", href: "/notices", icon: FileWarning, description: "Tax notice & litigation register" },
           { title: "Financial Statements", href: "/financial-statements", icon: BookOpenCheck, description: "P&L + Balance Sheet from trial balance" },
-          { title: "Calendar", href: "/calendar", icon: CalendarDays, description: "Compliance calendar" },
+          { title: "Compliance Calendar", href: "/compliance-calendar", icon: CalendarDays, description: "Statutory due dates" },
+          { title: "Firm Calendar", href: "/calendar", icon: CalendarDays, description: "Firm-set due dates" },
           { title: "Timesheet", href: "/timesheet", icon: Timer, description: "Time tracking & billable hours" },
         ],
       },
@@ -326,7 +333,7 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "ITR Computation", href: "/itr-computation", icon: Calculator, description: "Tax computations for your clients" },
           { title: "Notices", href: "/notices", icon: FileWarning, description: "Notices for your clients" },
           { title: "Financial Statements", href: "/financial-statements", icon: BookOpenCheck, description: "Statements for your clients" },
-          { title: "Calendar", href: "/calendar", icon: CalendarDays, description: "Upcoming deadlines" },
+          { title: "Firm Calendar", href: "/calendar", icon: CalendarDays, description: "Firm-set due dates" },
         ],
       },
       {

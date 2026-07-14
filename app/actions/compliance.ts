@@ -160,7 +160,11 @@ export async function getComplianceDashboard() {
   }
 }
 
-export async function getComplianceEvents(month?: number, year?: number) {
+export async function getComplianceEvents(
+  month?: number,
+  year?: number,
+  isStatutory?: boolean
+) {
   const session = await requireAuth()
 
   const isEmployee = session.user.role === "EMPLOYEE"
@@ -178,6 +182,10 @@ export async function getComplianceEvents(month?: number, year?: number) {
   const where: any = {}
   if (Object.keys(clientFilter).length) {
     where.client = clientFilter
+  }
+  // Split: statutory (as-per-law) vs firm-set (custom) events.
+  if (isStatutory !== undefined) {
+    where.isStatutory = isStatutory
   }
 
   if (month !== undefined && year !== undefined) {
@@ -198,7 +206,7 @@ export async function getComplianceEvents(month?: number, year?: number) {
   return { events, user: session.user }
 }
 
-export async function getUpcomingDeadlines(days: number = 30) {
+export async function getUpcomingDeadlines(days: number = 30, isStatutory?: boolean) {
   const session = await requireAuth()
   const startDate = new Date()
   const endDate = addDays(startDate, days)
@@ -218,6 +226,7 @@ export async function getUpcomingDeadlines(days: number = 30) {
   const events = await prisma.complianceEvent.findMany({
     where: {
       client: Object.keys(clientFilter).length ? clientFilter : undefined,
+      ...(isStatutory !== undefined ? { isStatutory } : {}),
       dueDate: { gte: startDate, lte: endDate },
       status: { not: "COMPLETED" },
     },

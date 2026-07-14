@@ -27,6 +27,8 @@ interface AddComplianceEventDialogProps {
   onSuccess?: () => void
   defaultClientId?: string
   clients?: Array<{ id: string; name: string }>
+  /** When set, the statutory flag is forced (Compliance vs Firm calendar). */
+  forcedStatutory?: boolean
 }
 
 const initialState: ComplianceActionState = {}
@@ -37,6 +39,7 @@ export function AddComplianceEventDialog({
   onSuccess,
   defaultClientId,
   clients = [],
+  forcedStatutory,
 }: AddComplianceEventDialogProps) {
   const [state, formAction, isPending] = useActionState(createComplianceEvent, initialState)
   const [clientList, setClientList] = useState(clients)
@@ -239,21 +242,25 @@ export function AddComplianceEventDialog({
             />
           </div>
 
-          {/* Statutory toggle */}
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="ce-statutory"
-              name="isStatutory"
-              value="true"
-              defaultChecked
-              className="h-4 w-4 rounded border-input"
-              disabled={isPending}
-            />
-            <Label htmlFor="ce-statutory" className="cursor-pointer">
-              Statutory filing (government mandated)
-            </Label>
-          </div>
+          {/* Statutory flag — forced by calendar variant, or user-toggled */}
+          {forcedStatutory !== undefined ? (
+            <input type="hidden" name="isStatutory" value={forcedStatutory ? "true" : "false"} />
+          ) : (
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="ce-statutory"
+                name="isStatutory"
+                value="true"
+                defaultChecked
+                className="h-4 w-4 rounded border-input"
+                disabled={isPending}
+              />
+              <Label htmlFor="ce-statutory" className="cursor-pointer">
+                Statutory filing (government mandated)
+              </Label>
+            </div>
+          )}
 
           {state.error && (
             <p className="text-sm text-destructive rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2">

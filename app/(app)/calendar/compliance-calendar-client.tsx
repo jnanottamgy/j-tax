@@ -21,7 +21,13 @@ import { cn } from "@/lib/utils"
 
 type ViewMode = "monthly" | "weekly"
 
-export function ComplianceCalendarClient() {
+export function ComplianceCalendarClient({
+  variant = "compliance",
+}: {
+  /** "compliance" = statutory as-per-law dates; "firm" = firm-set custom dates. */
+  variant?: "compliance" | "firm"
+}) {
+  const isStatutory = variant === "compliance"
   const _router = useRouter()
   const [viewMode, setViewMode] = useState<ViewMode>("monthly")
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -39,8 +45,8 @@ export function ComplianceCalendarClient() {
       const month = currentDate.getMonth() + 1
       const year = currentDate.getFullYear()
       const [eventsData, deadlinesData] = await Promise.all([
-        getComplianceEvents(month, year),
-        getUpcomingDeadlines(30),
+        getComplianceEvents(month, year, isStatutory),
+        getUpcomingDeadlines(30, isStatutory),
       ])
       setEvents(eventsData.events)
       setUpcomingDeadlines(deadlinesData.events)
@@ -51,7 +57,7 @@ export function ComplianceCalendarClient() {
     } finally {
       setLoading(false)
     }
-  }, [currentDate])
+  }, [currentDate, isStatutory])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -87,9 +93,13 @@ export function ComplianceCalendarClient() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Compliance Calendar</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {isStatutory ? "Compliance Calendar" : "Firm Calendar"}
+          </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Track statutory deadlines, filings, and compliance events.
+            {isStatutory
+              ? "Statutory, as-per-law filing due dates (GST, TDS, ITR, ROC, PF/ESIC)."
+              : "Firm-set due dates and internal deadlines scheduled by your managers."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -179,6 +189,7 @@ export function ComplianceCalendarClient() {
           open={addOpen}
           onOpenChange={setAddOpen}
           onSuccess={() => { setAddOpen(false); loadData() }}
+          forcedStatutory={isStatutory}
         />
       )}
     </div>
