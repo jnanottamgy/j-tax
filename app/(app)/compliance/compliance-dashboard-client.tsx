@@ -7,12 +7,20 @@ import { format, differenceInDays } from "date-fns"
 import {
   ShieldCheck, AlertTriangle, CheckCircle2, Clock,
   TrendingUp, Plus, RefreshCw, ChevronRight,
-  BarChart3,
+  BarChart3, Download,
 } from "lucide-react"
 
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { ComplianceTypeBadge } from "@/components/compliance/compliance-type-badge"
@@ -111,6 +119,15 @@ export function ComplianceDashboardClient({ data }: { data: DashboardData }) {
     startRefresh(() => { router.refresh() })
   }
 
+  function downloadExport(scope: "all" | "completed" | "overdue", format: "csv" | "xlsx") {
+    const a = document.createElement("a")
+    a.href = `/compliance/export?scope=${scope}&format=${format}`
+    a.download = ""
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
   return (
     <div className="space-y-6">
       {/* KPI Row */}
@@ -138,6 +155,27 @@ export function ComplianceDashboardClient({ data }: { data: DashboardData }) {
           <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
           Refresh
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="input-premium h-9 rounded-xl gap-2 border-white/[0.07] bg-transparent">
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel>All events</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => downloadExport("all", "xlsx")}>Excel (.xlsx)</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => downloadExport("all", "csv")}>CSV (.csv)</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Completed</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => downloadExport("completed", "xlsx")}>Excel (.xlsx)</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => downloadExport("completed", "csv")}>CSV (.csv)</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Overdue</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => downloadExport("overdue", "xlsx")}>Excel (.xlsx)</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => downloadExport("overdue", "csv")}>CSV (.csv)</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {canManage && (
           <Button size="sm" className="btn-glow h-9 gap-1.5 rounded-xl" onClick={() => setAddOpen(true)}>
             <Plus className="h-3.5 w-3.5" />
