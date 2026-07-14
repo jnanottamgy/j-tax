@@ -7,13 +7,14 @@ import { X, MessageSquare, Paperclip, Clock, User, Building2, Save, Trash2, Uplo
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { TaskStatusBadge } from "./task-status-badge"
+import { TaskStatusBadge, TaskAcceptanceBadge } from "./task-status-badge"
 import { TaskPriorityBadge } from "./task-priority-badge"
 import { DueDateBadge } from "./due-date-badge"
 import { TaskTimer } from "./task-timer"
 import { TaskDependencies } from "./task-dependencies"
 import { addAttachment } from "@/app/actions/tasks"
 import { uploadFile } from "@/lib/storage/storage"
+import { daysWorkedSince } from "@/lib/time/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -46,6 +47,9 @@ interface Task {
   completionDate: Date | null
   serviceType?: string | null
   remarks?: string | null
+  acceptanceStatus?: "PENDING" | "ACCEPTED" | "DECLINED"
+  acceptedAt?: Date | string | null
+  declinedReason?: string | null
   client: {
     id: string
     name: string
@@ -66,6 +70,8 @@ interface TaskDetailDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onStatusChange?: (taskId: string, status: TaskStatus) => void
+  onAccept?: (taskId: string) => void
+  onDecline?: (taskId: string, reason: string) => void
   onAddComment?: (taskId: string, content: string) => void
   onDeleteComment?: (commentId: string) => void
   onDeleteAttachment?: (attachmentId: string) => void
@@ -80,6 +86,8 @@ export function TaskDetailDrawer({
   open,
   onOpenChange,
   onStatusChange,
+  onAccept,
+  onDecline,
   onAddComment,
   onDeleteComment,
   onDeleteAttachment,
@@ -88,6 +96,8 @@ export function TaskDetailDrawer({
   userNameMap = {},
 }: TaskDetailDrawerProps) {
   const [commentText, setCommentText] = useState("")
+  const [declineOpen, setDeclineOpen] = useState(false)
+  const [declineReason, setDeclineReason] = useState("")
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
 
@@ -200,6 +210,7 @@ export function TaskDetailDrawer({
             <div className="flex flex-wrap gap-2">
               <TaskStatusBadge status={task.status} />
               <TaskPriorityBadge priority={task.priority} />
+              {task.acceptanceStatus && <TaskAcceptanceBadge acceptance={task.acceptanceStatus} />}
               {task.dueDate && <DueDateBadge dueDate={task.dueDate} />}
               {(task.blockedBy ?? []).some((d) => d.blocker.status !== "FILED_DONE") && (
                 <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400">
@@ -261,7 +272,70 @@ export function TaskDetailDrawer({
               </div>
             )}
 
-            {canEdit && (
+            {/* Accept / decline — the assigned employee must accept before working */}
+            {isEmployeeViewer && task.acceptanceStatus === "PENDING" && (
+              <div className="pt-4 border-t border-white/[0.08]">
+                <div className="text-xs text-muted-foreground mb-2">This task was assigned to you</div>
+                {declineOpen ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={declineReason}
+                      onChange={(e) => setDeclineReason(e.target.value)}
+                      placeholder="Reason for declining (e.g. workload, wrong assignee)…"
+                      className="min-h-20"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={!declineReason.trim()}
+                        onClick={() => {
+                          onDecline?.(task.id, declineReason.trim())
+                          setDeclineOpen(false)
+                          setDeclineReason("")
+                        }}
+                      >
+                        Submit decline
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setDeclineOpen(false)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" className="btn-glow" onClick={() => onAccept?.(task.id)}>
+                      Accept task
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setDeclineOpen(true)}>
+                      Decline
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isEmployeeViewer && task.acceptanceStatus === "DECLINED" && (
+              <div className="pt-4 border-t border-white/[0.08] text-sm text-muted-foreground">
+                You declined this task{task.declinedReason ? `: "${task.declinedReason}"` : ""}. A manager
+                needs to reassign it.
+              </div>
+            )}
+
+            {task.acceptanceStatus === "ACCEPTED" && task.acceptedAt && task.status !== "FILED_DONE" && (
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2 text-sm">
+                <Clock className="h-4 w-4 text-emerald-400" />
+                <span className="font-medium text-emerald-300">
+                  Day {daysWorkedSince(task.acceptedAt)}
+                </span>
+                <span className="text-muted-foreground">
+                  · accepted {format(new Date(task.acceptedAt), "dd MMM yyyy")}
+                </span>
+              </div>
+            )}
+
+            {/* Status buttons — employees can only touch them once accepted */}
+            {canEdit && !(isEmployeeViewer && task.acceptanceStatus !== "ACCEPTED") && (
               <div className="pt-4 border-t border-white/[0.08]">
                 <div className="text-xs text-muted-foreground mb-2">Update Status</div>
                 {isEmployeeViewer && (

@@ -12,6 +12,26 @@ export function minutesToHhMm(minutes: number): string {
   return `${h}h ${m}m`
 }
 
+/**
+ * Calendar days worked on a task since it was accepted (inclusive of day 1).
+ * Accepted today → 1, accepted yesterday → 2, etc.
+ */
+export function daysWorkedSince(acceptedAt: Date | string | null | undefined): number | null {
+  if (!acceptedAt) return null
+  const start = new Date(acceptedAt)
+  if (Number.isNaN(start.getTime())) return null
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const diff = Math.round((today.getTime() - startDay.getTime()) / 86_400_000)
+  return Math.max(1, diff + 1)
+}
+
+/** "1 day" / "5 days" */
+export function formatDaysWorked(days: number): string {
+  return `${days} day${days === 1 ? "" : "s"}`
+}
+
 /** Live-timer clock: 95s → "01:35", 3695s → "1:01:35" */
 export function secondsToClock(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds))

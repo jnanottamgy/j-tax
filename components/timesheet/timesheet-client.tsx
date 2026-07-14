@@ -16,11 +16,13 @@ import { toast } from "sonner"
 
 import {
   deleteTimeEntry,
+  getMyActiveTasks,
   getMyRunningTimer,
   getMyTimesheet,
   getTeamTimesheet,
   getTimesheetOptions,
   stopTimer,
+  type ActiveTaskDays,
   type MyTimesheet,
   type RunningTimer,
   type TeamTimesheetRow,
@@ -36,7 +38,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { AppRole } from "@/lib/auth/types"
-import { minutesToHhMm, secondsToClock } from "@/lib/time/format"
+import { daysWorkedSince, formatDaysWorked, minutesToHhMm, secondsToClock } from "@/lib/time/format"
 import { cn } from "@/lib/utils"
 
 function mondayOf(date: Date): Date {
@@ -82,6 +84,7 @@ export function TimesheetClient({ viewerRole }: { viewerRole: AppRole }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEntry, setEditingEntry] = useState<TimesheetEntry | null>(null)
   const [deletingEntry, setDeletingEntry] = useState<TimesheetEntry | null>(null)
+  const [activeTasks, setActiveTasks] = useState<ActiveTaskDays[]>([])
 
   const loadMine = useCallback(async () => {
     setLoadingSheet(true)
@@ -126,6 +129,10 @@ export function TimesheetClient({ viewerRole }: { viewerRole: AppRole }) {
   useEffect(() => {
     loadMine()
   }, [loadMine])
+
+  useEffect(() => {
+    void getMyActiveTasks().then(setActiveTasks).catch(() => setActiveTasks([]))
+  }, [])
 
   useEffect(() => {
     if (tab === "team") loadTeam()
@@ -302,6 +309,33 @@ export function TimesheetClient({ viewerRole }: { viewerRole: AppRole }) {
         )}
 
         <TabsContent value="mine" className="space-y-6">
+          {activeTasks.length > 0 && (
+            <GlassCard hover={false} className="p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <CalendarClock className="size-4 text-primary" />
+                <h3 className="text-sm font-semibold">Active tasks — days worked since accepted</h3>
+              </div>
+              <div className="space-y-2">
+                {activeTasks.map((t) => {
+                  const days = daysWorkedSince(t.acceptedAt) ?? 1
+                  return (
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{t.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{t.clientName}</p>
+                      </div>
+                      <Badge className="shrink-0 border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                        {formatDaysWorked(days)}
+                      </Badge>
+                    </div>
+                  )
+                })}
+              </div>
+            </GlassCard>
+          )}
           {profileError ? (
             <div
               role="alert"

@@ -44,3 +44,40 @@ export function TaskStatusBadge({ status, className }: TaskStatusBadgeProps) {
     </Badge>
   )
 }
+
+type TaskAcceptance = "PENDING" | "ACCEPTED" | "DECLINED"
+
+const acceptanceConfig: Record<TaskAcceptance, { label: string; className: string }> = {
+  PENDING: {
+    label: "Awaiting acceptance",
+    className: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  },
+  ACCEPTED: {
+    label: "Accepted",
+    className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  },
+  DECLINED: {
+    label: "Declined",
+    className: "bg-red-500/10 text-red-400 border-red-500/20",
+  },
+}
+
+/** Small badge for the employee's accept/decline state. ACCEPTED renders null
+ *  by default (the common case) unless `showAccepted` is set. */
+export function TaskAcceptanceBadge({
+  acceptance,
+  className,
+  showAccepted = false,
+}: {
+  acceptance: TaskAcceptance
+  className?: string
+  showAccepted?: boolean
+}) {
+  if (acceptance === "ACCEPTED" && !showAccepted) return null
+  const config = acceptanceConfig[acceptance]
+  return (
+    <Badge variant="outline" className={cn(config.className, className)}>
+      {config.label}
+    </Badge>
+  )
+}

@@ -12,7 +12,7 @@ import { TaskTable } from "@/components/work-tracker/task-table"
 import { TaskDetailDrawer } from "@/components/work-tracker/task-detail-drawer"
 import { TaskFilters } from "@/components/work-tracker/task-filters"
 import { AddTaskDialog, type EditableTask } from "@/components/work-tracker/add-task-dialog"
-import { getTasksData, getTaskDetail, updateTaskStatus, deleteTask, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
+import { getTasksData, getTaskDetail, updateTaskStatus, acceptTask, declineTask, deleteTask, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
 import { toast } from "sonner"
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DATA_AWAITED" | "UNDER_REVIEW" | "FILED_DONE" | "ON_HOLD"
@@ -95,6 +95,35 @@ export function WorkTrackerClient() {
     } catch (error) {
       console.error("Failed to update status:", error)
       toast.error("Failed to update status")
+    }
+  }
+
+  const refreshSelected = (taskId: string) =>
+    setTasks((freshTasks) => {
+      const updated = freshTasks.find((t) => t.id === taskId)
+      if (updated) setSelectedTask(updated)
+      return freshTasks
+    })
+
+  const handleAccept = async (taskId: string) => {
+    const result = await acceptTask(taskId)
+    if (result.success) {
+      toast.success("Task accepted — you can start working on it")
+      await loadData()
+      refreshSelected(taskId)
+    } else {
+      toast.error(result.error || "Failed to accept task")
+    }
+  }
+
+  const handleDecline = async (taskId: string, reason: string) => {
+    const result = await declineTask(taskId, reason)
+    if (result.success) {
+      toast.success("Task declined — a manager will reassign it")
+      await loadData()
+      refreshSelected(taskId)
+    } else {
+      toast.error(result.error || result.fieldErrors?.reason?.[0] || "Failed to decline task")
     }
   }
 
@@ -261,6 +290,8 @@ export function WorkTrackerClient() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onStatusChange={handleStatusChange}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
         onAddComment={handleAddComment}
         onDeleteComment={handleDeleteComment}
         onDeleteAttachment={handleDeleteAttachment}

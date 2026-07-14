@@ -122,12 +122,15 @@ export async function createTask(
       ...taskFields
     } = parsed.data
 
+    const willAssign = Boolean(assignedEmployeeId?.trim())
     const newTask = await prisma.task.create({
       data: {
         ...taskFields,
         clientId,
         description: description?.trim() ? description : null,
-        assignedEmployeeId: assignedEmployeeId?.trim() ? assignedEmployeeId : null,
+        assignedEmployeeId: willAssign ? assignedEmployeeId : null,
+        // Assigned tasks await the employee's acceptance; unassigned start ACCEPTED.
+        acceptanceStatus: willAssign ? "PENDING" : "ACCEPTED",
         dueDate: dueDate ? new Date(dueDate) : null,
         completionDate: completionDate ? new Date(completionDate) : null,
       },
@@ -244,14 +247,49 @@ export async function updateTask(
       }
     }
 
+    // Reassignment resets the acceptance workflow: the new assignee must accept.
+    const newAssignee = parsed.data.assignedEmployeeId?.trim() || null
+    const reassigned = newAssignee !== (task.assignedEmployeeId ?? null)
+    const acceptanceReset = reassigned
+      ? {
+          acceptanceStatus: (newAssignee ? "PENDING" : "ACCEPTED") as "PENDING" | "ACCEPTED",
+          acceptedAt: null,
+          declinedAt: null,
+          declinedReason: null,
+        }
+      : {}
+
     await prisma.task.update({
       where: { id },
       data: {
         ...parsed.data,
+        ...acceptanceReset,
         dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
         completionDate: parsed.data.completionDate ? new Date(parsed.data.completionDate) : null,
       },
     })
+
+    // Notify the newly-assigned employee so they can accept/decline.
+    if (reassigned && newAssignee) {
+      try {
+        const emp = await prisma.employee.findUnique({
+          where: { id: newAssignee },
+          select: { userId: true },
+        })
+        if (emp?.userId) {
+          await prisma.notification.create({
+            data: {
+              userId: emp.userId,
+              title: "New Task Assigned",
+              message: `You have been assigned: "${parsed.data.title}". Please accept or decline it.`,
+              type: "TASK_ASSIGNED",
+              entityType: "TASK",
+              entityId: id,
+            },
+          })
+        }
+      } catch (e) { console.error("reassign notify failed:", e) }
+    }
 
     revalidatePath("/work-tracker")
     revalidatePath(`/work-tracker/${id}`)
@@ -269,6 +307,101 @@ export async function updateTask(
       return { error: toUserError(error) }
     }
     return { error: "Failed to update task. Please try again." }
+  }
+}
+
+/** Employee accepts an assigned task — starts the days-worked clock. */
+export async function acceptTask(taskId: string): Promise<TaskActionState> {
+  try {
+    const session = await requireAuth()
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { client: { select: { name: true } } },
+    })
+    if (!task) return { error: "Task not found" }
+
+    const executiveEmployeeId = await getExecutiveEmployeeId(session)
+    if (!canAccessAssignedTask(session, executiveEmployeeId, task.assignedEmployeeId)) {
+      return { error: "You can only accept tasks assigned to you" }
+    }
+    if (task.acceptanceStatus === "ACCEPTED") return { success: true }
+
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        acceptanceStatus: "ACCEPTED",
+        // Anchor the day-counter at FIRST acceptance only.
+        acceptedAt: task.acceptedAt ?? new Date(),
+        declinedAt: null,
+        declinedReason: null,
+      },
+    })
+
+    await notifyRoles(
+      ["PARTNER", "MANAGER"],
+      {
+        title: "Task accepted",
+        message: `${session.user.name} accepted "${task.title}" (${task.client.name}).`,
+        type: "INFO",
+        entityType: "TASK",
+        entityId: taskId,
+      },
+      { excludeUserId: session.user.id }
+    )
+
+    revalidatePath("/work-tracker")
+    revalidatePath(`/work-tracker/${taskId}`)
+    return { success: true }
+  } catch (error) {
+    return { error: toUserError(error) }
+  }
+}
+
+/** Employee declines an assigned task with a reason — manager must reassign. */
+export async function declineTask(taskId: string, reason: string): Promise<TaskActionState> {
+  try {
+    const session = await requireAuth()
+    if (!reason?.trim()) {
+      return { fieldErrors: { reason: ["Please give a reason for declining."] } }
+    }
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { client: { select: { name: true } } },
+    })
+    if (!task) return { error: "Task not found" }
+
+    const executiveEmployeeId = await getExecutiveEmployeeId(session)
+    if (!canAccessAssignedTask(session, executiveEmployeeId, task.assignedEmployeeId)) {
+      return { error: "You can only decline tasks assigned to you" }
+    }
+
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        acceptanceStatus: "DECLINED",
+        declinedAt: new Date(),
+        declinedReason: reason.trim(),
+        acceptedAt: null,
+      },
+    })
+
+    await notifyRoles(
+      ["PARTNER", "MANAGER"],
+      {
+        title: "Task declined",
+        message: `${session.user.name} declined "${task.title}" (${task.client.name}): ${reason.trim()}`,
+        type: "WARNING",
+        entityType: "TASK",
+        entityId: taskId,
+      },
+      { excludeUserId: session.user.id }
+    )
+
+    revalidatePath("/work-tracker")
+    revalidatePath(`/work-tracker/${taskId}`)
+    return { success: true }
+  } catch (error) {
+    return { error: toUserError(error) }
   }
 }
 
@@ -290,6 +423,16 @@ export async function updateTaskStatus(
     const executiveEmployeeId = await getExecutiveEmployeeId(session)
     if (!canAccessAssignedTask(session, executiveEmployeeId, task.assignedEmployeeId)) {
       return { error: "You can only update tasks assigned to you" }
+    }
+
+    // Acceptance gate — an employee must accept a task before working on it.
+    if (session.user.role === "EMPLOYEE" && task.acceptanceStatus !== "ACCEPTED") {
+      return {
+        error:
+          task.acceptanceStatus === "DECLINED"
+            ? "You declined this task — a manager needs to reassign it."
+            : "Accept this task before updating its status.",
+      }
     }
 
     // Review gate — an employee cannot sign off their own filing. They submit

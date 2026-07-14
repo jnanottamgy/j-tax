@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { TaskStatusBadge } from "./task-status-badge"
+import { TaskStatusBadge, TaskAcceptanceBadge } from "./task-status-badge"
 import { TaskPriorityBadge } from "./task-priority-badge"
 import { DueDateBadge } from "./due-date-badge"
 import { cn } from "@/lib/utils"
@@ -28,6 +28,7 @@ interface Task {
   dueDate: Date | null
   completionDate: Date | null
   serviceType?: string | null
+  acceptanceStatus?: "PENDING" | "ACCEPTED" | "DECLINED"
   client: {
     id: string
     name: string
@@ -183,6 +184,7 @@ export function TaskTable({ tasks, onTaskClick, onEditTask, onDeleteTask }: Task
                 <TableCell>
                   <div className="flex items-center gap-1.5">
                     <TaskStatusBadge status={task.status} />
+                    {task.acceptanceStatus && <TaskAcceptanceBadge acceptance={task.acceptanceStatus} />}
                     {(task.blockedBy ?? []).some((d) => d.blocker.status !== "FILED_DONE") && (
                       <span
                         title={`Waiting on: ${(task.blockedBy ?? [])

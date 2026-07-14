@@ -678,3 +678,46 @@ export async function getTimesheetOptions(): Promise<TimesheetOptions> {
     })),
   }
 }
+
+export type ActiveTaskDays = {
+  id: string
+  title: string
+  clientName: string
+  status: string
+  acceptedAt: string | null
+}
+
+/**
+ * The caller's accepted, not-yet-completed tasks with their acceptance date, so
+ * the timesheet can show how many days they've been working each one.
+ */
+export async function getMyActiveTasks(): Promise<ActiveTaskDays[]> {
+  const session = await requireAuth()
+  const employee = await getMyEmployee(session.user.id)
+  if (!employee) return []
+
+  const tasks = await prisma.task.findMany({
+    where: {
+      assignedEmployeeId: employee.id,
+      acceptanceStatus: "ACCEPTED",
+      status: { not: "FILED_DONE" },
+      acceptedAt: { not: null },
+    },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      acceptedAt: true,
+      client: { select: { name: true } },
+    },
+    orderBy: { acceptedAt: "asc" },
+  })
+
+  return tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    clientName: t.client.name,
+    status: t.status,
+    acceptedAt: t.acceptedAt ? t.acceptedAt.toISOString() : null,
+  }))
+}
