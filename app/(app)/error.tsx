@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { AlertTriangle, RefreshCw, Home } from "lucide-react"
@@ -20,10 +20,12 @@ export default function StaffError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
-  const [ref, setRef] = useState<string>("")
-  useEffect(() => {
-    setRef(reportError(error, { source: "app-error-boundary", digest: error.digest }))
-  }, [error])
+  // Report once on mount via a lazy initialiser rather than setState-in-effect,
+  // which would cascade a second render on every error page. Next.js remounts
+  // this boundary per error, so one report per error still holds.
+  const [ref] = useState(() =>
+    reportError(error, { source: "app-error-boundary", digest: error.digest })
+  )
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center p-4">

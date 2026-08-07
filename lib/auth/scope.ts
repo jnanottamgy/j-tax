@@ -75,21 +75,72 @@ export async function getClientScopeWhere(
 
 /**
  * May this session act on this specific client's data?
- * PARTNER/MANAGER → always. EMPLOYEE → only if the client is assigned to them.
- * Use on every per-client mutation reachable by employees.
+ *
+ * Two independent checks, in order:
+ *  1. TENANT — the client must exist inside the caller's firm. `prisma.client`
+ *     is firm-scoped by the tenant extension, so a clientId belonging to
+ *     another firm resolves to null here and the answer is `false`. This runs
+ *     for EVERY role, including PARTNER/MANAGER: firm boundaries are not a
+ *     seniority question, and callers pass ids straight from the request.
+ *  2. ROW — EMPLOYEE additionally only reaches clients assigned to them.
+ *
+ * Use on every per-client read/mutation that takes a caller-supplied clientId.
  */
 export async function canAccessClientById(
   session: SessionInfo,
   clientId: string
 ): Promise<boolean> {
-  if (!isEmployee(session.user.role)) return true
-  const employeeId = await getLinkedEmployeeId(session.user.id)
-  if (!employeeId) return false
   const client = await prisma.client.findUnique({
     where: { id: clientId },
     select: { assignedEmployeeId: true },
   })
-  return client?.assignedEmployeeId === employeeId
+  if (!client) return false
+
+  if (!isEmployee(session.user.role)) return true
+
+  const employeeId = await getLinkedEmployeeId(session.user.id)
+  if (!employeeId) return false
+  return client.assignedEmployeeId === employeeId
+}
+
+/**
+ * Firm-boundary filter for CHILD tables that carry no `firmId` of their own
+ * (ClientCredential, ClientContact, ClientTeamMember, TaskComment, …).
+ *
+ * The tenant extension in lib/prisma.ts injects `firmId` only into the ~33
+ * top-level models that have the column. A child row fetched directly by its
+ * own id therefore bypasses tenancy entirely — so every such query must carry
+ * an explicit relational firm filter. Spread these into the `where`:
+ *
+ *   prisma.clientCredential.findFirst({
+ *     where: { id, ...clientFirmFilter(session) },
+ *   })
+ *
+ * Note `findFirst`, not `findUnique` — `findUnique` accepts only unique fields
+ * and will reject the relational condition.
+ */
+export function clientFirmFilter(session: SessionInfo): {
+  client: { firmId: string }
+} {
+  return { client: { firmId: requireFirmId(session) } }
+}
+
+/** Same, for children hanging off a Task (TaskComment, TaskAttachment, …). */
+export function taskFirmFilter(session: SessionInfo): {
+  task: { firmId: string }
+} {
+  return { task: { firmId: requireFirmId(session) } }
+}
+
+/**
+ * The caller's resolved tenant. `requireAuth` always sets this before any
+ * action body runs; a missing value means the guard was bypassed, which must
+ * fail closed rather than silently widen the query to every firm.
+ */
+function requireFirmId(session: SessionInfo): string {
+  const firmId = session.user.firmId
+  if (!firmId) throw new Error("Unauthorized: no tenant context")
+  return firmId
 }
 
 // ─── Legacy aliases ────────────────────────────────────────────────────────────

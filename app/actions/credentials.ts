@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { requirePartner, requirePartnerOrManager } from "@/lib/auth/guards"
+import { canAccessClientById, clientFirmFilter } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
 import { logActivity } from "@/lib/activity/logger"
 import { toUserError } from "@/lib/forms/errors"
@@ -62,10 +63,10 @@ export async function listClientCredentials(
   clientId: string
 ): Promise<{ credentials?: CredentialRow[]; error?: string }> {
   try {
-    await requirePartnerOrManager()
+    const session = await requirePartnerOrManager()
 
     const credentials = await prisma.clientCredential.findMany({
-      where: { clientId },
+      where: { clientId, ...clientFirmFilter(session) },
       select: {
         id: true,
         portal: true,
@@ -91,8 +92,8 @@ export async function revealCredentialPassword(
   try {
     const session = await requirePartnerOrManager()
 
-    const credential = await prisma.clientCredential.findUnique({
-      where: { id: credentialId },
+    const credential = await prisma.clientCredential.findFirst({
+      where: { id: credentialId, ...clientFirmFilter(session) },
       select: { id: true, clientId: true, portal: true, username: true, passwordEnc: true },
     })
     if (!credential) return { error: "Credential not found." }
@@ -138,9 +139,15 @@ export async function upsertCredential(
 
     const { clientId, id, portal, username, password, loginUrl, notes } = parsed.data
 
+    // The client is caller-supplied — confirm it belongs to this firm before
+    // reading or writing any credential hanging off it (covers the create path).
+    if (!(await canAccessClientById(session, clientId))) {
+      return { error: "Client not found." }
+    }
+
     if (id) {
-      const existing = await prisma.clientCredential.findUnique({
-        where: { id },
+      const existing = await prisma.clientCredential.findFirst({
+        where: { id, ...clientFirmFilter(session) },
         select: { id: true, clientId: true },
       })
       if (!existing || existing.clientId !== clientId) {
@@ -223,8 +230,8 @@ export async function deleteCredential(id: string): Promise<CredentialActionStat
   try {
     const session = await requirePartnerOrManager()
 
-    const credential = await prisma.clientCredential.findUnique({
-      where: { id },
+    const credential = await prisma.clientCredential.findFirst({
+      where: { id, ...clientFirmFilter(session) },
       select: { id: true, clientId: true, portal: true, username: true },
     })
     if (!credential) return { error: "Credential not found." }
@@ -268,10 +275,12 @@ export async function getCredentialAccessTrail(
   credentialId: string
 ): Promise<{ trail?: CredentialAccessTrailRow[]; error?: string }> {
   try {
-    await requirePartner()
+    const session = await requirePartner()
 
+    // Nested one level deeper than the other queries: the log's firm boundary
+    // runs through its credential's client.
     const logs = await prisma.credentialAccessLog.findMany({
-      where: { credentialId },
+      where: { credentialId, credential: clientFirmFilter(session) },
       orderBy: { createdAt: "desc" },
       take: 50,
     })

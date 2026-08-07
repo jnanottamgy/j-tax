@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache"
 
 import { requireAuth } from "@/lib/auth/guards"
-import { canAccessAssignedTask, getEmployeeScopeId } from "@/lib/auth/scope"
+import {
+  canAccessAssignedTask,
+  getEmployeeScopeId,
+  taskFirmFilter,
+} from "@/lib/auth/scope"
 import { toUserError } from "@/lib/forms/errors"
 import { prisma } from "@/lib/prisma"
 
@@ -112,8 +116,8 @@ export async function toggleChecklistItem(
   try {
     const session = await requireAuth()
 
-    const item = await prisma.taskChecklistItem.findUnique({
-      where: { id: itemId },
+    const item = await prisma.taskChecklistItem.findFirst({
+      where: { id: itemId, ...taskFirmFilter(session) },
       select: {
         id: true,
         task: { select: { assignedEmployeeId: true } },
@@ -148,8 +152,8 @@ export async function deleteChecklistItem(
   try {
     const session = await requireAuth()
 
-    const item = await prisma.taskChecklistItem.findUnique({
-      where: { id: itemId },
+    const item = await prisma.taskChecklistItem.findFirst({
+      where: { id: itemId, ...taskFirmFilter(session) },
       select: {
         id: true,
         task: { select: { assignedEmployeeId: true } },

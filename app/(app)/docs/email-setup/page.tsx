@@ -2,6 +2,8 @@ import { PageHeader } from "@/components/layout/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ShieldCheck, Globe, Mail, AlertTriangle } from "lucide-react"
 
+import { getFirmSettings } from "@/lib/firm-settings"
+
 export const metadata = {
   title: "Email Setup Guide — J-TACS",
 }
@@ -11,8 +13,19 @@ export const metadata = {
  * onboarding wizard email-config step. Explains the two send modes
  * (verified-domain direct vs platform fallback), DNS records, SPF/DKIM/DMARC,
  * and common troubleshooting.
+ *
+ * The worked examples render THIS firm's own name/address (falling back to
+ * neutral placeholders before Settings is filled in) — never another firm's,
+ * which is both confusing and a cross-tenant branding leak.
  */
-export default function EmailSetupGuidePage() {
+export default async function EmailSetupGuidePage() {
+  const firm = await getFirmSettings()
+
+  const firmName = firm.firmName || "Your Firm Name"
+  const fromEmail = firm.fromEmail || "office@yourfirm.com"
+  const firmDomain =
+    firm.firmDomain || fromEmail.split("@")[1] || "yourfirm.com"
+
   return (
     <div className="max-w-3xl space-y-6">
       <PageHeader
@@ -33,9 +46,9 @@ export default function EmailSetupGuidePage() {
               <ShieldCheck className="h-4 w-4" /> Mode A — Verified domain (direct)
             </p>
             <pre className="text-xs bg-black/30 rounded p-2 overflow-x-auto">
-{`From:     Tax Wise Consultants <office@taxwiseconsultants.com>
-Reply-To: office@taxwiseconsultants.com
-SPF / DKIM aligned with taxwiseconsultants.com — inbox placement maximized.`}
+{`From:     ${firmName} <${fromEmail}>
+Reply-To: ${fromEmail}
+SPF / DKIM aligned with ${firmDomain} — inbox placement maximized.`}
             </pre>
           </div>
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-1">
@@ -43,8 +56,8 @@ SPF / DKIM aligned with taxwiseconsultants.com — inbox placement maximized.`}
               <AlertTriangle className="h-4 w-4" /> Mode B — Platform fallback
             </p>
             <pre className="text-xs bg-black/30 rounded p-2 overflow-x-auto">
-{`From:     Tax Wise Consultants <notifications@<platform-domain>>
-Reply-To: office@taxwiseconsultants.com
+{`From:     ${firmName} <notifications@<platform-domain>>
+Reply-To: ${fromEmail}
 Envelope-From uses the platform's verified domain; firm branding still visible.`}
             </pre>
             <p className="text-xs">

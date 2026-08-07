@@ -2,6 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient } from "@prisma/client"
 import pg from "pg"
 import { config } from "dotenv"
+import { assertDestructiveAllowed } from "./guard-destructive"
 import { subDays, subHours, subMinutes } from "date-fns"
 
 // Load environment variables from .env file
@@ -17,6 +18,10 @@ const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
 async function main() {
+  // UNSCOPED deleteMany() below — this script uses a raw PrismaClient and
+  // has no tenant context, so it would wipe every firm. Gated deliberately.
+  assertDestructiveAllowed("seed-notifications")
+
   console.log("Starting notification seeding...")
 
   // Get existing users

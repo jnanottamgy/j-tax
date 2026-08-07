@@ -7,7 +7,7 @@ import {
   requireAuth,
   requirePartnerOrManager,
 } from "@/lib/auth/guards"
-import { canAccessClientById } from "@/lib/auth/scope"
+import { canAccessClientById, clientFirmFilter } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
 import { ENTITY_TYPES, TEAM_ROLES } from "@/lib/clients/master-data"
 import { toUserError } from "@/lib/forms/errors"
@@ -199,15 +199,15 @@ export async function updateContact(
   input: ContactInput
 ): Promise<MasterDataActionState> {
   try {
-    await requirePartnerOrManager()
+    const session = await requirePartnerOrManager()
 
     const parsed = contactSchema.safeParse(input)
     if (!parsed.success) {
       return { fieldErrors: parsed.error.flatten().fieldErrors }
     }
 
-    const existing = await prisma.clientContact.findUnique({
-      where: { id: contactId },
+    const existing = await prisma.clientContact.findFirst({
+      where: { id: contactId, ...clientFirmFilter(session) },
       select: { clientId: true },
     })
     if (!existing) return { error: "Contact not found." }
@@ -245,10 +245,10 @@ export async function deleteContact(
   contactId: string
 ): Promise<MasterDataActionState> {
   try {
-    await requirePartnerOrManager()
+    const session = await requirePartnerOrManager()
 
-    const existing = await prisma.clientContact.findUnique({
-      where: { id: contactId },
+    const existing = await prisma.clientContact.findFirst({
+      where: { id: contactId, ...clientFirmFilter(session) },
       select: { clientId: true },
     })
     if (!existing) return { error: "Contact not found." }
@@ -267,10 +267,10 @@ export async function setPrimaryContact(
   contactId: string
 ): Promise<MasterDataActionState> {
   try {
-    await requirePartnerOrManager()
+    const session = await requirePartnerOrManager()
 
-    const contact = await prisma.clientContact.findUnique({
-      where: { id: contactId },
+    const contact = await prisma.clientContact.findFirst({
+      where: { id: contactId, ...clientFirmFilter(session) },
       select: { clientId: true },
     })
     if (!contact) return { error: "Contact not found." }
@@ -564,7 +564,7 @@ export async function addTeamMember(
   role: TeamRole
 ): Promise<MasterDataActionState> {
   try {
-    await requirePartnerOrManager()
+    const session = await requirePartnerOrManager()
 
     if (!TEAM_ROLES.includes(role)) {
       return { error: "Invalid team role." }
@@ -572,6 +572,18 @@ export async function addTeamMember(
     if (!employeeId) {
       return { error: "Select an employee." }
     }
+
+    // Both ids arrive from the request. ClientTeamMember has no firmId of its
+    // own, so validate each side against this firm before joining them —
+    // otherwise a team row could straddle two tenants.
+    if (!(await canAccessClientById(session, clientId))) {
+      return { error: "Client not found." }
+    }
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true },
+    })
+    if (!employee) return { error: "Employee not found." }
 
     await prisma.clientTeamMember.create({
       data: { clientId, employeeId, role },
@@ -593,10 +605,10 @@ export async function removeTeamMember(
   id: string
 ): Promise<MasterDataActionState> {
   try {
-    await requirePartnerOrManager()
+    const session = await requirePartnerOrManager()
 
-    const existing = await prisma.clientTeamMember.findUnique({
-      where: { id },
+    const existing = await prisma.clientTeamMember.findFirst({
+      where: { id, ...clientFirmFilter(session) },
       select: { clientId: true },
     })
     if (!existing) return { error: "Team member not found." }

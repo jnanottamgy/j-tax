@@ -11,6 +11,7 @@ import {
 import {
   canAccessAssignedTask,
   getExecutiveEmployeeId,
+  taskFirmFilter,
 } from "@/lib/auth/scope"
 import type { FormActionState } from "@/lib/forms/types"
 import { prisma } from "@/lib/prisma"
@@ -736,8 +737,8 @@ export async function deleteComment(commentId: string): Promise<TaskActionState>
   try {
     const session = await requireAuth()
 
-    const comment = await prisma.taskComment.findUnique({
-      where: { id: commentId },
+    const comment = await prisma.taskComment.findFirst({
+      where: { id: commentId, ...taskFirmFilter(session) },
     })
 
     if (!comment) {
@@ -814,8 +815,8 @@ export async function deleteAttachment(attachmentId: string): Promise<TaskAction
   try {
     const session = await requireAuth()
 
-    const attachment = await prisma.taskAttachment.findUnique({
-      where: { id: attachmentId },
+    const attachment = await prisma.taskAttachment.findFirst({
+      where: { id: attachmentId, ...taskFirmFilter(session) },
     })
 
     if (!attachment) {

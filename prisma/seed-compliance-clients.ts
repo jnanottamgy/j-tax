@@ -2,6 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient } from "@prisma/client"
 import pg from "pg"
 import { config } from "dotenv"
+import { assertDestructiveAllowed } from "./guard-destructive"
 
 // Load environment variables from .env file
 config()
@@ -16,6 +17,10 @@ const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
 async function main() {
+  // UNSCOPED deleteMany() below — this script uses a raw PrismaClient and
+  // has no tenant context, so it would wipe every firm. Gated deliberately.
+  assertDestructiveAllowed("seed-compliance-clients")
+
   console.log("Starting compliance client seeding...")
 
   // Get existing employees for assignment

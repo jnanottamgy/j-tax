@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { prisma } from '../lib/prisma'
+import { assertDestructiveAllowed } from './guard-destructive'
 
 // Fake data generators
 const firstNames = ['Rajesh', 'Priya', 'Amit', 'Neha', 'Vikram', 'Anita', 'Rahul', 'Sneha', 'Deepak', 'Pooja', 'Suresh', 'Kavita', 'Arun', 'Meera', 'Vijay', 'Lakshmi', 'Sanjay', 'Rekha', 'Mukesh', 'Sunita']
@@ -64,6 +65,11 @@ function generateClientName(): string {
 }
 
 async function main() {
+  // Refuses to run in production, and requires an explicit opt-in elsewhere —
+  // the deleteMany() calls below are UNSCOPED (no tenant context in a script)
+  // and would otherwise wipe every firm on the connected database.
+  assertDestructiveAllowed('operational-seed')
+
   console.log('🌱 Starting operational seed...')
 
   // Clean existing data
