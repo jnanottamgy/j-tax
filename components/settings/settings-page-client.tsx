@@ -431,6 +431,45 @@ export function SettingsPageClient({
                 </div>
               </div>
 
+              <Separator className="bg-white/[0.06]" />
+
+              {/* Delegation limit. A ₹5,000 quotation already needed your
+                  approval; a ₹5,00,000 invoice needed none. */}
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-medium">Approval limit</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Invoices above this value can be drafted by a Manager but need your
+                    sign-off before they go out. They appear on your dashboard under
+                    &quot;Needs you&quot;.
+                  </p>
+                </div>
+                <div className="space-y-2 sm:max-w-xs">
+                  <Label htmlFor="invoiceApprovalLimit">
+                    Invoice value needing Partner approval (₹)
+                  </Label>
+                  <Input
+                    id="invoiceApprovalLimit"
+                    name="invoiceApprovalLimit"
+                    type="number"
+                    min="0"
+                    step="1000"
+                    inputMode="decimal"
+                    defaultValue={initialFirmSettings?.invoiceApprovalLimit ?? ""}
+                    placeholder="No limit"
+                    className="input-premium h-10 rounded-xl tabular-nums"
+                  />
+                  {firmState.fieldErrors?.invoiceApprovalLimit && (
+                    <p className="text-xs text-destructive">
+                      {firmState.fieldErrors.invoiceApprovalLimit[0]}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank for no limit. Your own invoices are never held.
+                  </p>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between gap-3 pt-2">
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <input

@@ -33,6 +33,7 @@ function makeConfig(overrides: Partial<FirmConfig> = {}): FirmConfig {
     bankIfsc: null,
     bankName: null,
     upiId: null,
+    invoiceApprovalLimit: null,
     logoUpdatedAt: null,
     logoFileName: null,
     ...overrides,

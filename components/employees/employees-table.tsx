@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, Mail, Calendar, KeyRound, MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { Building2, Mail, Calendar, KeyRound, MoreVertical, Pencil, Trash2, ArrowRightLeft } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +21,8 @@ type EmployeesTableProps = {
   onEdit: (employee: EmployeeListItem) => void
   onDelete: (employeeId: string) => void
   onDisable: (employeeId: string) => void
+  /** Move this person's open tasks and clients to someone else. */
+  onHandover: (employeeId: string) => void
   onEnable: (employeeId: string) => void
   onResetPassword: (employee: EmployeeListItem) => void
 }
@@ -31,6 +33,7 @@ export function EmployeesTable({
   onEdit,
   onDelete,
   onDisable,
+  onHandover,
   onEnable,
   onResetPassword,
 }: EmployeesTableProps) {
@@ -142,6 +145,14 @@ export function EmployeesTable({
                             Reset password
                           </DropdownMenuItem>
                         )}
+
+                        {/* Reachable on its own, not only as the consequence
+                            of a disable or a blocked delete — rebalancing a
+                            workload is an ordinary thing to want. */}
+                        <DropdownMenuItem onClick={() => onHandover(employee.id)}>
+                          <ArrowRightLeft className="h-4 w-4 mr-2" />
+                          Hand over work
+                        </DropdownMenuItem>
 
                         {employee.isActive ? (
                           <DropdownMenuItem onClick={() => onDisable(employee.id)}>

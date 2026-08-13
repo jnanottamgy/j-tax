@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Receipt,
   ShieldAlert,
+  ShieldCheck,
   Loader2,
   Plus,
   Pencil,
@@ -36,6 +37,7 @@ import {
   recordPayment,
   logFollowUp,
   updateInvoiceStatus,
+  approveInvoice,
 } from "@/app/actions/invoices"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
@@ -85,6 +87,9 @@ interface Invoice {
   igstAmount?: number | null
   remarks?: string | null
   revisionNumber?: number
+  /** Held over the firm's approval limit until a Partner signs it off. */
+  requiresApproval?: boolean
+  approvedAt?: Date | string | null
   revisedFrom?: { id: string; invoiceNumber: string; revisionNumber: number } | null
   revisions?: Array<{ id: string; invoiceNumber: string; revisionNumber: number; status: string }>
   // phone/whatsapp ride along from `include: { client: true }` — needed for the
@@ -113,11 +118,14 @@ export function InvoiceDetailClient({
   invoice: initial,
   firmState = null,
   firmName,
+  isPartner = false,
 }: {
   invoice: Invoice
   firmState?: string | null
   /** Signs off the WhatsApp payment-reminder draft. */
   firmName?: string
+  /** Only a Partner can release an invoice held over the approval limit. */
+  isPartner?: boolean
 }) {
   const router = useRouter()
   const [invoice, _setInvoice] = useState(initial)
@@ -126,6 +134,7 @@ export function InvoiceDetailClient({
   const [editOpen, setEditOpen] = useState(false)
   // Revised-invoice dialog (non-DRAFT invoices — the "edit after sent" path)
   const [reviseOpen, setReviseOpen] = useState(false)
+  const [approving, setApproving] = useState(false)
 
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -222,8 +231,53 @@ export function InvoiceDetailClient({
     invoice.status !== "WAIVED" &&
     invoice.status !== "DISPUTED"
 
+  const heldForApproval = Boolean(invoice.requiresApproval && !invoice.approvedAt)
+
+  async function handleApprove() {
+    setApproving(true)
+    try {
+      const result = await approveInvoice(invoice.id)
+      if (!result.success) {
+        toast.error(result.error ?? "Could not approve the invoice.")
+        return
+      }
+      toast.success("Approved — this invoice can now be issued.")
+      router.refresh()
+    } finally {
+      setApproving(false)
+    }
+  }
+
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">
+      {/* Approval gate. The invoice is fully editable while held — what it
+          cannot do is leave the firm. */}
+      {heldForApproval && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-400" />
+            <div>
+              <p className="text-sm font-medium">Held for Partner approval</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                {isPartner
+                  ? "This is over your firm's approval limit. Approve it and it can be issued."
+                  : "This is over the firm's approval limit. A Partner has to sign it off before it can be sent — it's on their dashboard."}
+              </p>
+            </div>
+          </div>
+          {isPartner && (
+            <Button onClick={handleApprove} disabled={approving} className="shrink-0 gap-2">
+              {approving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-4" />
+              )}
+              Approve invoice
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-center gap-4">
         <Button variant="outline" size="icon" asChild>

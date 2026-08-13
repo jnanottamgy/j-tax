@@ -153,9 +153,18 @@ export async function getWorkQueue(): Promise<WorkQueue[]> {
   }
 
   // ── Partner / Manager: what is waiting on me, or has stalled ──────────────
-  const [review, declined, unassigned, unaccepted] = await Promise.all([
+  const [review, declined, unassigned, unaccepted, orphaned, heldInvoices] = await Promise.all([
     prisma.task.findMany({
-      where: { status: "UNDER_REVIEW" },
+      where: {
+        status: "UNDER_REVIEW",
+        // Separation of duties: a Manager cannot sign off work assigned to
+        // themselves, so listing it under "Awaiting your review" would offer an
+        // action they are blocked from taking. It sits in the Partner's queue
+        // instead, which is where it actually needs to go.
+        ...(role === "MANAGER" && employeeId
+          ? { assignedEmployeeId: { not: employeeId } }
+          : {}),
+      },
       select: taskSelect,
       orderBy: { updatedAt: "asc" },
       take: MAX_PER_QUEUE,
@@ -185,6 +194,42 @@ export async function getWorkQueue(): Promise<WorkQueue[]> {
       orderBy: { createdAt: "asc" },
       take: MAX_PER_QUEUE,
     }),
+    // Assigned to someone who can no longer log in. Disabling a team member
+    // locked their account but left their work on it — and because the work IS
+    // assigned, the "Nobody assigned" queue never caught it, so it went quiet
+    // rather than becoming somebody's problem.
+    prisma.task.findMany({
+      where: {
+        status: { notIn: ["FILED_DONE"] },
+        assignedEmployee: { isActive: false },
+      },
+      select: taskSelect,
+      orderBy: { dueDate: "asc" },
+      take: MAX_PER_QUEUE,
+    }),
+    // Money that cannot leave the firm until a Partner signs it off.
+    prisma.invoice
+      .findMany({
+        where: { requiresApproval: true, approvedAt: null, deletedAt: null },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          amount: true,
+          serviceDescription: true,
+          client: { select: { name: true } },
+        },
+        orderBy: { createdAt: "asc" },
+        take: MAX_PER_QUEUE,
+      })
+      .then((rows) =>
+        rows.map((r) => ({
+          id: r.id,
+          invoiceNumber: r.invoiceNumber,
+          amount: Number(r.amount),
+          serviceDescription: r.serviceDescription,
+          clientName: r.client?.name ?? "Unknown client",
+        }))
+      ),
   ])
 
   const managerQueues: WorkQueue[] = [
@@ -230,6 +275,30 @@ export async function getWorkQueue(): Promise<WorkQueue[]> {
       tone: "urgent",
       items: unassigned.map((t) => item(t, overdueLabel(t.dueDate))),
       total: unassigned.length,
+    },
+    {
+      key: "orphaned",
+      label: "Owner has been deactivated",
+      emptyText: "No work is stranded on a disabled account.",
+      tone: "urgent",
+      items: orphaned.map((t) =>
+        item(t, `${t.assignedEmployee?.name ?? "—"} · no longer active`)
+      ),
+      total: orphaned.length,
+    },
+    {
+      key: "invoice-approval",
+      label: role === "PARTNER" ? "Invoices needing your approval" : "Invoices held for approval",
+      emptyText: "No invoices are waiting on a signature.",
+      tone: "attention",
+      items: heldInvoices.map((inv) => ({
+        id: inv.id,
+        title: `${inv.invoiceNumber} · ₹${inv.amount.toLocaleString("en-IN")}`,
+        subtitle: inv.clientName,
+        meta: inv.serviceDescription,
+        href: `/payments/invoices/${inv.id}`,
+      })),
+      total: heldInvoices.length,
     },
   ]
   return managerQueues.filter((q) => q.items.length > 0 || q.key === "review")

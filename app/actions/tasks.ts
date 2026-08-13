@@ -14,6 +14,7 @@ import {
   taskFirmFilter,
 } from "@/lib/auth/scope"
 import type { FormActionState } from "@/lib/forms/types"
+import { canSignOffTask } from "@/lib/auth/delegation"
 import { prisma } from "@/lib/prisma"
 import { notifyRoles, notifyUser } from "@/lib/notifications/notify"
 import { parseCreateTaskFormData, taskBaseSchema } from "@/lib/validations/task"
@@ -436,13 +437,15 @@ export async function updateTaskStatus(
       }
     }
 
-    // Review gate — an employee cannot sign off their own filing. They submit
-    // work as UNDER_REVIEW; a Manager/Partner moves it to FILED_DONE.
-    if (status === "FILED_DONE" && session.user.role === "EMPLOYEE") {
-      return {
-        error:
-          'Submit it as "Under Review" instead — a Manager or Partner signs off Filed/Done.',
-      }
+    // Review gate + separation of duties. Nobody signs off their own filing —
+    // see lib/auth/delegation.ts for why a Partner is the one exception.
+    if (status === "FILED_DONE") {
+      const verdict = canSignOffTask({
+        role: session.user.role,
+        actorEmployeeId: executiveEmployeeId,
+        assignedEmployeeId: task.assignedEmployeeId,
+      })
+      if (!verdict.allowed) return { error: verdict.reason }
     }
 
     // Dependency guard — a task with open blockers cannot move forward.

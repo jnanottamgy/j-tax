@@ -97,6 +97,13 @@ model FirmSettings {
   bankName          String?
   upiId             String?
 
+  // ── Delegation limits ─────────────────────────────────────────────────────
+  /// Invoice value (incl. GST) above which a Manager needs a Partner to sign
+  /// off before it can leave the firm. Null = no limit, which is where every
+  /// firm started: a ₹5,000 quotation needed Partner approval while a
+  /// ₹5,00,000 invoice needed none.
+  invoiceApprovalLimit Decimal? @db.Decimal(12, 2)
+
   // ── Letterhead ────────────────────────────────────────────────────────────
   /// Base64-encoded logo bytes, stored inline rather than in object storage.
   /// It is one small downscaled image per firm, and pdfkit needs the bytes in
@@ -861,6 +868,15 @@ model Invoice {
   revisionNumber     Int           @default(0)
   /// The task this invoice was auto-created from (task→invoice workflow).
   sourceTaskId       String?
+
+  // ── Approval ──────────────────────────────────────────────────────────────
+  /// Set at creation when the raiser was a Manager and the value exceeded the
+  /// firm's limit. Frozen at that moment on purpose — changing the limit later
+  /// must not retroactively release invoices that were already gated, nor gate
+  /// ones that have already gone out.
+  requiresApproval   Boolean      @default(false)
+  approvedBy         String?
+  approvedAt         DateTime?
   /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
   deletedAt          DateTime?
   createdAt         DateTime      @default(now())

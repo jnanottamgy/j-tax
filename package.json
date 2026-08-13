@@ -7,7 +7,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test -r dotenv/config tests/firm-settings.test.ts tests/roles.test.ts tests/tenant-isolation.test.ts tests/resend-domains.test.ts tests/whatsapp-link.test.ts tests/quotation-to-client.test.ts tests/validations.test.ts tests/statutory-calendar.test.ts tests/india.test.ts tests/csv.test.ts tests/gst-recon.test.ts tests/itr.test.ts tests/accounts.test.ts tests/service-label.test.ts",
+    "test": "tsx --test -r dotenv/config \"tests/**/*.test.ts\"",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",

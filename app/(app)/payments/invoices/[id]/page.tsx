@@ -71,6 +71,7 @@ export default async function InvoiceDetailPage({
       invoice={serialized}
       firmState={firmState}
       firmName={firmSettings.firmName}
+      isPartner={session.user.role === "PARTNER"}
     />
   )
 }

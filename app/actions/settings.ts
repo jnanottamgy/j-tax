@@ -213,6 +213,14 @@ const firmSettingsSchema = z.object({
   bankAccountNumber: z.string().max(30).optional().or(z.literal("")),
   bankIfsc: z.string().max(11).optional().or(z.literal("")),
   upiId: z.string().max(100).optional().or(z.literal("")),
+  // Blank = no limit. Coerced from the form string; a non-numeric entry
+  // fails validation rather than silently becoming "no limit".
+  invoiceApprovalLimit: z
+    .string()
+    .optional()
+    .refine((v) => !v?.trim() || (!Number.isNaN(Number(v)) && Number(v) >= 0), {
+      message: "Enter an amount in rupees, or leave blank for no limit.",
+    }),
 })
 
 export type FirmSettingsActionState = FormActionState
@@ -251,6 +259,7 @@ export async function saveFirmSettings(
       bankAccountNumber: formData.get("bankAccountNumber") || undefined,
       bankIfsc: formData.get("bankIfsc") || undefined,
       upiId: formData.get("upiId") || undefined,
+      invoiceApprovalLimit: formData.get("invoiceApprovalLimit") || undefined,
     }
 
     const parsed = firmSettingsSchema.safeParse(raw)
@@ -292,6 +301,9 @@ export async function saveFirmSettings(
         bankAccountNumber: parsed.data.bankAccountNumber || null,
         bankIfsc: parsed.data.bankIfsc || null,
         upiId: parsed.data.upiId || null,
+        invoiceApprovalLimit: parsed.data.invoiceApprovalLimit?.trim()
+          ? Number(parsed.data.invoiceApprovalLimit)
+          : null,
       },
       session.user.id
     )

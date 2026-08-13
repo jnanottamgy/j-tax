@@ -9,6 +9,7 @@ import { EmployeesTable } from "@/components/employees/employees-table"
 import { PageHeader } from "@/components/layout/page-header"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { HandoverDialog } from "@/components/employees/handover-dialog"
 import {
   Dialog,
   DialogContent,
@@ -93,6 +94,10 @@ export function EmployeesPageClient({
     employeeId: string
   } | null>(null)
 
+  // Whose work is being handed over. Opened both deliberately and as the
+  // follow-through after a disable or a blocked delete.
+  const [handoverFor, setHandoverFor] = useState<string | null>(null)
+
   // Password reset: confirm target, then reveal the one-time temp password.
   const [resetTarget, setResetTarget] = useState<EmployeeListItem | null>(null)
   const [resetResult, setResetResult] = useState<{ email: string; tempPassword: string } | null>(null)
@@ -139,19 +144,40 @@ export function EmployeesPageClient({
       action.kind === "delete"
         ? await deleteEmployee(action.employeeId)
         : await disableEmployee(action.employeeId)
+
     if (result.success) {
-      toast.success(
-        action.kind === "delete"
-          ? "Employee deleted successfully"
-          : "Employee disabled — their login is now blocked"
-      )
+      const stranded = "stranded" in result ? result.stranded : null
+      if (stranded && (stranded.openTasks > 0 || stranded.clients > 0)) {
+        // Access is cut, but the work is still sitting on a locked account.
+        // Open the handover straight away rather than leaving it to be noticed
+        // later — this is the moment the person doing it has the context.
+        toast.warning(
+          `Login blocked. ${stranded.openTasks} open task${stranded.openTasks === 1 ? "" : "s"} and ${stranded.clients} client${stranded.clients === 1 ? "" : "s"} still need an owner.`
+        )
+        setHandoverFor(action.employeeId)
+      } else {
+        toast.success(
+          action.kind === "delete"
+            ? "Employee deleted successfully"
+            : "Employee disabled — their login is now blocked"
+        )
+      }
       fetchEmployees()
-    } else {
-      toast.error(
-        result.error ||
-          (action.kind === "delete" ? "Failed to delete employee" : "Failed to disable employee")
-      )
+      return
     }
+
+    // Deletion is blocked while they hold live work. Offer the tool that
+    // unblocks it instead of just reporting the obstacle.
+    if ("needsHandover" in result && result.needsHandover) {
+      toast.error(result.error ?? "This team member still holds live work.")
+      setHandoverFor(result.needsHandover.employeeId)
+      return
+    }
+
+    toast.error(
+      result.error ||
+        (action.kind === "delete" ? "Failed to delete employee" : "Failed to disable employee")
+    )
   }
 
   const handleEnableEmployee = async (employeeId: string) => {
@@ -294,6 +320,7 @@ export function EmployeesPageClient({
         onEdit={handleEditClick}
         onDelete={handleDeleteEmployee}
         onDisable={handleDisableEmployee}
+        onHandover={(employeeId) => setHandoverFor(employeeId)}
         onEnable={handleEnableEmployee}
         onResetPassword={handleResetPassword}
       />
@@ -423,6 +450,22 @@ export function EmployeesPageClient({
           </div>
         </DialogContent>
       </Dialog>
+
+      <HandoverDialog
+        employeeId={handoverFor}
+        open={handoverFor !== null}
+        onOpenChange={(open) => !open && setHandoverFor(null)}
+        onDone={({ tasks, clients }) => {
+          const parts = [
+            tasks > 0 && `${tasks} task${tasks === 1 ? "" : "s"}`,
+            clients > 0 && `${clients} client${clients === 1 ? "" : "s"}`,
+          ].filter(Boolean)
+          toast.success(
+            parts.length ? `Handed over ${parts.join(" and ")}.` : "Nothing needed moving."
+          )
+          fetchEmployees()
+        }}
+      />
     </>
   )
 }

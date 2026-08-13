@@ -42,6 +42,12 @@ export type FirmConfig = {
   bankIfsc: string | null
   bankName: string | null
   upiId: string | null
+  // ── Delegation limits ────────────────────────────────────────────────────
+  /**
+   * Invoice value (incl. GST) above which a Manager needs Partner sign-off.
+   * Null = no limit.
+   */
+  invoiceApprovalLimit: number | null
   // ── Letterhead ───────────────────────────────────────────────────────────
   /** Set iff a logo is stored. Doubles as the cache-buster for /api/firm/logo. */
   logoUpdatedAt: Date | null
@@ -69,6 +75,7 @@ const ENV_DEFAULTS: FirmConfig = {
   bankIfsc: null,
   bankName: null,
   upiId: null,
+  invoiceApprovalLimit: null,
   logoUpdatedAt: null,
   logoFileName: null,
 }
@@ -102,6 +109,7 @@ const FIRM_CONFIG_SELECT = {
   bankIfsc: true,
   bankName: true,
   upiId: true,
+  invoiceApprovalLimit: true,
   logoUpdatedAt: true,
   logoFileName: true,
 } as const
@@ -192,6 +200,8 @@ export async function getFirmSettingsForFirm(
       bankIfsc: row.bankIfsc || null,
       bankName: row.bankName || null,
       upiId: row.upiId || null,
+      invoiceApprovalLimit:
+        row.invoiceApprovalLimit != null ? Number(row.invoiceApprovalLimit) : null,
       logoUpdatedAt: row.logoUpdatedAt ?? null,
       logoFileName: row.logoFileName || null,
     }
@@ -343,6 +353,7 @@ export async function upsertFirmSettings(
       bankIfsc: data.bankIfsc ?? null,
       bankName: data.bankName ?? null,
       upiId: data.upiId ?? null,
+      invoiceApprovalLimit: data.invoiceApprovalLimit ?? null,
       updatedBy,
     },
     select: FIRM_CONFIG_SELECT,
@@ -369,6 +380,8 @@ export async function upsertFirmSettings(
     bankIfsc: row.bankIfsc,
     bankName: row.bankName,
     upiId: row.upiId,
+    invoiceApprovalLimit:
+      row.invoiceApprovalLimit != null ? Number(row.invoiceApprovalLimit) : null,
     logoUpdatedAt: row.logoUpdatedAt,
     logoFileName: row.logoFileName,
   }

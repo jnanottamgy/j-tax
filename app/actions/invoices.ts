@@ -18,6 +18,8 @@ import {
 
 import { requireAuth, requirePartner, requirePartnerOrManager } from "@/lib/auth/guards"
 import { clientFirmFilter } from "@/lib/auth/scope"
+import { invoiceNeedsApproval } from "@/lib/auth/delegation"
+import type { AppRole } from "@/lib/auth/types"
 import { toUserError } from "@/lib/forms/errors"
 import { serviceLabel } from "@/lib/clients/constants"
 
@@ -89,6 +91,96 @@ async function resolveGstFields(
     sgstAmount: hasSplit && split.igst === 0 ? split.sgst : null,
     igstAmount: hasSplit && split.igst > 0 ? split.igst : null,
   }
+}
+
+/**
+ * Does this invoice need a Partner to sign it off before it can be issued?
+ *
+ * A Partner is the approving authority, so their own invoices are never gated.
+ * The decision is frozen onto the invoice at creation: raising or lowering the
+ * limit afterwards must not retroactively release invoices that were held, nor
+ * gate ones that already went out.
+ */
+async function resolveApprovalGate(
+  role: string,
+  totalAmount: number
+): Promise<{ requiresApproval: boolean; blocked: false } | { blocked: true; error: string }> {
+  if (role === "PARTNER") return { requiresApproval: false, blocked: false }
+
+  const cfg = await getFirmSettings()
+  return {
+    requiresApproval: invoiceNeedsApproval({
+      role: role as AppRole,
+      totalAmount,
+      limit: cfg.invoiceApprovalLimit,
+    }),
+    blocked: false,
+  }
+}
+
+/** Invoices raised by a Manager over the limit, waiting on a Partner. */
+export async function getInvoicesAwaitingApproval() {
+  await requirePartnerOrManager()
+
+  const invoices = await prisma.invoice.findMany({
+    where: { requiresApproval: true, approvedAt: null, deletedAt: null },
+    select: {
+      id: true,
+      invoiceNumber: true,
+      amount: true,
+      serviceDescription: true,
+      createdAt: true,
+      client: { select: { name: true } },
+    },
+    orderBy: { createdAt: "asc" },
+    take: 25,
+  })
+
+  return invoices.map((i) => ({
+    id: i.id,
+    invoiceNumber: i.invoiceNumber,
+    amount: Number(i.amount),
+    serviceDescription: i.serviceDescription,
+    clientName: i.client?.name ?? "Unknown client",
+    createdAt: i.createdAt.toISOString(),
+  }))
+}
+
+/** Release a held invoice. PARTNER only — that is the whole point of the gate. */
+export async function approveInvoice(
+  invoiceId: string
+): Promise<{ success: boolean; error?: string }> {
+  let session
+  try {
+    session = await requirePartner()
+  } catch {
+    return { success: false, error: "Only a Partner can approve an invoice." }
+  }
+
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    select: { id: true, invoiceNumber: true, approvedAt: true, clientId: true },
+  })
+  if (!invoice) return { success: false, error: "Invoice not found." }
+  if (invoice.approvedAt) return { success: true }
+
+  await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: { approvedBy: session.user.id, approvedAt: new Date() },
+  })
+
+  await recordTimelineEvent({
+    clientId: invoice.clientId,
+    eventType: "INVOICE_CREATED",
+    title: `Invoice ${invoice.invoiceNumber} approved`,
+    description: `${session.user.name} approved it for issue.`,
+    performedBy: session.user.id,
+  }).catch(() => { /* approval already applied */ })
+
+  revalidatePath("/payments/invoices")
+  revalidatePath("/payments")
+  revalidatePath("/")
+  return { success: true }
 }
 
 export async function getInvoicesData() {
@@ -166,6 +258,12 @@ export async function createInvoice(
   const sourceTaskRaw = formData.get("sourceTaskId")
   const sourceTaskId = typeof sourceTaskRaw === "string" && sourceTaskRaw ? sourceTaskRaw : null
 
+  // Delegation limit. A ₹5,000 quotation needed Partner approval while a
+  // ₹5,00,000 invoice needed none — the money leaving the firm was the one
+  // thing with no ceiling on it.
+  const gate = await resolveApprovalGate(session.user.role, totalAmount)
+  if (gate.blocked) return { error: gate.error }
+
   try {
     // GST tax-invoice fields: recipient GSTIN snapshot, place of supply, and
     // the CGST/SGST vs IGST split derived from taxAmount.
@@ -196,7 +294,10 @@ export async function createInvoice(
             remarks: data.remarks?.trim() ? data.remarks : null,
             issueDate: new Date(data.issueDate),
             dueDate: new Date(data.dueDate),
-            status: data.status as any,
+            // An invoice over the limit is held as a DRAFT whatever the form
+            // asked for — issuing it is exactly what needs the sign-off.
+            status: (gate.requiresApproval ? "DRAFT" : data.status) as any,
+            requiresApproval: gate.requiresApproval,
             outstandingAmount: totalAmount,
             paidAmount: 0,
           },
@@ -521,6 +622,16 @@ export async function updateInvoiceStatus(
     })
     if (!invoice) return { error: "Invoice not found." }
 
+    // The gate bites here: a held invoice can be edited and deleted, but it
+    // cannot leave the firm. DRAFT stays allowed so the raiser can keep working
+    // on it while the Partner looks.
+    if (invoice.requiresApproval && !invoice.approvedAt && status !== "DRAFT") {
+      return {
+        error:
+          "This invoice is over the firm's approval limit and is waiting on a Partner. It can't be issued until it's approved.",
+      }
+    }
+
     await prisma.invoice.update({
       where: { id: invoiceId },
       data: { status },
@@ -588,6 +699,9 @@ export async function createRevisedInvoice(
   const taxAmount = Math.round(professionalFee * taxRate) / 100
   const totalAmount = professionalFee + taxAmount
 
+  const revisionGate = await resolveApprovalGate(session.user.role, totalAmount)
+  if (revisionGate.blocked) return { error: revisionGate.error }
+
   try {
     // Same client as the original; place-of-supply may be re-derived.
     const gst = await resolveGstFields(original.clientId, data.placeOfSupply, taxAmount)
@@ -619,6 +733,10 @@ export async function createRevisedInvoice(
             issueDate: new Date(data.issueDate),
             dueDate: new Date(data.dueDate),
             status: "DRAFT",
+            // A revision is a fresh commercial decision at a fresh number, so
+            // it faces the limit on its own terms — revising upward must not be
+            // a way to slip past the approval the original would have needed.
+            requiresApproval: revisionGate.requiresApproval,
             outstandingAmount: totalAmount,
             paidAmount: 0,
           },
