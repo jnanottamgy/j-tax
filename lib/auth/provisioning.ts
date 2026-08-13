@@ -102,17 +102,55 @@ export async function provisionStaffAccount(opts: {
   if (error) {
     const msg = error.message.toLowerCase()
     if (msg.includes("already") && (msg.includes("registered") || msg.includes("exists"))) {
-      // A login already exists — link, don't clobber.
-      const existing = await prisma.user.findUnique({
+      // Supabase auth emails are global across the whole platform, so "already
+      // registered" means one of two very different things. Getting this wrong
+      // is why new hires ended up with no credentials and no email: the old
+      // code returned success with a null password either way.
+      //
+      // prisma.user is firm-scoped, so this resolves ONLY if the account
+      // belongs to the caller's own firm.
+      const mine = await prisma.user.findUnique({
         where: { email },
         select: { id: true },
       })
+
+      if (!mine) {
+        // The address is in use by a DIFFERENT organisation on the platform.
+        // Creating the Employee anyway would leave a staff record that can
+        // never log in, so refuse and say why.
+        return {
+          ok: false,
+          error:
+            "That email is already registered to another organisation on this platform. Use a different address for this team member.",
+        }
+      }
+
+      // Same firm — the person already has a login (re-added, or previously
+      // provisioned). Issue a fresh temporary password and send the invite, so
+      // they actually receive working credentials instead of silence.
+      const reset = await resetStaffPassword(mine.id)
+      if (!reset.ok) {
+        return { ok: false, error: reset.error }
+      }
+      await admin.auth.admin.updateUserById(mine.id, {
+        user_metadata: { name, role, must_change_password: true },
+      })
+      await prisma.user.update({ where: { id: mine.id }, data: { name, role } }).catch(() => {})
+
+      const invite = await sendInviteEmail({
+        name,
+        email,
+        role,
+        tempPassword: reset.tempPassword,
+      })
+
       return {
         ok: true,
-        userId: existing?.id ?? null,
-        tempPassword: null,
-        emailSent: false,
-        alreadyExisted: true,
+        userId: mine.id,
+        tempPassword: reset.tempPassword,
+        emailSent: invite.sent,
+        ...(invite.error ? { emailError: invite.error } : {}),
+        alreadyExisted: false,
       }
     }
     console.error("[provisioning] createUser failed:", error.message)

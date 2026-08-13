@@ -51,7 +51,12 @@ export async function requireAuth(context?: GuardContext) {
   // by design — they are what establish the scope.
   let userRow = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { firmId: true },
+    select: {
+      firmId: true,
+      // Subscription state rides along on the lookup that already runs, so
+      // enforcement costs no extra query.
+      firm: { select: { status: true } },
+    },
   })
 
   // Client-portal users can sign in before a mirror row exists: adopt them
@@ -71,13 +76,25 @@ export async function requireAuth(context?: GuardContext) {
           role: "CLIENT",
           firmId: matches[0].firmId,
         },
-        select: { firmId: true },
+        select: { firmId: true, firm: { select: { status: true } } },
       })
     }
   }
 
   if (!userRow?.firmId) {
     throw new Error("Unauthorized: account is not linked to a firm")
+  }
+
+  // ── Subscription gate ──────────────────────────────────────────────────────
+  // The kill switch for a paid tenancy. Every route, server action and API call
+  // funnels through requireAuth, so setting a firm's status to SUSPENDED locks
+  // that whole firm out immediately — without touching anyone else's data.
+  //
+  // Deliberately explicit: only an operator setting SUSPENDED triggers this.
+  // Trial expiry is NOT auto-enforced, because a date-based cut-off would lock
+  // out a paying customer the moment their trial field lapsed.
+  if (userRow.firm?.status === "SUSPENDED") {
+    throw new Error("FirmSuspended")
   }
 
   session.user.firmId = userRow.firmId

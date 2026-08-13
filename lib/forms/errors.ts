@@ -12,6 +12,8 @@ export function toUserError(error: unknown): string {
   if (msg.includes("Record to update not found") || msg.includes("P2025"))
     return "The record no longer exists."
   if (msg === "Unauthorized") return "You must be signed in to perform this action."
+  if (msg === "FirmSuspended")
+    return "This workspace is suspended. Please contact your provider to reactivate it."
   if (msg.startsWith("Forbidden")) return "You do not have permission to perform this action."
   if (msg.includes("connect") || msg.includes("ECONNREFUSED"))
     return "Service temporarily unavailable. Please try again."

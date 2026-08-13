@@ -163,6 +163,22 @@ export async function archiveAllNotifications() {
 }
 
 // Notification creation helpers with RBAC
+/**
+ * Is this user inside the caller's firm?
+ *
+ * prisma.user is firm-scoped by the tenant extension, so an id belonging to
+ * another firm simply does not resolve. Notifications carry no firmId of their
+ * own, so every write that names a recipient must pass through here.
+ */
+async function isRecipientInFirm(userId: string): Promise<boolean> {
+  if (!userId) return false
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  })
+  return Boolean(user)
+}
+
 export async function createNotification(data: {
   userId: string
   title: string
@@ -178,6 +194,14 @@ export async function createNotification(data: {
   // compliance alerts, payment received, etc.). EMPLOYEE can only self-notify.
   if (session.user.role === "EMPLOYEE" && data.userId !== session.user.id) {
     return { success: false, error: "You can only create notifications for yourself" }
+  }
+
+  // Notification has no firmId of its own, so the tenant extension cannot scope
+  // this create. Without an explicit check a Partner could push a message —
+  // and any link inside it — into another firm's staff inbox. prisma.user is
+  // firm-scoped, so a recipient outside this firm resolves to null.
+  if (!(await isRecipientInFirm(data.userId))) {
+    return { success: false, error: "Recipient not found in your organisation." }
   }
 
   const notification = await prisma.notification.create({
@@ -212,8 +236,20 @@ export async function createNotifications(data: Array<{
     return { success: false, error: "Unauthorized" }
   }
 
+  // Same firm-boundary check as the single-recipient path, applied to every
+  // distinct recipient before anything is written.
+  const recipients = Array.from(new Set(data.map((d) => d.userId)))
+  const allowed = new Set<string>()
+  for (const id of recipients) {
+    if (await isRecipientInFirm(id)) allowed.add(id)
+  }
+  const scoped = data.filter((d) => allowed.has(d.userId))
+  if (scoped.length === 0) {
+    return { success: false, error: "No valid recipients in your organisation." }
+  }
+
   const notifications = await prisma.notification.createMany({
-    data: data.map(d => ({
+    data: scoped.map(d => ({
       userId: d.userId,
       title: d.title,
       message: d.message,
