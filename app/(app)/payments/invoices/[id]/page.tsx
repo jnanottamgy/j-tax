@@ -66,5 +66,11 @@ export default async function InvoiceDetailPage({
     })),
   }
 
-  return <InvoiceDetailClient invoice={serialized} firmState={firmState} />
+  return (
+    <InvoiceDetailClient
+      invoice={serialized}
+      firmState={firmState}
+      firmName={firmSettings.firmName}
+    />
+  )
 }

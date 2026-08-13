@@ -19,6 +19,7 @@ import { renderPlainTextEmail } from "@/lib/messaging/email-html"
 import { isWhatsAppConfigured } from "@/lib/messaging/whatsapp-api"
 import { getFirmSettings } from "@/lib/firm-settings"
 import { messageSchema, templateSchema } from "@/lib/validations/message"
+import { resolveWhatsAppNumber } from "@/lib/messaging/whatsapp-link"
 
 export type MessageActionState = FormActionState
 
@@ -671,5 +672,85 @@ export async function updateMessageStatus(
       return { error: toUserError(error) }
     }
     return { error: "Failed to update message status. Please try again." }
+  }
+}
+
+// ─── WhatsApp via click-to-chat link ─────────────────────────────────────────
+
+/**
+ * Record that a WhatsApp message was handed off to the user's own WhatsApp.
+ *
+ * We do not send WhatsApp ourselves — the UI opens a wa.me link with the draft
+ * ready and the user presses send from their own account. That means we cannot
+ * claim delivery, so the row is logged as SENT-by-handoff with the channel
+ * recorded in metadata, keeping the client's message history complete without
+ * overstating what we know.
+ *
+ * Returns the normalised number so the caller can confirm which chat opened.
+ */
+export async function logWhatsAppHandoff(input: {
+  clientId: string
+  content: string
+  templateId?: string | null
+}): Promise<{ success: boolean; number?: string; error?: string }> {
+  try {
+    const session = await requireAuth()
+    const executiveEmployeeId = await getExecutiveEmployeeId(session)
+
+    const content = input.content?.trim()
+    if (!content) return { success: false, error: "Message is empty." }
+
+    const client = await prisma.client.findUnique({
+      where: { id: input.clientId },
+      select: {
+        id: true,
+        assignedEmployeeId: true,
+        whatsapp: true,
+        phone: true,
+        phoneNumber: true,
+      },
+    })
+    if (!client) return { success: false, error: "Client not found." }
+    if (!canAccessAssignedClient(session, executiveEmployeeId, client.assignedEmployeeId)) {
+      return { success: false, error: "You can only message clients assigned to you." }
+    }
+
+    const number = resolveWhatsAppNumber(client)
+    if (!number) {
+      return {
+        success: false,
+        error: "This client has no valid mobile number on file.",
+      }
+    }
+
+    const message = await prisma.message.create({
+      data: {
+        clientId: client.id,
+        phoneNumber: number,
+        templateId: input.templateId || null,
+        content,
+        // Handed to the user's WhatsApp — we know it left our hands, not that
+        // it reached the client.
+        status: "SENT",
+        sentAt: new Date(),
+        sentBy: session.user.id,
+        metadata: { provider: "WHATSAPP", via: "wa_link" },
+      },
+    })
+
+    await prisma.messageLog.create({
+      data: {
+        messageId: message.id,
+        status: "SENT",
+        details: { action: "handoff", provider: "WHATSAPP", via: "wa_link" },
+      },
+    })
+
+    revalidatePath("/messaging")
+    revalidatePath(`/clients/${client.id}`)
+
+    return { success: true, number }
+  } catch (error) {
+    return { success: false, error: toUserError(error) }
   }
 }

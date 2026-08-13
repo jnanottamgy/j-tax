@@ -28,8 +28,10 @@ import {
   updateTemplate,
   deleteTemplate,
   sendBulkReminders,
+  logWhatsAppHandoff,
 } from "@/app/actions/messages"
 import type { MessageChannel } from "@/app/actions/messages"
+import { buildWhatsAppUrl, resolveWhatsAppNumber } from "@/lib/messaging/whatsapp-link"
 import { toast } from "sonner"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
@@ -158,14 +160,15 @@ export function MessagingDashboardClient() {
     })
   }
 
-  // When a template is selected, pre-fill the content
-  const handleTemplateSelect = (templateId: string) => {
-    setSendTemplateId(templateId)
-    const tpl = templates.find((t) => t.id === templateId)
-    if (tpl) setSendContent(tpl.content)
-  }
 
   const handleBulkSend = async () => {
+    // WhatsApp leaves from the user's own account one chat at a time, so there
+    // is no unattended bulk path. Blocked here as well as in the UI so the
+    // action can never be reached by a stale channel selection.
+    if (bulkChannel === "WHATSAPP") {
+      toast.error("Bulk sending isn't available on WhatsApp. Use Email, or message clients individually.")
+      return
+    }
     if (!bulkTemplateId) {
       toast.error("Choose a template first.")
       return
@@ -204,6 +207,43 @@ export function MessagingDashboardClient() {
   const canModify = user?.role === "PARTNER" || user?.role === "MANAGER"
 
   const selectedClient = clients.find((c) => c.id === sendClientId)
+
+  // WhatsApp goes out from the user's own account via a click-to-chat link
+  // rather than the Cloud API, so the link is built live from the current
+  // selection and draft.
+  const whatsAppUrl =
+    sendChannel === "WHATSAPP" && selectedClient
+      ? buildWhatsAppUrl(resolveWhatsAppNumber(selectedClient), sendContent)
+      : null
+
+  const handleWhatsAppHandoff = () => {
+    if (!sendClientId || !sendContent.trim()) return
+    // Fire-and-forget: the navigation must not wait on the log write, and a
+    // failed log should never stop the user from messaging their client.
+    void logWhatsAppHandoff({
+      clientId: sendClientId,
+      content: sendContent,
+      templateId: sendTemplateId || null,
+    })
+      .then((r) => {
+        if (r.success) {
+          toast.success("Opened in WhatsApp", {
+            description: "Press send in WhatsApp to deliver it. Logged to this client's history.",
+          })
+          void loadData()
+        }
+      })
+      .catch(() => {
+        /* history is best-effort */
+      })
+  }
+
+  // When a template is selected, pre-fill the content
+  const handleTemplateSelect = (templateId: string) => {
+    setSendTemplateId(templateId)
+    const tpl = templates.find((t) => t.id === templateId)
+    if (tpl) setSendContent(tpl.content)
+  }
   const emailClients = clients.filter((c) => c.email)
   const waClients = clients.filter((c) => c.whatsapp || c.phone)
   const bulkEligibleClients = bulkChannel === "WHATSAPP" ? waClients : emailClients
@@ -359,25 +399,16 @@ export function MessagingDashboardClient() {
                   variant={sendChannel === "WHATSAPP" ? "default" : "outline"}
                   className={cn("h-10 gap-2 rounded-xl", sendChannel === "WHATSAPP" && "btn-glow")}
                   onClick={() => setSendChannel("WHATSAPP")}
-                  disabled={sendForm.isPending || !whatsappConfigured}
-                  title={whatsappConfigured ? undefined : "WhatsApp Business API is not configured yet"}
+                  disabled={sendForm.isPending}
                 >
                   <MessageCircle className="h-4 w-4" />
                   WhatsApp
                 </Button>
               </div>
-              {!whatsappConfigured && (
+              {sendChannel === "WHATSAPP" && (
                 <p className="text-xs text-muted-foreground">
-                  WhatsApp needs API credentials — add{" "}
-                  <code className="text-[11px]">WHATSAPP_API_TOKEN</code> and{" "}
-                  <code className="text-[11px]">WHATSAPP_PHONE_NUMBER_ID</code> to enable it.
-                </p>
-              )}
-              {sendChannel === "WHATSAPP" && whatsappConfigured && (
-                <p className="text-xs text-amber-400/90">
-                  Free-form WhatsApp texts only deliver within 24h of the client&apos;s
-                  last message to you. Outside that window Meta requires a
-                  pre-approved template.
+                  Opens WhatsApp with this message ready to send from your own
+                  number. You press send — nothing goes out on its own.
                 </p>
               )}
             </div>
@@ -454,17 +485,51 @@ export function MessagingDashboardClient() {
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                className="flex-1 btn-glow"
-                disabled={sendForm.isPending}
-              >
-                {sendForm.isPending ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" />Sending...</>
-                ) : (
-                  <><Send className="h-4 w-4 mr-2" />{sendChannel === "WHATSAPP" ? "Send WhatsApp" : "Send Email"}</>
-                )}
-              </Button>
+              {sendChannel === "WHATSAPP" ? (
+                // An anchor, not a click handler that awaits then calls
+                // window.open — a popup opened after an await has lost the
+                // user-gesture and browsers block it. The history row is
+                // written alongside, fire-and-forget.
+                <Button
+                  className="btn-glow flex-1"
+                  asChild={Boolean(whatsAppUrl)}
+                  disabled={!whatsAppUrl}
+                  title={
+                    whatsAppUrl
+                      ? undefined
+                      : "Pick a client with a valid mobile number and type a message"
+                  }
+                >
+                  {whatsAppUrl ? (
+                    <a
+                      href={whatsAppUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={handleWhatsAppHandoff}
+                    >
+                      <MessageCircle className="mr-2 h-4 w-4" />
+                      Open in WhatsApp
+                    </a>
+                  ) : (
+                    <span>
+                      <MessageCircle className="mr-2 h-4 w-4" />
+                      Open in WhatsApp
+                    </span>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  className="flex-1 btn-glow"
+                  disabled={sendForm.isPending}
+                >
+                  {sendForm.isPending ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" />Sending...</>
+                  ) : (
+                    <><Send className="h-4 w-4 mr-2" />Send Email</>
+                  )}
+                </Button>
+              )}
             </div>
           </form>
         </GlassCard>
@@ -504,18 +569,17 @@ export function MessagingDashboardClient() {
                     variant={bulkChannel === "WHATSAPP" ? "default" : "outline"}
                     className={cn("h-10 gap-2 rounded-xl", bulkChannel === "WHATSAPP" && "btn-glow")}
                     onClick={() => switchBulkChannel("WHATSAPP")}
-                    disabled={bulkSending || !whatsappConfigured}
-                    title={whatsappConfigured ? undefined : "WhatsApp Business API is not configured yet"}
+                    disabled={bulkSending}
                   >
                     <MessageCircle className="h-4 w-4" />
                     WhatsApp
                   </Button>
                 </div>
-                {!whatsappConfigured && (
-                  <p className="text-xs text-muted-foreground">
-                    WhatsApp needs API credentials — add{" "}
-                    <code className="text-[11px]">WHATSAPP_API_TOKEN</code> and{" "}
-                    <code className="text-[11px]">WHATSAPP_PHONE_NUMBER_ID</code> to enable it.
+                {bulkChannel === "WHATSAPP" && (
+                  <p className="text-xs text-amber-400/90">
+                    WhatsApp opens one chat at a time from your own number, so bulk
+                    sending is not possible on this channel — use Email for bulk, or
+                    message clients individually from their profile.
                   </p>
                 )}
               </div>

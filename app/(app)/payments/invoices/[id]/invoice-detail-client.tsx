@@ -14,6 +14,9 @@ import {
   Pencil,
 } from "lucide-react"
 
+import { WhatsAppButton } from "@/components/messaging/whatsapp-button"
+import { draftInvoiceReminder } from "@/lib/messaging/whatsapp-drafts"
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -84,7 +87,14 @@ interface Invoice {
   revisionNumber?: number
   revisedFrom?: { id: string; invoiceNumber: string; revisionNumber: number } | null
   revisions?: Array<{ id: string; invoiceNumber: string; revisionNumber: number; status: string }>
-  client: { name: string; gstin?: string | null }
+  // phone/whatsapp ride along from `include: { client: true }` — needed for the
+  // WhatsApp payment reminder.
+  client: {
+    name: string
+    gstin?: string | null
+    phone?: string | null
+    whatsapp?: string | null
+  }
   payments: Payment[]
   followUps: FollowUp[]
 }
@@ -102,9 +112,12 @@ const STATUS_VARIANT: Record<string, "default" | "destructive" | "secondary" | "
 export function InvoiceDetailClient({
   invoice: initial,
   firmState = null,
+  firmName,
 }: {
   invoice: Invoice
   firmState?: string | null
+  /** Signs off the WhatsApp payment-reminder draft. */
+  firmName?: string
 }) {
   const router = useRouter()
   const [invoice, _setInvoice] = useState(initial)
@@ -237,6 +250,19 @@ export function InvoiceDetailClient({
               Create revised invoice
             </Button>
           )}
+          {/* Chase payment on WhatsApp with the invoice details pre-written. */}
+          <WhatsAppButton
+            contact={invoice.client}
+            message={draftInvoiceReminder({
+              clientName: invoice.client.name,
+              firmName,
+              invoiceNumber: invoice.invoiceNumber,
+              amount: Number(invoice.outstandingAmount ?? invoice.amount),
+              dueDate: invoice.dueDate,
+              isOverdue: invoice.status === "OVERDUE",
+            })}
+            label="WhatsApp reminder"
+          />
           <Button
             variant="outline"
             onClick={() => setFollowUpOpen(true)}

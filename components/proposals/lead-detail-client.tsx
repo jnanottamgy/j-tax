@@ -15,6 +15,9 @@ import {
   Plus,
   UserPlus,
 } from "lucide-react"
+
+import { WhatsAppButton } from "@/components/messaging/whatsapp-button"
+import { draftLeadFollowUp } from "@/lib/messaging/whatsapp-drafts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -175,6 +178,16 @@ export function LeadDetailClient({ lead, employees }: Props) {
           <Pencil className="size-3.5 mr-1" />
           Edit
         </Button>
+
+        {/* First touch on WhatsApp, with the service they asked about. */}
+        <WhatsAppButton
+          size="sm"
+          contact={lead}
+          message={draftLeadFollowUp({
+            leadName: lead.name,
+            service: lead.serviceRequired,
+          })}
+        />
 
         <Button size="sm" variant="outline" asChild>
           <Link href={`/proposals/quotations/new?leadId=${lead.id}`}>

@@ -6,6 +6,7 @@ import {
   Mail,
   Pencil,
   Phone,
+  MessageCircle,
   Plus,
   Star,
   Trash2,
@@ -13,6 +14,9 @@ import {
   Users,
   UsersRound,
 } from "lucide-react"
+
+import { buildWhatsAppUrl } from "@/lib/messaging/whatsapp-link"
+import { draftGeneral } from "@/lib/messaging/whatsapp-drafts"
 import { toast } from "sonner"
 
 import {
@@ -268,6 +272,22 @@ function ContactsSection({
                       >
                         <Phone className="size-3.5" />
                         {contact.phone}
+                      </a>
+                    )}
+                    {buildWhatsAppUrl(contact.phone, draftGeneral({ clientName: contact.name })) && (
+                      <a
+                        href={
+                          buildWhatsAppUrl(
+                            contact.phone,
+                            draftGeneral({ clientName: contact.name })
+                          )!
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-emerald-500 transition-colors hover:text-emerald-400"
+                      >
+                        <MessageCircle className="size-3.5" />
+                        WhatsApp
                       </a>
                     )}
                     {!contact.email && !contact.phone && (

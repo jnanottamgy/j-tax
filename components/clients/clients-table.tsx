@@ -21,6 +21,7 @@ import {
   Search,
   SlidersHorizontal,
   Mail,
+  MessageCircle,
   Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -32,6 +33,8 @@ import {
 } from "@/components/clients/client-badges"
 import { ClientsEmptyState } from "@/components/clients/clients-empty-state"
 import { EditClientDialog } from "@/components/clients/edit-client-dialog"
+import { buildWhatsAppUrl, resolveWhatsAppNumber } from "@/lib/messaging/whatsapp-link"
+import { draftGeneral } from "@/lib/messaging/whatsapp-drafts"
 import { ServiceBadgeList } from "@/components/clients/service-badges"
 import { GlassCard } from "@/components/dashboard/glass-card"
 import { Badge } from "@/components/ui/badge"
@@ -809,6 +812,12 @@ function RowActions({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Opens the client's chat with a courteous opener already typed.
+  const whatsAppUrl = buildWhatsAppUrl(
+    resolveWhatsAppNumber(client),
+    draftGeneral({ clientName: client.name })
+  )
+
   const handleDelete = async () => {
     setIsDeleting(true)
     try {
@@ -858,6 +867,19 @@ function RowActions({
               Send reminder
             </Link>
           </DropdownMenuItem>
+          {whatsAppUrl ? (
+            <DropdownMenuItem asChild>
+              <a href={whatsAppUrl} target="_blank" rel="noopener noreferrer">
+                <MessageCircle className="size-4" />
+                WhatsApp
+              </a>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem disabled>
+              <MessageCircle className="size-4" />
+              WhatsApp — no mobile on file
+            </DropdownMenuItem>
+          )}
           {canManage && (
             <>
               <DropdownMenuItem onSelect={() => setEditOpen(true)}>

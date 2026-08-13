@@ -51,6 +51,8 @@ import { GlassCard } from "@/components/dashboard/glass-card"
 import { ClientComplianceTab } from "@/components/compliance/client-compliance-tab"
 import { ClientTimeline } from "@/components/clients/client-timeline"
 import { EditClientDialog } from "@/components/clients/edit-client-dialog"
+import { WhatsAppButton } from "@/components/messaging/whatsapp-button"
+import { draftGeneral } from "@/lib/messaging/whatsapp-drafts"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 import { serviceLabel } from "@/lib/clients/constants"
 import { cn } from "@/lib/utils"
@@ -70,9 +72,11 @@ function humanizeEnum(value?: string | null) {
 interface Client360ClientProps {
   initialData: any
   clientId: string
+  /** Signs off WhatsApp drafts opened from this page. */
+  firmName?: string
 }
 
-export function Client360Client({ initialData, clientId }: Client360ClientProps) {
+export function Client360Client({ initialData, clientId, firmName }: Client360ClientProps) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabType>("overview")
   const [data, _setData] = useState(initialData)
@@ -225,6 +229,15 @@ export function Client360Client({ initialData, clientId }: Client360ClientProps)
 
           {/* Quick Actions */}
           <div className="flex flex-wrap gap-2">
+            <WhatsAppButton
+              contact={data.client}
+              message={draftGeneral({
+                clientName: data.client.name,
+                firmName: firmName,
+              })}
+              size="sm"
+              className="input-premium h-9 gap-2 rounded-xl border-white/[0.07] bg-transparent"
+            />
             {quickActions.map((action) => (
               <Button
                 key={action.label}
