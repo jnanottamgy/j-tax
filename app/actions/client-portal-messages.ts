@@ -45,13 +45,26 @@ export async function sendClientMessage(
   }
 
   // Same client resolution as the portal layout — by login email.
-  const client = await prisma.client.findFirst({
-    where: { email: session.user.email },
-    select: { id: true, name: true, assignedEmployee: { select: { userId: true } } },
+  //
+  // Client.email is not unique, so an ambiguous match must be refused rather
+  // than silently binding the sender to whichever record comes back first.
+  const matches = await prisma.client.findMany({
+    where: { email: session.user.email, deletedAt: null },
+    select: {
+      id: true,
+      name: true,
+      firmId: true,
+      assignedEmployee: { select: { userId: true } },
+    },
+    take: 2,
   })
-  if (!client) {
+  if (matches.length === 0) {
     return { error: "No client account is linked to your login." }
   }
+  if (matches.length > 1) {
+    return { error: "Your login matches more than one client record. Please contact your firm." }
+  }
+  const client = matches[0]
 
   try {
     await prisma.message.create({
@@ -68,8 +81,13 @@ export async function sendClientMessage(
 
     // Notify the staff who handle this client: partners, managers, and the
     // assigned employee (when they have a login).
+    // requireSession() (unlike requireAuth) does not establish tenant context,
+    // so this lookup is scoped explicitly by the client's own firm. Relying on
+    // the request-resolver fallback would broadcast the message body to every
+    // Partner and Manager on the platform whenever it failed to resolve.
     const staffUsers = await prisma.user.findMany({
       where: {
+        firmId: client.firmId,
         OR: [
           { role: { in: ["PARTNER", "MANAGER"] } },
           ...(client.assignedEmployee?.userId

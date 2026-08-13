@@ -569,8 +569,15 @@ export async function respondToQuotation(
       data: { status: "SKIPPED" },
     })
 
-    // Notify partners
-    const partners = await prisma.user.findMany({ where: { role: "PARTNER" } })
+    // Notify THIS firm's partners.
+    //
+    // This runs on the public accept/reject link, so there is no session and
+    // the tenant extension injects nothing — an unfiltered lookup here returned
+    // every Partner on the platform and broadcast the client's name and deal
+    // value to every other firm. The firm must come from the quotation itself.
+    const partners = await prisma.user.findMany({
+      where: { role: "PARTNER", firmId: quotation.firmId },
+    })
     const statusVerb = response === "ACCEPTED" ? "✅ ACCEPTED" : "❌ Rejected"
     await prisma.notification.createMany({
       data: partners.map((p) => ({

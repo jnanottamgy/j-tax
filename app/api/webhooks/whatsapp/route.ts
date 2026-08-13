@@ -146,7 +146,14 @@ export async function POST(request: Request) {
         if (!from) continue
 
         const last10 = from.slice(-10)
-        const client = await prisma.client.findFirst({
+
+        // A webhook carries no session, so nothing here is auto firm-scoped.
+        // The sender's number is the only thing that identifies the firm, and
+        // two firms can legitimately hold the same contact — so resolve ALL
+        // matches and notify each firm about its own client only. Taking the
+        // first match and notifying every Partner on the platform (the previous
+        // behaviour) leaked client names and message text across tenants.
+        const clients = await prisma.client.findMany({
           where: {
             deletedAt: null,
             OR: [
@@ -154,15 +161,17 @@ export async function POST(request: Request) {
               { phone: { contains: last10 } },
             ],
           },
-          select: { id: true, name: true, assignedEmployeeId: true },
+          select: { id: true, name: true, firmId: true },
         })
-        if (!client) continue
+        if (clients.length === 0) continue
 
-        const staff = await prisma.user.findMany({
-          where: { role: { in: ["PARTNER", "MANAGER"] } },
-          select: { id: true },
-        })
-        if (staff.length > 0) {
+        for (const client of clients) {
+          const staff = await prisma.user.findMany({
+            where: { role: { in: ["PARTNER", "MANAGER"] }, firmId: client.firmId },
+            select: { id: true },
+          })
+          if (staff.length === 0) continue
+
           await prisma.notification.createMany({
             data: staff.map((u) => ({
               userId: u.id,
