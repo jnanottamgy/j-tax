@@ -10,6 +10,7 @@ import { KpiCards } from "@/components/dashboard/kpi-cards"
 import { ManagerDashboard } from "@/components/dashboard/manager-dashboard"
 import { OutstandingPayments } from "@/components/dashboard/outstanding-payments"
 import { PartnerCommandCenter } from "@/components/dashboard/partner-command-center"
+import { WorkQueuePanel } from "@/components/dashboard/work-queue-panel"
 import { QuickActions } from "@/components/dashboard/quick-actions"
 import { RecentActivity } from "@/components/dashboard/recent-activity"
 import { RevenueTrendChart } from "@/components/dashboard/revenue-trend-chart"
@@ -524,6 +525,8 @@ export default async function DashboardPage() {
           title="My Work Dashboard"
           description="Your tasks, clients, compliance queue, and personal performance."
         />
+        {/* Handoff queues first: what is waiting on this person beats a count. */}
+        <WorkQueuePanel />
         <EmployeeDashboard
           employeeName={user.name}
           stats={data.stats}
@@ -558,6 +561,7 @@ export default async function DashboardPage() {
             hasCompliance: data.teamStats.pendingCompliance > 0,
           }}
         />
+        <WorkQueuePanel />
         <ManagerDashboard
           managerName={user.name}
           teamStats={data.teamStats}
@@ -631,6 +635,8 @@ export default async function DashboardPage() {
         title="Partner Command Center"
         description="Full firm visibility — revenue, compliance, workforce intelligence, and approvals."
       />
+
+      <WorkQueuePanel />
 
       {/* Partner command center */}
       <PartnerCommandCenter
