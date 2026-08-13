@@ -295,7 +295,9 @@ function ManageClientsDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[92vh] overflow-hidden border-white/[0.08] bg-popover/95 backdrop-blur-2xl sm:max-w-lg">
+      {/* The client list keeps its own max-h-80 scroller; letting the shell
+          scroll too means the footer stays reachable on short viewports. */}
+      <DialogContent className="max-h-[92dvh] overflow-y-auto border-white/[0.08] bg-popover/95 backdrop-blur-2xl sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Manage clients — {group.name}</DialogTitle>
           <DialogDescription>

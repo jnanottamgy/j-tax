@@ -250,7 +250,9 @@ export function ClientOnboardingWizard({
             Add client
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[94vh] overflow-hidden border-white/[0.08] bg-popover/95 p-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:max-w-5xl">
+        {/* Explicit rows: header sizes to content, the form takes the rest.
+            minmax(0,…) is what lets the form shrink so its inner panes scroll. */}
+        <DialogContent className="grid max-h-[94dvh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-white/[0.08] bg-popover/95 p-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:max-w-5xl">
           <div className="border-b border-white/[0.06] px-5 py-5 md:px-7">
             <DialogHeader>
               <div className="flex items-center gap-3">
@@ -271,7 +273,9 @@ export function ClientOnboardingWizard({
 
           <form
             action={formAction}
-            className="grid max-h-[calc(94vh-88px)] overflow-hidden lg:grid-cols-[280px_1fr]"
+            // Height comes from the grid row, not a hardcoded header offset —
+            // the old calc(94vh-88px) broke whenever the header wrapped.
+            className="grid min-h-0 overflow-hidden lg:grid-cols-[280px_1fr]"
             onSubmit={(e) => {
               if (!canContinue || isPending) {
                 e.preventDefault()
@@ -388,8 +392,10 @@ export function ClientOnboardingWizard({
               </AnimatePresence>
             </aside>
 
-            <main className="flex min-h-[560px] flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-5 md:p-7">
+            {/* min-h-0 so this column can shrink inside the capped dialog; the
+                560px floor only applies where there is room for it. */}
+            <main className="flex min-h-0 flex-col overflow-hidden lg:min-h-[560px]">
+              <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-7">
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={step}

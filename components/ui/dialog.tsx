@@ -62,6 +62,14 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-[min(var(--radius-4xl),24px)] bg-popover p-6 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 duration-100 outline-none sm:max-w-md dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // Height cap + scroll. Without these a dialog taller than the viewport
+          // overflows BOTH edges (it is centred with -translate-y-1/2), so its
+          // top is off-screen and its bottom — usually the submit button — is
+          // unreachable, while Radix holds the page scroll locked behind it.
+          // dvh, not vh, so mobile browser chrome does not eat the footer.
+          // Consumers that manage their own internal scroll region pass
+          // `overflow-hidden`, which twMerge lets win over this.
+          "max-h-[calc(100dvh-2rem)] overflow-y-auto",
           className
         )}
         {...props}

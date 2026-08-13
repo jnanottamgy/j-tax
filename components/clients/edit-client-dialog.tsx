@@ -121,6 +121,24 @@ export function EditClientDialog({
   const selectedCount = servicesPayload.length
   const otherMissingName = Boolean(services.OTHER && !services.OTHER.customName.trim())
 
+  // Radix unmounts the dialog body on close, so the uncontrolled inputs reseed
+  // from `client` on each open — but this state lives outside the portal and
+  // would otherwise persist. Without the reset, cancelling an edit and
+  // reopening shows the discarded service toggles as if they were saved.
+  useEffect(() => {
+    if (!actualOpen) return
+    setClientType(client.clientType ?? "")
+    setIsIncorporated(client.isIncorporated ?? true)
+    setServices(
+      Object.fromEntries(
+        (client.services ?? []).map((s) => [
+          s.type,
+          { frequency: s.frequency, customName: s.customName ?? "" },
+        ])
+      )
+    )
+  }, [actualOpen, client])
+
   useEffect(() => {
     if (!state.success && !state.error) return
 
@@ -152,7 +170,11 @@ export function EditClientDialog({
           </Button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-h-[92vh] overflow-hidden border-white/[0.08] bg-popover/95 p-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:max-w-2xl">
+      {/* grid-rows pins the header and gives the form the remaining height.
+          Without an explicit `minmax(0,…)` track the form keeps grid's default
+          `min-height:auto`, refuses to shrink, grows past the max-height, and
+          `overflow-hidden` then clips its footer — leaving Save unreachable. */}
+      <DialogContent className="grid max-h-[92dvh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-white/[0.08] bg-popover/95 p-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] backdrop-blur-2xl sm:max-w-2xl">
         <div className="border-b border-white/[0.06] px-6 py-5">
           <DialogHeader>
             <DialogTitle className="text-gradient text-xl font-semibold tracking-tight">
@@ -178,7 +200,7 @@ export function EditClientDialog({
               toast.error('Name the "Other" service before saving.')
             }
           }}
-          className="overflow-y-auto px-6 py-5"
+          className="min-h-0 overflow-y-auto px-6 py-5"
         >
           <input type="hidden" name="id" value={client.id} />
           <input type="hidden" name="services" value={servicesJson} />

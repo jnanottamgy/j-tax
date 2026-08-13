@@ -204,7 +204,11 @@ export function TaskDetailDrawer({
           </div>
         </SheetHeader>
 
-        <div className="space-y-6 overflow-y-auto h-[calc(100vh-8rem)] pr-2">
+        {/* SheetContent is `flex flex-col h-full`, so take the leftover height
+            with flex-1 + min-h-0 rather than a hardcoded header offset — the
+            old h-[calc(100vh-8rem)] pushed content off-screen whenever a long
+            task title wrapped the header, and 100vh is wrong on mobile. */}
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-2">
           {/* Task Info */}
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
