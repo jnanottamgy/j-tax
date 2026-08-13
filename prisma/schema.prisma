@@ -70,12 +70,21 @@ model FirmSettings {
   gstin        String?
   pan          String?
   website      String?
-  // ── Domain verification (Phase 8) ─────────────────────────────────────────
-  firmDomain        String?    // e.g. "taxwiseconsultants.com" — extracted from fromEmail
+  // ── Domain verification ───────────────────────────────────────────────────
+  firmDomain        String?    // e.g. "acmeca.com" — extracted from fromEmail
+  /// Mirrors Resend's own status — never set by our own DNS lookups. Only
+  /// Resend can verify a sending identity; asserting it locally produced
+  /// "verified" firms whose mail was still rejected at send time.
   domainVerified    Boolean    @default(false)
   domainVerifiedAt  DateTime?
-  // Suggested DNS records are deterministic and computed in code, but we
-  // persist a verification token so the same TXT value can be re-shown later.
+  /// The domain's id in the platform's Resend account. Needed to poll status
+  /// and re-request verification.
+  resendDomainId    String?
+  /// Last status reported by Resend: not_started | pending | verified |
+  /// failed | temporary_failure.
+  domainStatus      String?
+  /// Legacy — the old self-certifying flow's ownership TXT token. Retained so
+  /// existing rows migrate cleanly; no longer issued or checked.
   verificationToken String?
   // When true, unverified domains fall back to platform-domain sending with
   // firm display name + firm reply-to (default true; PARTNER can opt out)

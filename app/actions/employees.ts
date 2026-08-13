@@ -127,6 +127,9 @@ export async function createEmployee(
       data: {
         tempPassword: provisioned.tempPassword,
         emailSent: provisioned.emailSent,
+        // Surfaced in the dialog so the Partner can act on the real cause
+        // (unverified sender domain, missing API key) instead of guessing.
+        emailError: provisioned.emailError,
         email: data.email,
       },
     }

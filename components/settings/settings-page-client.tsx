@@ -18,9 +18,12 @@ import {
   saveFirmSettings,
   getDomainVerificationStatus,
   checkAndActivateDomainVerification,
+  getEmailDeliveryDiagnostics,
+  sendTestEmail,
   type NotificationPrefs,
   type FirmSettingsActionState,
   type DomainVerificationStatus,
+  type EmailDiagnostics,
 } from "@/app/actions/settings"
 import type { FirmConfig } from "@/lib/firm-settings"
 import { useAuth } from "@/components/auth/auth-provider"
@@ -71,6 +74,14 @@ export function SettingsPageClient({
   const [domainBusy, setDomainBusy] = useState(false)
   const [domainResult, setDomainResult] = useState<string>("")
   const [domainResultKind, setDomainResultKind] = useState<"ok" | "warn" | "err" | "">("")
+
+  // ── Email delivery diagnostics (PARTNER only) ─────────────────────────────
+  const [diagnostics, setDiagnostics] = useState<EmailDiagnostics | null>(null)
+  const [diagLoading, setDiagLoading] = useState(false)
+  const [testTo, setTestTo] = useState("")
+  const [testBusy, setTestBusy] = useState(false)
+  const [testResult, setTestResult] = useState("")
+  const [testOk, setTestOk] = useState(false)
   const [copied, setCopied] = useState<string>("")
 
   useEffect(() => {
@@ -84,6 +95,35 @@ export function SettingsPageClient({
     return () => { cancelled = true }
   }, [userRole, firmState.success])
 
+  // Re-read after a settings save — the sender address may have changed.
+  useEffect(() => {
+    if (userRole !== "PARTNER") return
+    let cancelled = false
+    setDiagLoading(true)
+    getEmailDeliveryDiagnostics()
+      .then((d) => { if (!cancelled) setDiagnostics(d) })
+      .catch(() => { /* card renders its own fallback */ })
+      .finally(() => { if (!cancelled) setDiagLoading(false) })
+    return () => { cancelled = true }
+  }, [userRole, firmState.success])
+
+  const handleTestEmail = async () => {
+    setTestBusy(true)
+    setTestResult("")
+    try {
+      const r = await sendTestEmail(testTo)
+      setTestOk(r.success)
+      setTestResult(r.message)
+      // A send exercises the real provider, so refresh the checks with it.
+      setDiagnostics(await getEmailDeliveryDiagnostics())
+    } catch (err) {
+      setTestOk(false)
+      setTestResult(err instanceof Error ? err.message : "Test send failed.")
+    } finally {
+      setTestBusy(false)
+    }
+  }
+
   const handleVerify = async () => {
     setDomainBusy(true)
     setDomainResult("")
@@ -94,7 +134,7 @@ export function SettingsPageClient({
         setDomainResult(r.message)
         setDomainResultKind("ok")
       } else if (r.success) {
-        setDomainResult(`${r.message}${r.missing?.length ? " — missing: " + r.missing.join(", ") : ""}`)
+        setDomainResult(r.message)
         setDomainResultKind("warn")
       } else {
         setDomainResult(r.message)
@@ -406,6 +446,127 @@ export function SettingsPageClient({
         </Card>
       )}
 
+      {/* ── Email Delivery diagnostics (PARTNER only) ───────────────────── */}
+      {userRole === "PARTNER" && (
+        <Card className="border-white/[0.08] bg-white/[0.02]">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Email Delivery
+            </CardTitle>
+            <CardDescription>
+              Whether outbound email can actually be delivered right now, and what is
+              blocking it. Start here when an invite or reminder does not arrive.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {diagLoading && !diagnostics ? (
+              <p className="text-sm text-muted-foreground">Checking…</p>
+            ) : diagnostics ? (
+              <>
+                <div
+                  className={`rounded-xl border px-4 py-3 text-sm ${
+                    diagnostics.canSend
+                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                      : "border-red-500/20 bg-red-500/10 text-red-400"
+                  }`}
+                >
+                  {diagnostics.canSend
+                    ? "Email is configured and can be delivered."
+                    : "Email cannot be delivered — see the blocking items below."}
+                </div>
+
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 space-y-1 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-muted-foreground">Sends as</span>
+                    <code className="text-right font-mono text-xs break-all">
+                      {diagnostics.effectiveFrom}
+                    </code>
+                  </div>
+                  {diagnostics.replyTo && (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-muted-foreground">Replies go to</span>
+                      <code className="text-right font-mono text-xs break-all">
+                        {diagnostics.replyTo}
+                      </code>
+                    </div>
+                  )}
+                </div>
+
+                <ul className="space-y-2">
+                  {diagnostics.checks.map((c) => (
+                    <li key={c.label} className="flex items-start gap-2 text-sm">
+                      {c.ok ? (
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertTriangle
+                          className={`mt-0.5 h-4 w-4 shrink-0 ${
+                            c.blocking ? "text-red-400" : "text-amber-400"
+                          }`}
+                        />
+                      )}
+                      <span>
+                        <span className="font-medium">{c.label}</span>
+                        {!c.ok && c.blocking && (
+                          <span className="ml-2 rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">
+                            blocking
+                          </span>
+                        )}
+                        <span className="block text-xs text-muted-foreground">{c.detail}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Separator className="bg-white/[0.06]" />
+
+                <div className="space-y-2">
+                  <Label htmlFor="testEmail">Send a test email</Label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="testEmail"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={testTo}
+                      onChange={(e) => setTestTo(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleTestEmail}
+                      disabled={testBusy}
+                      className="shrink-0"
+                    >
+                      {testBusy ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="mr-2 h-4 w-4" />
+                      )}
+                      Send test
+                    </Button>
+                  </div>
+                  {testResult && (
+                    <div
+                      className={`rounded-xl border px-4 py-3 text-sm ${
+                        testOk
+                          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                          : "border-red-500/20 bg-red-500/10 text-red-400"
+                      }`}
+                    >
+                      {testResult}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Could not read email configuration.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Domain Verification (PARTNER only) ──────────────────────────── */}
       {userRole === "PARTNER" && (
         <Card className="border-white/[0.08] bg-white/[0.02]">
@@ -474,13 +635,17 @@ export function SettingsPageClient({
                     </thead>
                     <tbody>
                       {domainStatus.records.map((r) => {
-                        const chk = domainStatus.checks.find((c) => c.host === r.host && c.type === r.type)
+                        // Per-record state comes from Resend itself — it is the
+                        // only party that can validate these records.
+                        const recordVerified = r.status === "verified"
                         return (
                           <tr key={`${r.type}-${r.host}`} className="border-t border-white/[0.06]">
                             <td className="px-3 py-2 align-top">
                               <span className="rounded bg-white/[0.06] px-1.5 py-0.5">{r.type}</span>
-                              {!r.required && (
-                                <span className="ml-1 text-[10px] text-muted-foreground">optional</span>
+                              {r.priority !== undefined && (
+                                <span className="ml-1 text-[10px] text-muted-foreground">
+                                  priority {r.priority}
+                                </span>
                               )}
                             </td>
                             <td className="px-3 py-2 align-top font-mono">
@@ -513,12 +678,18 @@ export function SettingsPageClient({
                               <p className="mt-1 text-[11px] text-muted-foreground italic">{r.purpose}</p>
                             </td>
                             <td className="px-3 py-2 align-top text-center">
-                              {chk?.found ? (
+                              {recordVerified ? (
                                 <CheckCircle2 className="inline h-4 w-4 text-emerald-400" />
                               ) : (
                                 <AlertTriangle className="inline h-4 w-4 text-amber-400" />
                               )}
-                              <p className="mt-1 text-[10px] text-muted-foreground">{chk?.detail ?? "Not checked"}</p>
+                              <p className="mt-1 text-[10px] text-muted-foreground">
+                                {r.status
+                                  ? recordVerified
+                                    ? "Verified"
+                                    : `Provider status: ${r.status}`
+                                  : "Awaiting provider check"}
+                              </p>
                             </td>
                           </tr>
                         )

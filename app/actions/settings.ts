@@ -12,11 +12,18 @@ import {
   getFirmSettings,
   upsertFirmSettings,
   extractDomain,
-  buildDnsInstructions,
+  getPlatformFallbackFrom,
+  resolveSenderEnvelope,
   type FirmConfig,
 } from "@/lib/firm-settings"
-import { randomBytes } from "crypto"
-import { promises as dnsPromises } from "dns"
+import {
+  ensureDomain,
+  fetchDomain,
+  findDomainByName,
+  requestVerification,
+  type ResendDomainStatus,
+} from "@/lib/messaging/resend-domains"
+import { resendProvider } from "@/lib/messaging/resend-provider"
 
 export type NotificationPrefs = {
   email: boolean
@@ -268,11 +275,15 @@ export async function saveFirmSettings(
         pan: parsed.data.pan || null,
         website: parsed.data.website || null,
         firmDomain: newDomain,
+        // A new sender domain is a different identity and must be registered
+        // and verified with Resend from scratch — drop the old linkage so we
+        // never poll the previous domain's id.
         ...(domainChanged
           ? {
               domainVerified: false,
               domainVerifiedAt: null,
-              verificationToken: `jtacs-verify=${randomBytes(16).toString("hex")}`,
+              resendDomainId: null,
+              domainStatus: null,
             }
           : {}),
         platformFallbackEnabled: parsed.data.platformFallbackEnabled ?? true,
@@ -298,115 +309,129 @@ export async function saveFirmSettings(
   }
 }
 
-// ─── Domain verification (Phase 8) ───────────────────────────────────────────
+
+// ─── Domain verification (Resend-backed) ─────────────────────────────────────
 
 export type DnsRecord = {
   type: string
   host: string
   value: string
+  priority?: number
   purpose: string
   required: boolean
+  /** Per-record state as reported by Resend, once it has begun checking. */
+  status?: string
 }
 
 export type DomainVerificationStatus = {
   domain: string | null
   verified: boolean
   verifiedAt: Date | null
+  /** Raw Resend lifecycle state — drives the UI wording. */
+  providerStatus: ResendDomainStatus | null
   records: DnsRecord[]
-  checks: Array<{ type: string; host: string; found: boolean; detail: string }>
   usingFallback: boolean
+  /** Populated when the domain could not be registered/read at Resend. */
+  error?: string
+  /** True when the blocker is server configuration, not the firm's DNS. */
+  configError?: boolean
+}
+
+/** Human-readable purpose per Resend record type. */
+function describeRecord(record: string, type: string): string {
+  if (record.toUpperCase().includes("DKIM")) {
+    return "DKIM — signs every outbound email with a key unique to your domain so inbox providers can verify it."
+  }
+  if (type === "MX") {
+    return "MX — lets Resend receive bounce and complaint feedback for your domain."
+  }
+  return "SPF — authorises Resend's mail servers to send on behalf of your domain."
 }
 
 /**
- * Return the current domain, the DNS records the firm must publish, and the
- * status of each check (which DNS records are already in place).
- * PARTNER-only — exposes verification tokens which gate sender identity.
+ * Register the firm's sender domain with Resend (idempotently) and return the
+ * EXACT DNS records Resend generated, plus Resend's own verification status.
+ *
+ * These records are never hand-authored: the DKIM key is unique per domain, so
+ * only Resend can issue them, and only Resend can mark a domain verified.
+ *
+ * PARTNER-only — the records are sender-identity material.
  */
 export async function getDomainVerificationStatus(): Promise<DomainVerificationStatus> {
   await requirePartner()
   const cfg = await getFirmSettings()
-
   const domain = cfg.firmDomain
-  // Always have a verification token available so the UI can show it before
-  // the first save.
-  const token = cfg.verificationToken || ""
 
-  if (!domain || !token) {
-    return {
-      domain,
-      verified: cfg.domainVerified,
-      verifiedAt: cfg.domainVerifiedAt,
-      records: domain && token ? [...buildDnsInstructions(domain, token)] : [],
-      checks: [],
-      usingFallback: !cfg.domainVerified && cfg.platformFallbackEnabled,
-    }
+  const base = {
+    domain,
+    verified: cfg.domainVerified,
+    verifiedAt: cfg.domainVerifiedAt,
+    providerStatus: (cfg.domainStatus as ResendDomainStatus | null) ?? null,
+    records: [] as DnsRecord[],
+    usingFallback: !cfg.domainVerified && cfg.platformFallbackEnabled,
   }
 
-  const records = [...buildDnsInstructions(domain, token)]
+  if (!domain) return base
 
-  // Perform DNS lookups against each required record.
-  const checks: Array<{ type: string; host: string; found: boolean; detail: string }> = []
-  for (const r of records) {
-    try {
-      if (r.type === "TXT") {
-        const txt = await dnsPromises.resolveTxt(r.host)
-        const flat = txt.map((c) => c.join("")).map((s) => s.trim())
-        // For verification token check exact match; for SPF/DMARC be lenient
-        const found =
-          r.host.startsWith("_jtacs-verify.")
-            ? flat.some((v) => v === r.value)
-            : flat.some((v) => v.toLowerCase().includes(r.value.split(" ")[0].toLowerCase()))
-        checks.push({
-          type: r.type,
-          host: r.host,
-          found,
-          detail: found ? "OK — record present" : `Expected: ${r.value}`,
-        })
-      } else if (r.type === "CNAME") {
-        const cname = await dnsPromises.resolveCname(r.host)
-        const found = cname.some((v) => v.toLowerCase().includes("resend"))
-        checks.push({
-          type: r.type,
-          host: r.host,
-          found,
-          detail: found ? `OK — points to ${cname[0]}` : `Expected: ${r.value}`,
-        })
-      }
-    } catch {
-      checks.push({
-        type: r.type,
-        host: r.host,
-        found: false,
-        detail: "No record found at this host yet.",
-      })
-    }
+  const result = await ensureDomain(domain, cfg.resendDomainId)
+  if (!result.ok) {
+    return { ...base, error: result.error, configError: result.configError }
+  }
+
+  const { domain: remote } = result.data
+  const verified = remote.status === "verified"
+
+  // Persist whatever Resend told us so the rest of the app (send envelope,
+  // banners) reads a status that reflects reality rather than our own guess.
+  if (
+    remote.id !== cfg.resendDomainId ||
+    remote.status !== cfg.domainStatus ||
+    verified !== cfg.domainVerified
+  ) {
+    await upsertFirmSettings(
+      {
+        resendDomainId: remote.id,
+        domainStatus: remote.status,
+        domainVerified: verified,
+        domainVerifiedAt: verified ? (cfg.domainVerifiedAt ?? new Date()) : null,
+      },
+      "system"
+    )
   }
 
   return {
     domain,
-    verified: cfg.domainVerified,
-    verifiedAt: cfg.domainVerifiedAt,
-    records,
-    checks,
-    usingFallback: !cfg.domainVerified && cfg.platformFallbackEnabled,
+    verified,
+    verifiedAt: verified ? (cfg.domainVerifiedAt ?? new Date()) : null,
+    providerStatus: remote.status,
+    records: remote.records.map((r) => ({
+      type: r.type,
+      host: r.host,
+      value: r.value,
+      ...(r.priority !== undefined ? { priority: r.priority } : {}),
+      purpose: describeRecord(r.record, r.type),
+      required: true,
+      ...(r.status ? { status: r.status } : {}),
+    })),
+    usingFallback: !verified && cfg.platformFallbackEnabled,
   }
 }
 
 /**
- * Inspect DNS, and if the required records (verification TXT, SPF, DKIM CNAME)
- * are all present, mark the domain as verified.
+ * Ask Resend to re-check the firm's DNS now, then read back the resulting
+ * status. We never decide verification ourselves — we relay Resend's answer.
  */
 export async function checkAndActivateDomainVerification(): Promise<{
   success: boolean
   verified: boolean
   message: string
-  missing?: string[]
+  pending?: boolean
 }> {
   try {
-    const session = await requirePartner()
-    const status = await getDomainVerificationStatus()
+    await requirePartner()
+    const cfg = await getFirmSettings()
 
-    if (!status.domain) {
+    if (!cfg.firmDomain) {
       return {
         success: false,
         verified: false,
@@ -414,33 +439,59 @@ export async function checkAndActivateDomainVerification(): Promise<{
       }
     }
 
-    const requiredChecks = status.checks.filter((c) =>
-      status.records.find((r) => r.host === c.host && r.type === c.type)?.required
-    )
-    const missing = requiredChecks.filter((c) => !c.found).map((c) => `${c.type} ${c.host}`)
-
-    if (missing.length > 0) {
+    const ensured = await ensureDomain(cfg.firmDomain, cfg.resendDomainId)
+    if (!ensured.ok) {
       return {
-        success: true,
+        success: false,
         verified: false,
-        message: "DNS records not yet detected — propagation can take up to 48h.",
-        missing,
+        message: ensured.configError
+          ? `Email provider not configured on the server: ${ensured.error}`
+          : ensured.error,
       }
     }
 
+    // Trigger a re-check, then re-read. Resend updates asynchronously, so a
+    // freshly-published record often reports `pending` on the first click.
+    await requestVerification(ensured.data.domain.id)
+    const after = await fetchDomain(ensured.data.domain.id)
+    const status = after.ok ? after.data.status : ensured.data.domain.status
+    const verified = status === "verified"
+
     await upsertFirmSettings(
       {
-        domainVerified: true,
-        domainVerifiedAt: new Date(),
+        resendDomainId: ensured.data.domain.id,
+        domainStatus: status,
+        domainVerified: verified,
+        domainVerifiedAt: verified ? new Date() : null,
       },
-      session.user.id
+      "system"
     )
 
     revalidatePath("/settings")
+
+    if (verified) {
+      return {
+        success: true,
+        verified: true,
+        message: `${cfg.firmDomain} is verified — email now sends directly from your firm's address.`,
+      }
+    }
+
+    if (status === "failed") {
+      return {
+        success: true,
+        verified: false,
+        message:
+          "Resend could not validate the records. Check each value matches exactly, then try again.",
+      }
+    }
+
     return {
       success: true,
-      verified: true,
-      message: `Domain ${status.domain} verified — emails will now be sent directly from your firm's domain.`,
+      verified: false,
+      pending: true,
+      message:
+        "Records submitted — Resend is checking them. DNS changes usually apply within 10 minutes (up to 48h). Your email keeps sending via the platform address meanwhile.",
     }
   } catch (error) {
     return {
@@ -451,27 +502,158 @@ export async function checkAndActivateDomainVerification(): Promise<{
   }
 }
 
+// ─── Email delivery diagnostics ──────────────────────────────────────────────
+
+export type EmailCheck = {
+  label: string
+  ok: boolean
+  /** Blocking failures stop mail entirely; non-blocking ones only degrade branding. */
+  blocking: boolean
+  detail: string
+}
+
+export type EmailDiagnostics = {
+  /** The exact From header outbound mail would use right now. */
+  effectiveFrom: string
+  replyTo: string | null
+  usingFallback: boolean
+  canSend: boolean
+  checks: EmailCheck[]
+}
+
 /**
- * Force-rotate the verification token (e.g. user wants a fresh challenge value).
+ * Explain, in one place, whether outbound email can actually be delivered and
+ * what is blocking it.
+ *
+ * This exists because failures were previously invisible: an invite would
+ * silently not arrive with no indication whether the API key was missing, the
+ * sender domain was unverified at the provider, or the fallback was unset.
  */
-export async function rotateVerificationToken(): Promise<{ success: boolean; token?: string; error?: string }> {
+export async function getEmailDeliveryDiagnostics(): Promise<EmailDiagnostics> {
+  await requirePartner()
+  const cfg = await getFirmSettings()
+  const envelope = resolveSenderEnvelope(cfg)
+  const checks: EmailCheck[] = []
+
+  const hasKey = Boolean(process.env.RESEND_API_KEY)
+  checks.push({
+    label: "Email provider key",
+    ok: hasKey,
+    blocking: true,
+    detail: hasKey
+      ? "RESEND_API_KEY is configured on the server."
+      : "RESEND_API_KEY is not set. No email of any kind can be sent until it is.",
+  })
+
+  checks.push({
+    label: "Firm sender address",
+    ok: Boolean(cfg.fromEmail),
+    blocking: false,
+    detail: cfg.fromEmail
+      ? `Firm address is ${cfg.fromEmail}. Replies route here.`
+      : "No sender address set (Firm Details → Sender Email). Mail still sends via the platform address, but replies have nowhere to go.",
+  })
+
+  // The fallback is what carries mail on day one, before any DNS work. If it
+  // is not a verified identity at the provider, EVERY send is rejected — this
+  // is the most common cause of "nothing arrives".
+  const platformFrom = getPlatformFallbackFrom()
+  const platformDomain = platformFrom.split("@")[1] ?? ""
+  let platformOk = Boolean(platformFrom)
+  let platformDetail = platformFrom
+    ? `Platform sender is ${platformFrom}.`
+    : "No platform sender configured (PLATFORM_FROM_EMAIL). Firms without a verified domain cannot send at all."
+
+  if (hasKey && platformDomain) {
+    const lookup = await findDomainByName(platformDomain)
+    if (lookup.ok) {
+      const verified = lookup.data?.status === "verified"
+      platformOk = verified
+      platformDetail = verified
+        ? `Platform sender ${platformFrom} is on a verified domain — mail sends today with no DNS work.`
+        : lookup.data
+          ? `Platform domain ${platformDomain} is registered but NOT verified (status: ${lookup.data.status}). Every send will be rejected until it is.`
+          : `Platform domain ${platformDomain} is not registered with the email provider. Every send will be rejected until it is.`
+    } else {
+      platformDetail = `Could not check the platform domain: ${lookup.error}`
+      platformOk = false
+    }
+  }
+
+  checks.push({
+    label: "Platform fallback sender",
+    ok: platformOk,
+    blocking: !cfg.domainVerified,
+    detail: platformDetail,
+  })
+
+  checks.push({
+    label: "Firm domain verification",
+    ok: cfg.domainVerified,
+    blocking: false,
+    detail: cfg.domainVerified
+      ? `${cfg.firmDomain} is verified — mail sends directly from your own domain.`
+      : cfg.firmDomain
+        ? `${cfg.firmDomain} is not verified yet (status: ${cfg.domainStatus ?? "not started"}). Mail still goes out via the platform address with your firm's name and Reply-To.`
+        : "No firm domain yet. Optional — mail sends via the platform address meanwhile.",
+  })
+
+  const blockingFailure = checks.some((c) => c.blocking && !c.ok)
+
+  return {
+    effectiveFrom: envelope.fromAddress || "(not configured)",
+    replyTo: envelope.replyTo,
+    usingFallback: envelope.usingFallback,
+    canSend: Boolean(envelope.fromAddress) && !blockingFailure,
+    checks,
+  }
+}
+
+/**
+ * Send a real message through the live provider and report the verbatim
+ * outcome. The only reliable way to answer "why didn't the invite arrive?".
+ */
+export async function sendTestEmail(
+  to: string
+): Promise<{ success: boolean; message: string; from?: string }> {
   try {
-    const session = await requirePartner()
-    const token = `jtacs-verify=${randomBytes(16).toString("hex")}`
-    await upsertFirmSettings(
-      {
-        verificationToken: token,
-        domainVerified: false,
-        domainVerifiedAt: null,
-      },
-      session.user.id
-    )
-    revalidatePath("/settings")
-    return { success: true, token }
+    await requirePartner()
+
+    const target = to?.trim()
+    if (!target || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target)) {
+      return { success: false, message: "Enter a valid email address to send the test to." }
+    }
+
+    const cfg = await getFirmSettings()
+    const envelope = resolveSenderEnvelope(cfg)
+
+    const result = await resendProvider.send({
+      to: target,
+      subject: `Test email from ${cfg.firmName}`,
+      content:
+        `<p>This is a test message from your ${cfg.firmName} workspace.</p>` +
+        `<p>If you are reading this, outbound email is working. Sent as ` +
+        `<strong>${envelope.fromAddress}</strong>.</p>`,
+      metadata: { kind: "delivery_test" },
+    })
+
+    if (!result.success) {
+      return {
+        success: false,
+        from: envelope.fromAddress,
+        message: result.error ?? "The email provider rejected the message.",
+      }
+    }
+
+    return {
+      success: true,
+      from: envelope.fromAddress,
+      message: `Test email accepted by the provider and sent to ${target}. If it does not arrive within a few minutes, check the recipient's spam folder.`,
+    }
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to rotate token.",
+      message: error instanceof Error ? error.message : "Test send failed.",
     }
   }
 }

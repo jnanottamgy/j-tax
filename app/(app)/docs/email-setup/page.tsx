@@ -76,42 +76,45 @@ Envelope-From uses the platform's verified domain; firm branding still visible.`
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-muted-foreground">
           <p>
-            From <strong>Settings → Email Domain Verification</strong>, copy the three records and
-            paste them at your DNS provider (Cloudflare, Route 53, GoDaddy, etc.).
+            The records are <strong>generated for your domain specifically</strong> — your DKIM
+            key is unique to you, so they cannot be written by hand or copied from another
+            firm. Open <strong>Settings → Email Domain Verification</strong> to see your exact
+            records, then paste them at your DNS provider (Cloudflare, Route 53, GoDaddy, etc.).
           </p>
 
           <div className="space-y-3">
             <div className="rounded-lg border border-white/[0.08] p-3 space-y-1">
-              <p className="font-medium text-foreground">1. Ownership TXT</p>
+              <p className="font-medium text-foreground">1. Copy each record exactly</p>
               <p className="text-xs">
-                <code className="bg-white/[0.06] px-1 rounded">_jtacs-verify.&lt;domain&gt;</code>{" "}
-                with the value shown in Settings. Proves you control the domain.
+                Host and value must match character-for-character. A truncated DKIM value is the
+                most common reason a domain never finishes verifying.
               </p>
             </div>
             <div className="rounded-lg border border-white/[0.08] p-3 space-y-1">
-              <p className="font-medium text-foreground">2. SPF TXT</p>
+              <p className="font-medium text-foreground">2. Merge SPF, never duplicate it</p>
               <p className="text-xs">
-                <code className="bg-white/[0.06] px-1 rounded">@</code> (root) with{" "}
-                <code className="bg-white/[0.06] px-1 rounded">v=spf1 include:amazonses.com ~all</code>.
-                If you already have an SPF record, <strong>merge</strong> the include — don&apos;t add a
-                second SPF record (RFC 7208 § 3.2 — multiple records cause permerror).
+                If your domain already publishes an SPF record, add the include to the existing
+                one. Two SPF records cause a permerror and break authentication for all your mail
+                (RFC 7208 § 3.2).
               </p>
             </div>
             <div className="rounded-lg border border-white/[0.08] p-3 space-y-1">
-              <p className="font-medium text-foreground">3. DKIM CNAME</p>
+              <p className="font-medium text-foreground">3. Strip your DNS panel&apos;s extras</p>
               <p className="text-xs">
-                <code className="bg-white/[0.06] px-1 rounded">resend._domainkey.&lt;domain&gt;</code>{" "}
-                CNAME → <code className="bg-white/[0.06] px-1 rounded">resend._domainkey.resend.com</code>.
-                Adds a DKIM signature to every outgoing message.
+                Some panels append the domain automatically. If the host shown is{" "}
+                <code className="bg-white/[0.06] px-1 rounded">resend._domainkey.{firmDomain}</code>,
+                many panels want only{" "}
+                <code className="bg-white/[0.06] px-1 rounded">resend._domainkey</code>. Do not end
+                up with the domain twice.
               </p>
             </div>
             <div className="rounded-lg border border-white/[0.08] p-3 space-y-1">
-              <p className="font-medium text-foreground">4. DMARC TXT (recommended)</p>
+              <p className="font-medium text-foreground">4. Click Verify</p>
               <p className="text-xs">
-                <code className="bg-white/[0.06] px-1 rounded">_dmarc.&lt;domain&gt;</code> with{" "}
-                <code className="bg-white/[0.06] px-1 rounded">v=DMARC1; p=none; rua=mailto:dmarc@&lt;domain&gt;</code>.
-                Start in monitoring mode (<code>p=none</code>) — tighten to <code>quarantine</code>
-                or <code>reject</code> later once you confirm no legitimate mail is failing.
+                Verification is performed by the email provider, not by this app — publishing the
+                records is not enough on its own. DNS usually applies within 10 minutes, but can
+                take up to 48 hours. Your email keeps sending via the platform address meanwhile,
+                so nothing is blocked while you wait.
               </p>
             </div>
           </div>

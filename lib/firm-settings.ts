@@ -24,10 +24,16 @@ export type FirmConfig = {
   gstin: string | null
   pan: string | null
   website: string | null
-  // ── Domain verification (Phase 8) ─────────────────────────────────────────
+  // ── Domain verification (mirrors Resend) ──────────────────────────────────
   firmDomain: string | null
+  /** Mirrors Resend's status. Never asserted locally — see resend-domains.ts. */
   domainVerified: boolean
   domainVerifiedAt: Date | null
+  /** Domain id in the platform's Resend account. */
+  resendDomainId: string | null
+  /** not_started | pending | verified | failed | temporary_failure */
+  domainStatus: string | null
+  /** @deprecated legacy token from the old self-certifying flow. */
   verificationToken: string | null
   platformFallbackEnabled: boolean
   // ── Payment collection details (client portal Pay dialog) ────────────────
@@ -50,6 +56,8 @@ const ENV_DEFAULTS: FirmConfig = {
   firmDomain: null,
   domainVerified: false,
   domainVerifiedAt: null,
+  resendDomainId: null,
+  domainStatus: null,
   verificationToken: null,
   platformFallbackEnabled: true,
   bankAccountName: null,
@@ -102,6 +110,8 @@ export async function getFirmSettings(): Promise<FirmConfig> {
       firmDomain: row.firmDomain || null,
       domainVerified: row.domainVerified ?? false,
       domainVerifiedAt: row.domainVerifiedAt ?? null,
+      resendDomainId: row.resendDomainId || null,
+      domainStatus: row.domainStatus || null,
       verificationToken: row.verificationToken || null,
       platformFallbackEnabled: row.platformFallbackEnabled ?? true,
       bankAccountName: row.bankAccountName || null,
@@ -211,6 +221,8 @@ export async function upsertFirmSettings(
       firmDomain: data.firmDomain ?? null,
       domainVerified: data.domainVerified ?? false,
       domainVerifiedAt: data.domainVerifiedAt ?? null,
+      resendDomainId: data.resendDomainId ?? null,
+      domainStatus: data.domainStatus ?? null,
       verificationToken: data.verificationToken ?? null,
       platformFallbackEnabled: data.platformFallbackEnabled ?? true,
       bankAccountName: data.bankAccountName ?? null,
@@ -234,6 +246,8 @@ export async function upsertFirmSettings(
     firmDomain: row.firmDomain,
     domainVerified: row.domainVerified,
     domainVerifiedAt: row.domainVerifiedAt,
+    resendDomainId: row.resendDomainId,
+    domainStatus: row.domainStatus,
     verificationToken: row.verificationToken,
     platformFallbackEnabled: row.platformFallbackEnabled,
     bankAccountName: row.bankAccountName,
@@ -259,40 +273,4 @@ export function extractDomain(email: string | null | undefined): string | null {
   return dom
 }
 
-/**
- * Compute the suggested DNS records a firm must publish so their domain can
- * be used as a verified sender with Resend. SPF/DKIM values are stable per
- * Resend documentation; DMARC is recommended but optional.
- */
-export function buildDnsInstructions(domain: string, verificationToken: string) {
-  return [
-    {
-      type: "TXT",
-      host: `_jtacs-verify.${domain}`,
-      value: verificationToken,
-      purpose: "Ownership verification — proves you control the domain.",
-      required: true,
-    },
-    {
-      type: "TXT",
-      host: domain,
-      value: "v=spf1 include:amazonses.com ~all",
-      purpose: "SPF — authorizes Resend's mail servers to send for your domain.",
-      required: true,
-    },
-    {
-      type: "CNAME",
-      host: `resend._domainkey.${domain}`,
-      value: "resend._domainkey.resend.com",
-      purpose: "DKIM — signs every outbound email so inbox providers can verify it.",
-      required: true,
-    },
-    {
-      type: "TXT",
-      host: `_dmarc.${domain}`,
-      value: "v=DMARC1; p=none; rua=mailto:dmarc@" + domain,
-      purpose: "DMARC — tells receivers what to do with mail that fails SPF/DKIM. Start with p=none, tighten later.",
-      required: false,
-    },
-  ] as const
-}
+

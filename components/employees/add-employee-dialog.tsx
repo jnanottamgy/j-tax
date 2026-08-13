@@ -35,6 +35,9 @@ type IssuedCredentials = {
   email: string
   tempPassword: string
   emailSent: boolean
+  /** Provider's reason when the invite bounced — shown verbatim so the Partner
+   * can fix the actual cause instead of guessing. */
+  emailError?: string
 }
 
 const emptyForm = {
@@ -166,9 +169,25 @@ export function AddEmployeeDialog({
                 )}
                 {credentials.emailSent
                   ? "Invite email sent."
-                  : "Invite email failed (check your email settings in Settings → Firm Details)."}{" "}
+                  : "Invite email was not delivered."}{" "}
                 They&apos;ll be asked to choose their own password at first sign-in.
               </p>
+
+              {!credentials.emailSent && (
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 space-y-1">
+                  <p className="text-xs font-medium text-amber-400">
+                    Why the email didn&apos;t send
+                  </p>
+                  <p className="break-words text-xs text-muted-foreground">
+                    {credentials.emailError ??
+                      "The email provider rejected the message without a reason."}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Check <span className="font-medium">Settings → Email Delivery</span> for a full
+                    diagnosis. The credentials above still work — share them directly.
+                  </p>
+                </div>
+              )}
 
               <Button className="h-10 w-full rounded-xl" onClick={() => onOpenChange(false)}>
                 Done

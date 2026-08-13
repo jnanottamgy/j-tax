@@ -51,10 +51,23 @@ export type ProvisionResult =
       userId: string
       tempPassword: string
       emailSent: boolean
+      /**
+       * Why the invite email did not go out, verbatim from the provider.
+       * Without this the Partner sees only "email not sent" and cannot tell a
+       * missing API key from an unverified sender domain.
+       */
+      emailError?: string
       /** true when an auth account already existed for this email */
       alreadyExisted: false
     }
-  | { ok: true; userId: string | null; tempPassword: null; emailSent: false; alreadyExisted: true }
+  | {
+      ok: true
+      userId: string | null
+      tempPassword: null
+      emailSent: false
+      emailError?: string
+      alreadyExisted: true
+    }
   | { ok: false; error: string }
 
 export async function provisionStaffAccount(opts: {
@@ -120,9 +133,16 @@ export async function provisionStaffAccount(opts: {
     console.error("[provisioning] prisma user mirror failed:", err)
   }
 
-  const emailSent = await sendInviteEmail({ name, email, role, tempPassword })
+  const invite = await sendInviteEmail({ name, email, role, tempPassword })
 
-  return { ok: true, userId: authUserId, tempPassword, emailSent, alreadyExisted: false }
+  return {
+    ok: true,
+    userId: authUserId,
+    tempPassword,
+    emailSent: invite.sent,
+    ...(invite.error ? { emailError: invite.error } : {}),
+    alreadyExisted: false,
+  }
 }
 
 async function sendInviteEmail(opts: {
@@ -130,7 +150,7 @@ async function sendInviteEmail(opts: {
   email: string
   role: StaffRole
   tempPassword: string
-}): Promise<boolean> {
+}): Promise<{ sent: boolean; error?: string }> {
   try {
     const cfg = await getFirmSettings()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
@@ -163,10 +183,17 @@ async function sendInviteEmail(opts: {
       content: html,
       metadata: { kind: "staff_invite" },
     })
-    return result.success
+    if (!result.success) {
+      console.error("[provisioning] invite email rejected:", result.error)
+      return { sent: false, error: result.error ?? "Email provider rejected the message." }
+    }
+    return { sent: true }
   } catch (err) {
     console.error("[provisioning] invite email failed:", err)
-    return false
+    return {
+      sent: false,
+      error: err instanceof Error ? err.message : "Invite email failed to send.",
+    }
   }
 }
 

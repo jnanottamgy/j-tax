@@ -11,7 +11,7 @@
  *
  * Exit code 0 = pass, non-zero = at least one assertion failed.
  */
-import { getFirmSettings, resolveSenderEnvelope, extractDomain, buildDnsInstructions, getPlatformFallbackFrom } from "../lib/firm-settings"
+import { getFirmSettings, resolveSenderEnvelope, extractDomain, getPlatformFallbackFrom } from "../lib/firm-settings"
 
 type Result = { name: string; pass: boolean; detail: string }
 const results: Result[] = []
@@ -134,19 +134,38 @@ async function main() {
     )
   }
 
-  // ── Section 6: DNS instructions schema ────────────────────────────────────
-  console.log("\n[6] DNS records — content sanity check")
-  const recs = buildDnsInstructions("taxwiseconsultants.com", "jtacs-verify=abc123")
-  for (const r of recs) {
-    console.log(`    ${r.type.padEnd(5)} ${r.host.padEnd(48)} → ${r.value.slice(0, 60)}${r.value.length > 60 ? "..." : ""}`)
+  // ── Section 6: DNS records come from the provider ─────────────────────────
+  console.log("\n[6] DNS records — provider-issued check")
+  // DNS records are no longer hand-authored. Resend generates a per-domain
+  // DKIM keypair, so the records can only be fetched from the Domains API for
+  // a domain registered in the platform account. Verify the wiring exists
+  // rather than asserting on invented values (the old check passed happily
+  // against records that did nothing).
+  const { findDomainByName } = await import("../lib/messaging/resend-domains")
+  const cfgDomain = cfg.firmDomain
+  if (!cfgDomain) {
+    record("Domain records fetchable from provider", false, "no firmDomain configured")
+  } else {
+    const lookup = await findDomainByName(cfgDomain)
+    if (!lookup.ok) {
+      record("Domain records fetchable from provider", false, lookup.error)
+    } else if (!lookup.data) {
+      record(
+        "Domain records fetchable from provider",
+        false,
+        `${cfgDomain} is not registered with the provider yet — open Settings and run Verify`
+      )
+    } else {
+      for (const r of lookup.data.records) {
+        console.log(`    ${r.type.padEnd(5)} ${r.host.padEnd(48)} → ${r.value.slice(0, 60)}${r.value.length > 60 ? "..." : ""}`)
+      }
+      record(
+        "Domain records fetchable from provider",
+        lookup.data.records.length > 0,
+        `status=${lookup.data.status}, ${lookup.data.records.length} records`
+      )
+    }
   }
-  record(
-    "DNS instructions include SPF + DKIM + verification TXT",
-    recs.some((r) => r.value.startsWith("v=spf1")) &&
-      recs.some((r) => r.host.includes("_domainkey")) &&
-      recs.some((r) => r.host.startsWith("_jtacs-verify.")),
-    `${recs.length} records`
-  )
 
   // ── Section 7: Static grep for legacy hardcoded sender names ──────────────
   console.log("\n[7] Static check — no production code references 'TaxWise Consultants'")
