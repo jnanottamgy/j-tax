@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit"
 
 import { stateName } from "@/lib/invoices/gst"
 import { formatIndianNumber } from "@/lib/india/format"
+import { drawLetterhead, type PdfLogo } from "@/lib/pdf/letterhead"
 
 export interface InvoicePDFData {
   invoiceNumber: string
@@ -13,6 +14,8 @@ export interface InvoicePDFData {
   firmPhone: string
   firmAddress: string
   firmGstin: string | null
+  /** Firm letterhead. Omitted or null → the wordmark-only header. */
+  firmLogo?: PdfLogo | null
   clientName: string
   clientEmail: string | null
   clientGstin: string | null
@@ -86,18 +89,23 @@ export async function generateInvoicePDF(data: InvoicePDFData): Promise<Buffer> 
       data.igstAmount != null
 
     // ── Header ──────────────────────────────────────────────────────────────
-    doc.rect(50, 50, pageWidth, 80).fill(BRAND)
+    drawLetterhead(doc, {
+      x: 50,
+      y: 50,
+      width: pageWidth,
+      height: 80,
+      bandColor: BRAND,
+      logo: data.firmLogo,
+      firmName: data.firmName,
+      lines: [
+        [data.firmEmail, data.firmPhone].filter(Boolean).join("  |  "),
+        data.firmAddress,
+      ],
+      // "TAX INVOICE" at 20pt is roughly 120pt wide; leave it clear room.
+      titleReserve: 150,
+    })
     doc
       .fillColor("white")
-      .fontSize(22)
-      .font("Helvetica-Bold")
-      .text(data.firmName, 70, 65)
-    doc
-      .fontSize(9)
-      .font("Helvetica")
-      .text([data.firmEmail, data.firmPhone].filter(Boolean).join("  |  "), 70, 92)
-      .text(data.firmAddress ?? "", 70, 106)
-    doc
       .fontSize(hasGstData ? 20 : 24)
       .font("Helvetica-Bold")
       .text(hasGstData ? "TAX INVOICE" : "INVOICE", 50, hasGstData ? 74 : 72, {

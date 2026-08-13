@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateQuotationPDF } from "@/lib/quotations/pdf-generator"
-import { getFirmSettingsForFirm } from "@/lib/firm-settings"
+import { getFirmSettingsForFirm, getFirmLogoForFirm } from "@/lib/firm-settings"
 import { checkApiRateLimit, getRateLimitHeaders } from "@/lib/security/rate-limiter"
 
 // Public, token-authenticated PDF download for the client quotation portal.
@@ -32,7 +32,10 @@ export async function GET(
   try {
     // Public route — resolve branding from the quotation's own firm,
     // since there is no session to derive it from.
-    const cfg = await getFirmSettingsForFirm(quotation.firmId)
+    const [cfg, firmLogo] = await Promise.all([
+      getFirmSettingsForFirm(quotation.firmId),
+      getFirmLogoForFirm(quotation.firmId),
+    ])
     const pdfBuffer = await generateQuotationPDF({
       quotationNumber: quotation.quotationNumber,
       createdAt: quotation.createdAt,
@@ -41,6 +44,7 @@ export async function GET(
       firmEmail: cfg.fromEmail || "",
       firmPhone: cfg.firmPhone || "",
       firmAddress: cfg.firmAddress || "",
+      firmLogo,
       clientName: quotation.clientName,
       clientEmail: quotation.clientEmail,
       clientPhone: quotation.clientPhone,

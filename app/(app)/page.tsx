@@ -17,9 +17,11 @@ import { RecentActivity } from "@/components/dashboard/recent-activity"
 import { RevenueTrendChart } from "@/components/dashboard/revenue-trend-chart"
 import { SetupChecklist } from "@/components/dashboard/setup-checklist"
 import { TasksDueToday } from "@/components/dashboard/tasks-due-today"
+import { FinishSetupCard } from "@/components/onboarding/finish-setup-card"
 import { PageContainer } from "@/components/layout/page-container"
 import { PageHeader } from "@/components/layout/page-header"
 import { Breadcrumb } from "@/components/navigation/breadcrumb"
+import { getOnboardingStatus } from "@/app/actions/onboarding"
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 
@@ -578,7 +580,7 @@ export default async function DashboardPage() {
 
   // ─── PARTNER dashboard (default / full firm view) ─────────────────────────
   const fetcher = makePartnerDashboardFetcher(user.id)
-  const data = await fetcher()
+  const [data, onboarding] = await Promise.all([fetcher(), getOnboardingStatus()])
 
   const {
     totalClients,
@@ -639,6 +641,9 @@ export default async function DashboardPage() {
         description="Full firm visibility — revenue, compliance, workforce intelligence, and approvals."
         action={<DashboardIdentity name={user.name} role={user.role} />}
       />
+
+      {/* Only shows when the wizard was dismissed part-way — the route back in. */}
+      {onboarding.skipped && <FinishSetupCard step={onboarding.step} />}
 
       <WorkQueuePanel />
 

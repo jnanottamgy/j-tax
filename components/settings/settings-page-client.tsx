@@ -26,6 +26,7 @@ import {
   type EmailDiagnostics,
 } from "@/app/actions/settings"
 import type { FirmConfig } from "@/lib/firm-settings"
+import { FirmLogoUpload } from "@/components/settings/firm-logo-upload"
 import { useAuth } from "@/components/auth/auth-provider"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
@@ -238,6 +239,22 @@ export function SettingsPageClient({
                   Firm settings saved successfully.
                 </div>
               )}
+
+              {/* Letterhead. Saves on its own — it is a file, not a form
+                  field, and a partner who uploads a logo and navigates away
+                  should not lose it because they never pressed Save. */}
+              <div className="space-y-2">
+                <Label>Firm Logo</Label>
+                <FirmLogoUpload
+                  initialLogoUpdatedAt={
+                    initialFirmSettings?.logoUpdatedAt
+                      ? new Date(initialFirmSettings.logoUpdatedAt).toISOString()
+                      : null
+                  }
+                />
+              </div>
+
+              <Separator className="bg-white/[0.06]" />
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">

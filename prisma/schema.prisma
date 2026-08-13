@@ -97,6 +97,20 @@ model FirmSettings {
   bankName          String?
   upiId             String?
 
+  // ── Letterhead ────────────────────────────────────────────────────────────
+  /// Base64-encoded logo bytes, stored inline rather than in object storage.
+  /// It is one small downscaled image per firm, and pdfkit needs the bytes in
+  /// hand anyway (it cannot take a URL), so a blob here avoids depending on
+  /// bucket provisioning and signed-URL lifetimes for something that must
+  /// render on every invoice. Deliberately excluded from the getFirmSettings
+  /// select — read it through getFirmLogo(), never on the hot path.
+  logoData      String?
+  logoMimeType  String?
+  logoFileName  String?
+  /// Doubles as "does this firm have a logo" and as the cache-buster for the
+  /// /api/firm/logo route.
+  logoUpdatedAt DateTime?
+
   updatedAt    DateTime @updatedAt
   updatedBy    String?
 

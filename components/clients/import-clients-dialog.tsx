@@ -128,7 +128,12 @@ function downloadText(filename: string, text: string) {
 
 type Step = "upload" | "map" | "done"
 
-export function ImportClientsDialog({ onSuccess }: { onSuccess?: () => void }) {
+export function ImportClientsDialog({
+  onSuccess,
+}: {
+  /** Called with the number of clients created, once, after a successful import. */
+  onSuccess?: (created: number) => void
+}) {
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<Step>("upload")
   const [fileName, setFileName] = useState("")
@@ -202,7 +207,7 @@ export function ImportClientsDialog({ onSuccess }: { onSuccess?: () => void }) {
       setStep("done")
       if (res.created > 0) {
         toast.success(`Imported ${res.created} client${res.created === 1 ? "" : "s"}.`)
-        onSuccess?.()
+        onSuccess?.(res.created)
       }
     } finally {
       setImporting(false)

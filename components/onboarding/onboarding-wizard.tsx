@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Bell,
   FileText,
+  FileSpreadsheet,
   ExternalLink,
   SkipForward,
 } from "lucide-react"
@@ -49,6 +50,14 @@ import {
   createClientFromOnboarding,
 } from "@/app/actions/onboarding"
 import { loadFirmSettings } from "@/app/actions/settings"
+import { FirmLogoUpload } from "@/components/settings/firm-logo-upload"
+import { ImportClientsDialog } from "@/components/clients/import-clients-dialog"
+import {
+  validateGSTIN,
+  validatePAN,
+  gstinPanMismatch,
+  isValidIFSC,
+} from "@/lib/india/validators"
 import { cn } from "@/lib/utils"
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
@@ -117,6 +126,55 @@ type EmployeeRow = {
   error?: string
 }
 
+type FirmFieldErrors = Partial<Record<"firmName" | "gstin" | "pan" | "bankIfsc", string>>
+
+/**
+ * Step 1 validation.
+ *
+ * GSTIN, PAN and IFSC are all optional here — but a mistyped one is worse than
+ * a blank. Each of these prints on every invoice the firm sends, the GSTIN is
+ * what a client's own accountant cross-checks before claiming input credit,
+ * and a wrong IFSC means the payment simply never arrives. These are the same
+ * offline validators (GSTIN mod-36 checksum, PAN structure, GSTIN↔PAN
+ * cross-check) the bulk client importer already runs, so the firm's own
+ * details are held to the standard its clients' details are.
+ */
+function validateFirmInfo(data: {
+  firmName: string
+  gstin: string
+  pan: string
+  bankIfsc: string
+}): FirmFieldErrors {
+  const errors: FirmFieldErrors = {}
+
+  if (!data.firmName.trim()) {
+    errors.firmName = "Firm name is required to continue."
+  }
+
+  if (data.gstin.trim()) {
+    const result = validateGSTIN(data.gstin)
+    if (!result.valid) errors.gstin = result.error
+  }
+
+  if (data.pan.trim()) {
+    const result = validatePAN(data.pan)
+    if (!result.valid) errors.pan = result.error
+  }
+
+  // Only worth reporting once both parse — otherwise it just repeats the
+  // format error the individual field already shows.
+  if (!errors.gstin && !errors.pan) {
+    const mismatch = gstinPanMismatch(data.gstin, data.pan)
+    if (mismatch) errors.pan = mismatch
+  }
+
+  if (data.bankIfsc.trim() && !isValidIFSC(data.bankIfsc)) {
+    errors.bankIfsc = "IFSC format is invalid (expected e.g. HDFC0001234)"
+  }
+
+  return errors
+}
+
 // ─── Root wizard ──────────────────────────────────────────────────────────────
 
 export function OnboardingWizard() {
@@ -146,6 +204,10 @@ export function OnboardingWizard() {
     upiId: "",
   })
   const [firmError, setFirmError] = useState("")
+  const [firmFieldErrors, setFirmFieldErrors] = useState<FirmFieldErrors>({})
+  // ISO timestamp of an already-stored letterhead, so returning to the wizard
+  // shows the logo rather than an empty upload box.
+  const [logoUpdatedAt, setLogoUpdatedAt] = useState<string | null>(null)
 
   // Employees
   const [employees, setEmployees] = useState<EmployeeRow[]>([
@@ -168,6 +230,7 @@ export function OnboardingWizard() {
   })
   const [clientCreated, setClientCreated] = useState<{ id: string; name: string } | null>(null)
   const [clientError, setClientError] = useState("")
+  const [clientsImported, setClientsImported] = useState(0)
 
   // Email config
   const [emailConfig, setEmailConfig] = useState({
@@ -203,6 +266,9 @@ export function OnboardingWizard() {
           bankIfsc: firm.bankIfsc || prev.bankIfsc,
           upiId: firm.upiId || prev.upiId,
         }))
+        setLogoUpdatedAt(
+          firm.logoUpdatedAt ? new Date(firm.logoUpdatedAt).toISOString() : null
+        )
       }
 
       if (status.completed) {
@@ -230,8 +296,11 @@ export function OnboardingWizard() {
   const handleSkipAll = async () => {
     try {
       setSaving(true)
-      await skipOnboarding()
+      // Record where they actually stopped. That is what lets the dashboard
+      // offer setup back instead of the wizard disappearing for good.
+      await skipOnboarding(currentStep)
       router.push("/")
+      router.refresh()
     } catch (error) {
       console.error("Skip failed:", error)
     } finally {
@@ -244,8 +313,13 @@ export function OnboardingWizard() {
     try {
       switch (currentStep) {
         case 1: {
-          if (!firmInfo.firmName.trim()) {
-            setFirmError("Firm name is required to continue.")
+          const fieldErrors = validateFirmInfo(firmInfo)
+          setFirmFieldErrors(fieldErrors)
+          if (Object.keys(fieldErrors).length > 0) {
+            setFirmError(
+              fieldErrors.firmName ??
+                "Check the highlighted fields — these print on every invoice you send."
+            )
             setSaving(false)
             return
           }
@@ -405,16 +479,24 @@ export function OnboardingWizard() {
             Step {currentStep} of {TOTAL_STEPS}
           </span>
           {currentStep < TOTAL_STEPS && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSkipAll}
-              disabled={saving}
-              className="text-muted-foreground hover:text-foreground text-xs gap-1"
-            >
-              Skip all
-              <X className="h-3.5 w-3.5" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Named for what it does. "Skip all" read as throwing the setup
+                  away; it now saves the position and the dashboard offers it
+                  back, so the label should say so. */}
+              <span className="hidden text-[11px] text-muted-foreground md:block">
+                You can pick up where you left off from the dashboard
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSkipAll}
+                disabled={saving}
+                className="text-muted-foreground hover:text-foreground text-xs gap-1"
+              >
+                Finish later
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -487,8 +569,17 @@ export function OnboardingWizard() {
                 <StepFirmInformation
                   key="firm"
                   data={firmInfo}
-                  onChange={setFirmInfo}
+                  // Editing clears the last verdict — leaving a checksum error
+                  // under a field the user has already corrected reads as the
+                  // fix not having worked.
+                  onChange={(d) => {
+                    setFirmInfo(d)
+                    if (firmError) setFirmError("")
+                    if (Object.keys(firmFieldErrors).length) setFirmFieldErrors({})
+                  }}
                   error={firmError}
+                  fieldErrors={firmFieldErrors}
+                  logoUpdatedAt={logoUpdatedAt}
                   saving={saving}
                   onNext={handleNext}
                 />
@@ -524,6 +615,8 @@ export function OnboardingWizard() {
                   data={clientInfo}
                   onChange={setClientInfo}
                   created={clientCreated}
+                  imported={clientsImported}
+                  onImported={setClientsImported}
                   error={clientError}
                   saving={saving}
                   onNext={handleNext}
@@ -549,6 +642,7 @@ export function OnboardingWizard() {
                   employeeCount={employees.filter((e) => e.status === "saved").length}
                   serviceCount={serviceConfig.services.length}
                   clientCreated={clientCreated}
+                  clientsImported={clientsImported}
                   saving={saving}
                   onLaunch={handleNext}
                 />
@@ -650,16 +744,30 @@ function StepNav({
 
 // ─── Step 1: Firm Information ─────────────────────────────────────────────────
 
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null
+  return (
+    <p className="text-xs text-destructive mt-1.5 flex items-start gap-1">
+      <AlertCircle className="h-3.5 w-3.5 mt-px shrink-0" />
+      <span>{message}</span>
+    </p>
+  )
+}
+
 function StepFirmInformation({
   data,
   onChange,
   error,
+  fieldErrors,
+  logoUpdatedAt,
   saving,
   onNext,
 }: {
   data: any
   onChange: (d: any) => void
   error: string
+  fieldErrors: FirmFieldErrors
+  logoUpdatedAt: string | null
   saving: boolean
   onNext: () => void
 }) {
@@ -675,7 +783,26 @@ function StepFirmInformation({
 
       <Card className="bg-white/[0.02] border-white/[0.08] p-6">
         <div className="space-y-5">
+          {/* Summary banner. Field-level messages sit under their own inputs;
+              this is what a server rejection lands in. */}
+          {error && !fieldErrors.firmName && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Letterhead first — it is the part of the document a client sees
+              before reading a single line of it. Saves on upload, so it is
+              already stored by the time they reach Continue. */}
           <div>
+            <Label>
+              Firm Logo <span className="text-muted-foreground text-xs">(optional)</span>
+            </Label>
+            <FirmLogoUpload initialLogoUpdatedAt={logoUpdatedAt} className="mt-3" />
+          </div>
+
+          <div className="border-t border-white/[0.06] pt-5">
             <Label htmlFor="firmName">
               Firm Name <span className="text-destructive">*</span>
             </Label>
@@ -687,12 +814,7 @@ function StepFirmInformation({
               className="mt-2"
               autoFocus
             />
-            {error && (
-              <p className="text-xs text-destructive mt-1.5 flex items-center gap-1">
-                <AlertCircle className="h-3.5 w-3.5" />
-                {error}
-              </p>
-            )}
+            <FieldError message={fieldErrors.firmName} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -701,20 +823,26 @@ function StepFirmInformation({
               <Input
                 id="gstin"
                 value={data.gstin}
-                onChange={(e) => onChange({ ...data, gstin: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...data, gstin: e.target.value.toUpperCase() })
+                }
                 placeholder="22AAAAA0000A1Z5 (optional)"
-                className="mt-2"
+                className={cn("mt-2", fieldErrors.gstin && "border-destructive/60")}
+                maxLength={15}
               />
+              <FieldError message={fieldErrors.gstin} />
             </div>
             <div>
               <Label htmlFor="firmPan">PAN</Label>
               <Input
                 id="firmPan"
                 value={data.pan}
-                onChange={(e) => onChange({ ...data, pan: e.target.value })}
+                onChange={(e) => onChange({ ...data, pan: e.target.value.toUpperCase() })}
                 placeholder="AAAAA0000A (optional)"
-                className="mt-2"
+                className={cn("mt-2", fieldErrors.pan && "border-destructive/60")}
+                maxLength={10}
               />
+              <FieldError message={fieldErrors.pan} />
             </div>
           </div>
 
@@ -835,10 +963,14 @@ function StepFirmInformation({
               <Input
                 id="bankIfsc"
                 value={data.bankIfsc}
-                onChange={(e) => onChange({ ...data, bankIfsc: e.target.value })}
+                onChange={(e) =>
+                  onChange({ ...data, bankIfsc: e.target.value.toUpperCase() })
+                }
                 placeholder="HDFC0001234"
-                className="mt-2"
+                className={cn("mt-2", fieldErrors.bankIfsc && "border-destructive/60")}
+                maxLength={11}
               />
+              <FieldError message={fieldErrors.bankIfsc} />
             </div>
           </div>
 
@@ -1171,6 +1303,8 @@ function StepAddFirstClient({
   data,
   onChange,
   created,
+  imported,
+  onImported,
   error,
   saving,
   onNext,
@@ -1180,6 +1314,9 @@ function StepAddFirstClient({
   data: any
   onChange: (d: any) => void
   created: { id: string; name: string } | null
+  /** Clients brought in via the bulk importer on this step. */
+  imported: number
+  onImported: (count: number) => void
   error: string
   saving: boolean
   onNext: () => void
@@ -1192,9 +1329,43 @@ function StepAddFirstClient({
         icon={UserPlus}
         iconBg="bg-yellow-500/10"
         iconColor="text-yellow-400"
-        title="Add your first client"
-        description="Get started by adding one client — you can add many more once you're up and running."
+        title="Add your clients"
+        description="Type one in to get going, or bring your whole existing book across from a spreadsheet."
       />
+
+      {/* A practice moving onto this software already has a client list, and
+          typing 200 of them one at a time is not a migration path. The bulk
+          importer is the same one on the Clients page — column mapping, GSTIN
+          and PAN validation, and a preview before anything is written. */}
+      <Card className="bg-primary/[0.04] border-primary/20 p-5 mb-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+              <FileSpreadsheet className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Already have a client list?</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Import from CSV or Excel — map your columns once, check the preview,
+                and bring every client across in one go.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0">
+            <ImportClientsDialog onSuccess={onImported} />
+          </div>
+        </div>
+      </Card>
+
+      {imported > 0 && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-green-400 bg-green-500/5 border border-green-500/20 rounded-lg px-4 py-2.5">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span>
+            {imported} client{imported !== 1 ? "s" : ""} imported. You can add more any time
+            from the Clients page.
+          </span>
+        </div>
+      )}
 
       {created ? (
         <Card className="bg-green-500/5 border-green-500/20 p-8 text-center">
@@ -1280,7 +1451,7 @@ function StepAddFirstClient({
       <StepNav
         onBack={onBack}
         onNext={onNext}
-        onSkip={!created ? onSkip : undefined}
+        onSkip={!created && imported === 0 ? onSkip : undefined}
         saving={saving}
         nextLabel={created ? "Continue" : data.name.trim() ? "Add & Continue" : "Continue"}
       />
@@ -1435,11 +1606,49 @@ function StepConfigureEmail({
 
 // ─── Step 6: Ready to Launch ──────────────────────────────────────────────────
 
-const QUICK_LINKS = [
-  { label: "View Dashboard", href: "/", icon: Sparkles, description: "Your firm at a glance" },
-  { label: "Manage Clients", href: "/clients", icon: UserPlus, description: "Add and manage clients" },
-  { label: "Work Tracker", href: "/work-tracker", icon: Briefcase, description: "Track filings & tasks" },
-  { label: "Compliance", href: "/compliance", icon: FileText, description: "Upcoming deadlines" },
+/**
+ * What to actually do on Monday morning.
+ *
+ * The last screen said "Ready to Launch" and then handed over four navigation
+ * links, which is a menu rather than an answer. A partner who has just set up
+ * a practice-management tool needs to know the order the first real week runs
+ * in — and, more importantly, which of the two things that block real work
+ * (staff logins, verified sending domain) are still outstanding.
+ */
+const NEXT_STEPS: Array<{
+  title: string
+  detail: string
+  href: string
+  cta: string
+}> = [
+  {
+    title: "Give your team their logins",
+    detail:
+      "Employees you added get an invite email with a password. Until they sign in, nothing can be assigned to them.",
+    href: "/employees",
+    cta: "Open Employees",
+  },
+  {
+    title: "Verify your email domain",
+    detail:
+      "Until then, client email goes out from our domain with your firm's name and reply-to. Verifying makes it come from yours.",
+    href: "/settings",
+    cta: "Open Settings",
+  },
+  {
+    title: "Set each client's services and deadlines",
+    detail:
+      "Assigning services is what generates the compliance calendar — GST returns, TDS, ITR — and the tasks that hang off it.",
+    href: "/clients",
+    cta: "Open Clients",
+  },
+  {
+    title: "Assign the first round of work",
+    detail:
+      "Create tasks against a client and assign them. Anything waiting on you shows up on your dashboard under 'Needs you'.",
+    href: "/work-tracker",
+    cta: "Open Work Tracker",
+  },
 ]
 
 function StepReadyToLaunch({
@@ -1447,6 +1656,7 @@ function StepReadyToLaunch({
   employeeCount,
   serviceCount,
   clientCreated,
+  clientsImported,
   saving,
   onLaunch,
 }: {
@@ -1454,9 +1664,12 @@ function StepReadyToLaunch({
   employeeCount: number
   serviceCount: number
   clientCreated: { id: string; name: string } | null
+  clientsImported: number
   saving: boolean
   onLaunch: () => void
 }) {
+  const clientCount = (clientCreated ? 1 : 0) + clientsImported
+
   return (
     <motion.div variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }}>
       {/* Hero */}
@@ -1490,8 +1703,10 @@ function StepReadyToLaunch({
             <p className="text-xs text-muted-foreground mt-1">Service{serviceCount !== 1 ? "s" : ""} configured</p>
           </div>
           <div className="text-center p-3 rounded-lg bg-muted/20">
-            <p className="text-2xl font-bold text-yellow-400">{clientCreated ? "1" : "–"}</p>
-            <p className="text-xs text-muted-foreground mt-1">Client added</p>
+            <p className="text-2xl font-bold text-yellow-400">{clientCount || "–"}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Client{clientCount !== 1 ? "s" : ""} added
+            </p>
           </div>
         </div>
         {clientCreated && (
@@ -1504,26 +1719,44 @@ function StepReadyToLaunch({
         )}
       </Card>
 
-      {/* Quick links */}
-      <p className="text-sm text-muted-foreground mb-3">Where would you like to start?</p>
-      <div className="grid grid-cols-2 gap-3 mb-8">
-        {QUICK_LINKS.map((link) => {
-          const Icon = link.icon
-          return (
+      {/* What happens next */}
+      <div className="mb-3">
+        <p className="text-sm font-medium">What to do next</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          In this order. The first two are what stand between you and real work
+          going out the door.
+        </p>
+      </div>
+      <ol className="space-y-2 mb-8">
+        {NEXT_STEPS.map((step, i) => (
+          <li
+            key={step.href}
+            className="flex items-start gap-3 p-4 rounded-lg border border-white/[0.08] hover:border-primary/30 hover:bg-primary/5 transition-colors"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-[11px] font-semibold text-primary">
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium leading-tight">{step.title}</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{step.detail}</p>
+            </div>
             <a
-              key={link.href}
-              href={link.href}
-              className="flex items-center gap-3 p-4 rounded-lg border border-white/[0.08] hover:border-primary/30 hover:bg-primary/5 transition-colors group"
+              href={step.href}
+              className="shrink-0 inline-flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap mt-0.5"
             >
-              <Icon className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-              <div>
-                <p className="text-sm font-medium leading-tight">{link.label}</p>
-                <p className="text-xs text-muted-foreground">{link.description}</p>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+              {step.cta}
+              <ArrowRight className="h-3 w-3" />
             </a>
-          )
-        })}
+          </li>
+        ))}
+      </ol>
+
+      <div className="mb-6 flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
+        <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary/60" />
+        <span>
+          Everything you entered here is editable later under{" "}
+          <strong>Settings → Firm Details</strong> — you will not be asked for it again.
+        </span>
       </div>
 
       {/* Launch button */}

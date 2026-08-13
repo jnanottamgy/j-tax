@@ -42,6 +42,10 @@ export type FirmConfig = {
   bankIfsc: string | null
   bankName: string | null
   upiId: string | null
+  // ── Letterhead ───────────────────────────────────────────────────────────
+  /** Set iff a logo is stored. Doubles as the cache-buster for /api/firm/logo. */
+  logoUpdatedAt: Date | null
+  logoFileName: string | null
 }
 
 const ENV_DEFAULTS: FirmConfig = {
@@ -65,7 +69,42 @@ const ENV_DEFAULTS: FirmConfig = {
   bankIfsc: null,
   bankName: null,
   upiId: null,
+  logoUpdatedAt: null,
+  logoFileName: null,
 }
+
+/**
+ * Every FirmConfig column — and pointedly NOT `logoData`.
+ *
+ * getFirmSettings() runs on dashboards, every outbound email and both PDF
+ * routes. A `findUnique` with no select would drag a few hundred KB of base64
+ * logo into memory on each of those, so the projection is spelled out and the
+ * blob is fetched only by getFirmLogo().
+ */
+const FIRM_CONFIG_SELECT = {
+  firmName: true,
+  fromEmail: true,
+  replyToEmail: true,
+  firmPhone: true,
+  firmAddress: true,
+  gstin: true,
+  pan: true,
+  website: true,
+  firmDomain: true,
+  domainVerified: true,
+  domainVerifiedAt: true,
+  resendDomainId: true,
+  domainStatus: true,
+  verificationToken: true,
+  platformFallbackEnabled: true,
+  bankAccountName: true,
+  bankAccountNumber: true,
+  bankIfsc: true,
+  bankName: true,
+  upiId: true,
+  logoUpdatedAt: true,
+  logoFileName: true,
+} as const
 
 /**
  * Platform fallback sender — used when the firm's own domain is not yet
@@ -128,6 +167,7 @@ export async function getFirmSettingsForFirm(
 
     const row = await prisma.firmSettings.findUnique({
       where: { firmId },
+      select: FIRM_CONFIG_SELECT,
     })
     if (!row) return ENV_DEFAULTS
 
@@ -152,10 +192,47 @@ export async function getFirmSettingsForFirm(
       bankIfsc: row.bankIfsc || null,
       bankName: row.bankName || null,
       upiId: row.upiId || null,
+      logoUpdatedAt: row.logoUpdatedAt ?? null,
+      logoFileName: row.logoFileName || null,
     }
   } catch {
     return ENV_DEFAULTS
   }
+}
+
+export type FirmLogo = {
+  /** Raw image bytes, ready for pdfkit's doc.image(). */
+  data: Buffer
+  mimeType: string
+}
+
+/**
+ * The firm's letterhead bytes, or null when none is stored.
+ *
+ * Split out from getFirmSettings so the blob is loaded only where it is drawn
+ * (the PDF generators and the /api/firm/logo route). Never throws — a firm
+ * without a logo, or a row written before the column existed, simply renders
+ * the wordmark header it always did.
+ */
+export async function getFirmLogoForFirm(
+  firmId: string | null | undefined
+): Promise<FirmLogo | null> {
+  try {
+    if (!firmId) return null
+    const row = await prisma.firmSettings.findUnique({
+      where: { firmId },
+      select: { logoData: true, logoMimeType: true },
+    })
+    if (!row?.logoData || !row.logoMimeType) return null
+    return { data: Buffer.from(row.logoData, "base64"), mimeType: row.logoMimeType }
+  } catch {
+    return null
+  }
+}
+
+/** Logo for the firm in the current tenant context. */
+export async function getFirmLogo(): Promise<FirmLogo | null> {
+  return getFirmLogoForFirm(await resolveFirmId())
 }
 
 /**
@@ -235,10 +312,13 @@ export async function upsertFirmSettings(
   if (!firmId) {
     throw new Error("Cannot save firm settings without a tenant context")
   }
+  // The letterhead is owned by saveFirmLogo/removeFirmLogo — a details form
+  // echoing its read-only fields back must never clear a stored logo.
+  const { logoUpdatedAt: _lu, logoFileName: _lf, ...writable } = data
   const row = await prisma.firmSettings.upsert({
     where: { firmId },
     update: {
-      ...data,
+      ...writable,
       updatedBy,
     },
     create: {
@@ -265,6 +345,7 @@ export async function upsertFirmSettings(
       upiId: data.upiId ?? null,
       updatedBy,
     },
+    select: FIRM_CONFIG_SELECT,
   })
 
   return {
@@ -288,7 +369,63 @@ export async function upsertFirmSettings(
     bankIfsc: row.bankIfsc,
     bankName: row.bankName,
     upiId: row.upiId,
+    logoUpdatedAt: row.logoUpdatedAt,
+    logoFileName: row.logoFileName,
   }
+}
+
+/**
+ * Store (or replace) the firm's letterhead. Caller must enforce PARTNER auth.
+ * `data` is raw image bytes; they are base64-encoded for the text column.
+ */
+export async function saveFirmLogo(
+  data: Buffer,
+  mimeType: string,
+  fileName: string | null,
+  updatedBy: string
+): Promise<Date> {
+  const firmId = await resolveFirmId()
+  if (!firmId) {
+    throw new Error("Cannot save a logo without a tenant context")
+  }
+  const logoUpdatedAt = new Date()
+  await prisma.firmSettings.upsert({
+    where: { firmId },
+    update: {
+      logoData: data.toString("base64"),
+      logoMimeType: mimeType,
+      logoFileName: fileName,
+      logoUpdatedAt,
+      updatedBy,
+    },
+    create: {
+      firmId,
+      firmName: ENV_DEFAULTS.firmName,
+      fromEmail: ENV_DEFAULTS.fromEmail,
+      logoData: data.toString("base64"),
+      logoMimeType: mimeType,
+      logoFileName: fileName,
+      logoUpdatedAt,
+      updatedBy,
+    },
+  })
+  return logoUpdatedAt
+}
+
+/** Drop the stored letterhead. Caller must enforce PARTNER auth. */
+export async function removeFirmLogo(updatedBy: string): Promise<void> {
+  const firmId = await resolveFirmId()
+  if (!firmId) return
+  await prisma.firmSettings.updateMany({
+    where: { firmId },
+    data: {
+      logoData: null,
+      logoMimeType: null,
+      logoFileName: null,
+      logoUpdatedAt: null,
+      updatedBy,
+    },
+  })
 }
 
 /**

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 import { generateQuotationPDF } from "@/lib/quotations/pdf-generator"
-import { getFirmSettings } from "@/lib/firm-settings"
+import { getFirmSettings, getFirmLogo } from "@/lib/firm-settings"
 import { checkApiRateLimit, getRateLimitHeaders } from "@/lib/security/rate-limiter"
 
 export async function GET(
@@ -33,7 +33,7 @@ export async function GET(
   if (!quotation) return new NextResponse("Not found", { status: 404 })
 
   try {
-    const cfg = await getFirmSettings()
+    const [cfg, firmLogo] = await Promise.all([getFirmSettings(), getFirmLogo()])
     const pdfBuffer = await generateQuotationPDF({
       quotationNumber: quotation.quotationNumber,
       createdAt: quotation.createdAt,
@@ -42,6 +42,7 @@ export async function GET(
       firmEmail: cfg.fromEmail || "",
       firmPhone: cfg.firmPhone || "",
       firmAddress: cfg.firmAddress || "",
+      firmLogo,
       clientName: quotation.clientName,
       clientEmail: quotation.clientEmail,
       clientPhone: quotation.clientPhone,

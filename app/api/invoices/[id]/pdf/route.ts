@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { getSession } from "@/lib/auth/session"
-import { getFirmSettings } from "@/lib/firm-settings"
+import { getFirmSettings, getFirmLogo } from "@/lib/firm-settings"
 import { generateInvoicePDF } from "@/lib/invoices/pdf-generator"
 import { prisma } from "@/lib/prisma"
 import { checkApiRateLimit, getRateLimitHeaders } from "@/lib/security/rate-limiter"
@@ -55,7 +55,7 @@ export async function GET(
   }
 
   try {
-    const cfg = await getFirmSettings()
+    const [cfg, firmLogo] = await Promise.all([getFirmSettings(), getFirmLogo()])
     const pdfBuffer = await generateInvoicePDF({
       invoiceNumber: invoice.invoiceNumber,
       issueDate: invoice.issueDate,
@@ -66,6 +66,7 @@ export async function GET(
       firmPhone: cfg.firmPhone || "",
       firmAddress: cfg.firmAddress || "",
       firmGstin: cfg.gstin,
+      firmLogo,
       clientName: invoice.client.name,
       clientEmail: invoice.client.email,
       clientGstin: invoice.client.gstin,

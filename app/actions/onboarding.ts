@@ -5,11 +5,19 @@ import { randomBytes } from "crypto"
 import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
 import { upsertFirmSettings, extractDomain } from "@/lib/firm-settings"
-import { validateGSTIN } from "@/lib/india/validators"
+import {
+  validateGSTIN,
+  validatePAN,
+  gstinPanMismatch,
+  isValidIFSC,
+} from "@/lib/india/validators"
+
+/** Steps in the setup wizard — mirrors STEPS in the onboarding wizard. */
+const TOTAL_ONBOARDING_STEPS = 6
 
 export async function getOnboardingStatus() {
   const session = await requireAuth()
-  
+
   // Use upsert-style read: if no User record exists yet (new Supabase auth user),
   // return defaults rather than crashing the layout.
   const user = await prisma.user.findUnique({
@@ -20,9 +28,22 @@ export async function getOnboardingStatus() {
     },
   })
 
+  const completed = user?.onboardingCompleted ?? false
+  const step = user?.onboardingStep ?? 0
+
   return {
-    completed: user?.onboardingCompleted ?? false,
-    step: user?.onboardingStep ?? 0,
+    completed,
+    step,
+    /**
+     * Dismissed early rather than finished.
+     *
+     * Skipping used to be indistinguishable from completing, so a partner who
+     * hit "Skip for now" on the first screen lost the wizard permanently with
+     * no hint that Settings was the only remaining route to those fields.
+     * Skipping now leaves `onboardingStep` where they stopped, so the gap is
+     * visible and the dashboard can offer the wizard back.
+     */
+    skipped: completed && step < TOTAL_ONBOARDING_STEPS,
   }
 }
 
@@ -67,20 +88,55 @@ export async function completeOnboarding() {
   return { success: true }
 }
 
-export async function skipOnboarding() {
+/**
+ * Dismiss the wizard without finishing it.
+ *
+ * Deliberately does NOT jump onboardingStep to the end. Recording where they
+ * actually stopped is what makes the dismissal recoverable: the dashboard
+ * shows a "Finish setup" card while the step is short of the last one, and
+ * resumeOnboarding() puts them back exactly where they left off.
+ */
+export async function skipOnboarding(atStep?: number) {
   const session = await requireAuth()
+
+  const step = Math.min(
+    Math.max(Number.isFinite(atStep) ? Number(atStep) : 1, 0),
+    TOTAL_ONBOARDING_STEPS
+  )
 
   await prisma.user.upsert({
     where: { id: session.user.id },
-    update: { onboardingCompleted: true, onboardingStep: 6 },
+    update: { onboardingCompleted: true, onboardingStep: step },
     create: {
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
       role: session.user.role as any,
       onboardingCompleted: true,
-      onboardingStep: 6,
+      onboardingStep: step,
     },
+  })
+
+  revalidatePath("/")
+
+  return { success: true }
+}
+
+/**
+ * Re-open the setup wizard. The app layout renders it whenever onboarding is
+ * incomplete, so clearing the flag and refreshing is all it takes — the wizard
+ * resumes from the saved step on its own.
+ */
+export async function resumeOnboarding() {
+  const session = await requireAuth()
+
+  if (session.user.role !== "PARTNER") {
+    return { success: false, error: "Only a partner can run firm setup." }
+  }
+
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { onboardingCompleted: false },
   })
 
   revalidatePath("/")
@@ -107,13 +163,46 @@ export async function saveFirmInformation(data: {
 }) {
   const session = await requireAuth()
 
+  if (!data.firmName?.trim()) {
+    return { success: false, error: "Firm name is required." }
+  }
+
+  // The wizard checks these too, but a server action is a public endpoint —
+  // and these identifiers print on every invoice the firm issues, so a
+  // mistyped GSTIN would be quietly baked into its outgoing documents.
+  const gstin = data.gstin?.trim().toUpperCase() || ""
+  if (gstin) {
+    const result = validateGSTIN(gstin)
+    if (!result.valid) {
+      return { success: false, error: `GSTIN "${gstin}": ${result.error}` }
+    }
+  }
+  const pan = data.pan?.trim().toUpperCase() || ""
+  if (pan) {
+    const result = validatePAN(pan)
+    if (!result.valid) {
+      return { success: false, error: `PAN "${pan}": ${result.error}` }
+    }
+  }
+  const mismatch = gstinPanMismatch(gstin, pan)
+  if (mismatch) {
+    return { success: false, error: mismatch }
+  }
+  const bankIfsc = data.bankIfsc?.trim().toUpperCase() || ""
+  if (bankIfsc && !isValidIFSC(bankIfsc)) {
+    return {
+      success: false,
+      error: `IFSC "${bankIfsc}" is not a valid code (expected e.g. HDFC0001234).`,
+    }
+  }
+
   // Persist firm info to Supabase user_metadata for backward compat
   const { createClient } = await import("@/lib/supabase/server")
   const supabase = await createClient()
   await supabase.auth.updateUser({
     data: {
       firm_name: data.firmName?.trim() || null,
-      firm_gstin: data.gstin?.trim() || null,
+      firm_gstin: gstin || null,
       firm_address: data.address?.trim() || null,
       firm_phone: data.phone?.trim() || null,
       firm_email: data.email?.trim() || null,
@@ -134,13 +223,13 @@ export async function saveFirmInformation(data: {
           replyToEmail: data.replyToEmail?.trim() || data.email?.trim() || null,
           firmPhone: data.phone?.trim() || null,
           firmAddress: data.address?.trim() || null,
-          gstin: data.gstin?.trim() || null,
-          pan: data.pan?.trim() || null,
+          gstin: gstin || null,
+          pan: pan || null,
           website: data.website?.trim() || null,
           bankName: data.bankName?.trim() || null,
           bankAccountName: data.bankAccountName?.trim() || null,
           bankAccountNumber: data.bankAccountNumber?.trim() || null,
-          bankIfsc: data.bankIfsc?.trim() || null,
+          bankIfsc: bankIfsc || null,
           upiId: data.upiId?.trim() || null,
           firmDomain,
           // Domain verification is owned by the email provider and starts
