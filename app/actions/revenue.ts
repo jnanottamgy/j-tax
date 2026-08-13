@@ -1,6 +1,7 @@
 "use server"
 
 import { requirePartnerOrManager } from "@/lib/auth/guards"
+import { clientFirmFilter } from "@/lib/auth/scope"
 import { prisma } from "@/lib/prisma"
 import { parseFinancialYear, financialYearOf } from "@/lib/india/format"
 import { stateName } from "@/lib/invoices/gst"
@@ -80,6 +81,15 @@ export type RevenueLedger = {
     overdue: number
     invoiceCount: number
     clientCount: number
+    /**
+     * Annualised value of every active engagement, from the fees agreed on the
+     * clients' accepted quotations. This is what the firm is contracted to
+     * earn, as opposed to what it has actually invoiced — the two diverging is
+     * the earliest sign of an engagement running unbilled.
+     */
+    contractedAnnual: number
+    /** Active engagements with no agreed fee — unmeasurable, so flagged. */
+    engagementsWithoutFee: number
   }
   byClient: RevenueRollup[]
   byService: RevenueRollup[]
@@ -90,6 +100,18 @@ export type RevenueLedger = {
 }
 
 const MONTH_LABEL = new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" })
+
+/**
+ * Billing occurrences in a year, for annualising an engagement fee.
+ * ONE_TIME counts once — it is real revenue in the year it is contracted, and
+ * excluding it would understate what the firm has actually committed to.
+ */
+const OCCURRENCES_PER_YEAR: Record<string, number> = {
+  MONTHLY: 12,
+  QUARTERLY: 4,
+  ANNUAL: 1,
+  ONE_TIME: 1,
+}
 
 function num(v: unknown): number {
   return v === null || v === undefined ? 0 : Number(v)
@@ -133,7 +155,7 @@ function buildWhere(filters: RevenueFilters, from: Date | null, to: Date | null)
 export async function getRevenueLedger(
   filters: RevenueFilters = {}
 ): Promise<RevenueLedger> {
-  await requirePartnerOrManager()
+  const session = await requirePartnerOrManager()
 
   // Default to the current Indian FY — a full-history default would be a slow
   // query and is almost never what a partner means by "revenue".
@@ -215,6 +237,25 @@ export async function getRevenueLedger(
     }
   })
 
+  // Contracted book value. Read across every active engagement, not just the
+  // clients that happen to have invoices in the filtered window — an engagement
+  // that has never been billed is precisely the one worth seeing.
+  const engagements = await prisma.clientService.findMany({
+    where: {
+      isActive: true,
+      // ClientService has no firmId of its own, so the tenant extension injects
+      // nothing — without this the contracted total would silently sum every
+      // firm on the platform.
+      client: { ...clientFirmFilter(session).client, deletedAt: null, status: "ACTIVE" },
+    },
+    select: { agreedFee: true, frequency: true, billingFrequency: true },
+  })
+
+  const contractedAnnual = engagements.reduce((sum, e) => {
+    if (e.agreedFee == null) return sum
+    return sum + Number(e.agreedFee) * OCCURRENCES_PER_YEAR[e.billingFrequency ?? e.frequency]
+  }, 0)
+
   const summary = {
     invoiced: rows.reduce((s, r) => s + r.amount, 0),
     professionalFees: rows.reduce((s, r) => s + (r.professionalFee ?? 0), 0),
@@ -224,6 +265,8 @@ export async function getRevenueLedger(
     overdue: rows.reduce((s, r) => s + (r.daysOverdue > 0 ? r.outstandingAmount : 0), 0),
     invoiceCount: rows.length,
     clientCount: new Set(rows.map((r) => r.clientId)).size,
+    contractedAnnual,
+    engagementsWithoutFee: engagements.filter((e) => e.agreedFee == null).length,
   }
 
   const rollup = (

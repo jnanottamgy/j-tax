@@ -17,7 +17,9 @@ import {
 } from "@/lib/validations/invoice"
 
 import { requireAuth, requirePartner, requirePartnerOrManager } from "@/lib/auth/guards"
+import { clientFirmFilter } from "@/lib/auth/scope"
 import { toUserError } from "@/lib/forms/errors"
+import { serviceLabel } from "@/lib/clients/constants"
 
 const VALID_INVOICE_STATUSES = [
   "DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "DISPUTED", "WAIVED",
@@ -683,4 +685,64 @@ export async function deleteInvoice(invoiceId: string): Promise<FormActionState>
     console.error("Failed to delete invoice:", error)
     return { error: toUserError(error) }
   }
+}
+
+// ─── Engagement-driven billing ───────────────────────────────────────────────
+
+export type ClientEngagement = {
+  serviceType: string
+  label: string
+  /** Fee per billing occurrence, excluding GST. Null = never agreed. */
+  agreedFee: number | null
+  frequency: string
+  billingFrequency: string | null
+  /** Total already invoiced against this service, for the leakage check. */
+  invoicedToDate: number
+}
+
+/**
+ * A client's engagements — what the firm agreed to do, at what price.
+ *
+ * The fee used to exist only on the quotation, so every invoice was a number
+ * typed from memory and nothing could compare quoted against billed. Reading it
+ * here lets the invoice form default to the agreed fee and lets the form show
+ * what has already been billed against the same engagement.
+ */
+export async function getClientEngagements(clientId: string): Promise<ClientEngagement[]> {
+  const session = await requirePartnerOrManager()
+  if (!clientId) return []
+
+  const [services, invoiced] = await Promise.all([
+    prisma.clientService.findMany({
+      // ClientService carries no firmId, so the Prisma tenant extension injects
+      // nothing here — the firm has to come through the parent explicitly, or a
+      // guessed client id from another firm would resolve. Same fail-closed
+      // filter the rest of the child tables use.
+      // Merged into the nested `client`, not spread alongside it — spreading
+      // would replace the whole key and drop the firm condition.
+      where: {
+        isActive: true,
+        client: { ...clientFirmFilter(session).client, id: clientId },
+      },
+      orderBy: { serviceType: "asc" },
+    }),
+    prisma.invoice.groupBy({
+      by: ["serviceType"],
+      where: { clientId, deletedAt: null, status: { not: "WAIVED" } },
+      _sum: { professionalFee: true },
+    }),
+  ])
+
+  const billed = new Map(
+    invoiced.map((row) => [row.serviceType ?? "", Number(row._sum.professionalFee ?? 0)])
+  )
+
+  return services.map((s) => ({
+    serviceType: s.serviceType,
+    label: serviceLabel(s.serviceType, s.customName),
+    agreedFee: s.agreedFee != null ? Number(s.agreedFee) : null,
+    frequency: s.frequency,
+    billingFrequency: s.billingFrequency ?? null,
+    invoicedToDate: billed.get(s.serviceType) ?? 0,
+  }))
 }

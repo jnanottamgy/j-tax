@@ -3,6 +3,7 @@ import { format } from "date-fns"
 import { Receipt, Download, CreditCard, CheckCircle2, AlertCircle, Clock } from "lucide-react"
 
 import { getSession } from "@/lib/auth/session"
+import { resolvePortalClient } from "@/lib/client-portal/resolve"
 import { getFirmSettings } from "@/lib/firm-settings"
 import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,15 +17,18 @@ export default async function ClientInvoicesPage() {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  // Find the Client record for this user
-  const clientRecord = await prisma.client.findFirst({
-    where: { email: session.user.email },
-    select: { id: true, name: true },
-  })
-
-  if (!clientRecord) {
-    redirect("/unauthorized")
+  // Same resolution as the portal layout: the explicit portalUserId grant
+  // first, then the legacy email match. Shared so a page can never disagree
+  // with the layout about who the visitor is.
+  const resolved = await resolvePortalClient(session)
+  if (!resolved.ok) {
+    redirect(
+      resolved.reason === "ambiguous"
+        ? "/unauthorized?reason=ambiguous_client"
+        : "/unauthorized"
+    )
   }
+  const clientRecord = resolved.client
 
   // Fetch invoices, payments, and the firm's published payment details
   const firmSettings = await getFirmSettings()

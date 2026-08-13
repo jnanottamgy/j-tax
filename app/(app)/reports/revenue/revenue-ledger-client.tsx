@@ -138,6 +138,56 @@ export function RevenueLedgerClient({
         ))}
       </div>
 
+      {/* ── Contracted vs invoiced ───────────────────────────────────────
+          What the firm agreed to earn, against what it actually billed. The
+          agreed fee used to live only on the quotation and was dropped at
+          conversion, so this comparison was impossible — an engagement could
+          run for a year unbilled and nothing would say so. */}
+      {(s.contractedAnnual > 0 || s.engagementsWithoutFee > 0) && (
+        <Card className="border-white/[0.08] bg-white/[0.02]">
+          <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-4 p-5">
+            <div>
+              <p className="text-xs text-muted-foreground">Contracted, annualised</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums">
+                {formatINR(s.contractedAnnual)}
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground/70">
+                Agreed fees across every active engagement
+              </p>
+            </div>
+
+            {s.contractedAnnual > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground">Invoiced this period</p>
+                <p
+                  className={cn(
+                    "mt-1 text-xl font-semibold tabular-nums",
+                    s.professionalFees < s.contractedAnnual * 0.6 && "text-amber-400"
+                  )}
+                >
+                  {Math.round((s.professionalFees / s.contractedAnnual) * 100)}%
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground/70">
+                  {formatINR(s.professionalFees)} in professional fees, excl. GST
+                </p>
+              </div>
+            )}
+
+            {s.engagementsWithoutFee > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground">Engagements with no fee</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums text-amber-400">
+                  {s.engagementsWithoutFee}
+                </p>
+                <p className="mt-1 text-[11px] text-muted-foreground/70">
+                  Set a fee on the client so these count here
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Filters ─────────────────────────────────────────────────────── */}
       <Card className="border-white/[0.08] bg-white/[0.02]">
         <CardContent className="flex flex-wrap items-end gap-3 p-4">

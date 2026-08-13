@@ -13,6 +13,12 @@ type ServiceInput = {
   nextDueDate?: string
   /** Name when serviceType is OTHER. */
   customName?: string
+  /** Agreed fee per billing occurrence, excluding GST. */
+  agreedFee?: number
+  /** Defaults to the filing `frequency` when not set explicitly. */
+  billingFrequency?: ServiceFrequency
+  /** The quotation line the fee came from. */
+  sourceQuotationItemId?: string
 }
 
 /**
@@ -78,6 +84,11 @@ export function buildOnboardingArtifacts(
       : calculateNextDueDate(svc.frequency, now)
     const label = serviceLabel(svc.serviceType, svc.customName)
 
+    // The ClientService row IS the engagement: this client, this service, at
+    // this fee, on this cycle. Recording the fee here is what lets the firm
+    // later ask whether it is billing what it quoted.
+    const hasFee = typeof svc.agreedFee === "number" && svc.agreedFee > 0
+
     serviceRecords.push({
       clientId,
       serviceType: svc.serviceType,
@@ -85,6 +96,10 @@ export function buildOnboardingArtifacts(
       frequency: svc.frequency,
       nextDueDate: nextDue,
       isActive: true,
+      agreedFee: hasFee ? svc.agreedFee : null,
+      billingFrequency: svc.billingFrequency ?? null,
+      sourceQuotationItemId: svc.sourceQuotationItemId ?? null,
+      feeAgreedAt: hasFee ? now : null,
     })
 
     tasks.push({

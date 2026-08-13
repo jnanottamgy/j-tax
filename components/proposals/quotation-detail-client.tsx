@@ -1,12 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import {
   Download, Send, CheckCircle2, XCircle, Clock, Eye,
   Copy, ExternalLink, FileText, Mail, AlertCircle, Loader2, UserPlus,
+  Archive, History, PencilLine,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +17,15 @@ import {
   QuotationDocument,
   type QuotationDocumentFirm,
 } from "@/components/proposals/quotation-document"
-import { approveAndSendQuotation, deleteQuotation, type getQuotationById } from "@/app/actions/proposals"
+import {
+  approveAndSendQuotation,
+  deleteQuotation,
+  reviseQuotation,
+  getQuotationRevisions,
+  type getQuotationById,
+} from "@/app/actions/proposals"
+
+type RevisionRow = Awaited<ReturnType<typeof getQuotationRevisions>>[number]
 
 type Quotation = NonNullable<Awaited<ReturnType<typeof getQuotationById>>>
 
@@ -29,6 +38,7 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cl
   ACCEPTED: { label: "Accepted ✓", icon: CheckCircle2, cls: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
   REJECTED: { label: "Rejected", icon: XCircle, cls: "bg-red-500/10 text-red-400 border-red-500/20" },
   EXPIRED: { label: "Expired", icon: AlertCircle, cls: "bg-muted/30 text-muted-foreground border-white/10" },
+  SUPERSEDED: { label: "Superseded", icon: Archive, cls: "bg-muted/30 text-muted-foreground border-white/10" },
 }
 
 export function QuotationDetailClient({
@@ -46,6 +56,17 @@ export function QuotationDetailClient({
   const [confirmingSend, setConfirmingSend] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [confirmingRevise, setConfirmingRevise] = useState(false)
+  const [isRevising, setIsRevising] = useState(false)
+  const [revisions, setRevisions] = useState<RevisionRow[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    getQuotationRevisions(quotation.id)
+      .then((r) => { if (!cancelled) setRevisions(r) })
+      .catch(() => { /* history is supplementary — the page still works without it */ })
+    return () => { cancelled = true }
+  }, [quotation.id])
 
   const _APP_URL = process.env.NEXT_PUBLIC_APP_URL || ""
   const publicUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/q/${quotation.token}`
@@ -55,6 +76,30 @@ export function QuotationDetailClient({
   const StatusIcon = cfg.icon
 
   const canApproveAndSend = isPartner && ["PENDING_APPROVAL", "APPROVED", "DRAFT"].includes(quotation.status) && !isExpired
+
+  // Revising is for a live negotiation: a quote the client has seen, declined,
+  // or let lapse. A draft is still editable in place, and a converted quotation
+  // is history — its price now lives on the client's engagement.
+  const canRevise =
+    !quotation.convertedClientId &&
+    quotation.status !== "SUPERSEDED" &&
+    (isExpired || ["SENT", "VIEWED", "REJECTED", "APPROVED", "PENDING_APPROVAL"].includes(quotation.status))
+
+  async function handleRevise() {
+    setIsRevising(true)
+    try {
+      const result = await reviseQuotation(quotation.id)
+      if (result.error || !result.quotationId) {
+        toast.error(result.error ?? "Could not create a revision.")
+        return
+      }
+      toast.success("Revision created — adjust the pricing and send it.")
+      router.push(`/proposals/quotations/${result.quotationId}`)
+    } finally {
+      setIsRevising(false)
+      setConfirmingRevise(false)
+    }
+  }
 
   async function handleApproveAndSend() {
     setSendError(null)
@@ -143,6 +188,16 @@ export function QuotationDetailClient({
             )}
             Download PDF
           </Button>
+          {canRevise && (
+            <Button size="sm" variant="outline" onClick={() => setConfirmingRevise(true)} disabled={isRevising}>
+              {isRevising ? (
+                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <PencilLine className="size-3.5 mr-1.5" />
+              )}
+              Revise
+            </Button>
+          )}
           {canApproveAndSend && (
             <Button size="sm" onClick={() => setConfirmingSend(true)}>
               <Send className="size-3.5 mr-1.5" />
@@ -178,6 +233,15 @@ export function QuotationDetailClient({
       />
 
       <ConfirmDialog
+        open={confirmingRevise}
+        onOpenChange={setConfirmingRevise}
+        title="Create a revision?"
+        description={`${quotation.quotationNumber} is kept as a superseded record and a new version opens with the same line items, ready to reprice. The old link stops accepting a response, so the client can't accept a price you've withdrawn.`}
+        confirmLabel="Create revision"
+        onConfirm={handleRevise}
+      />
+
+      <ConfirmDialog
         open={confirmingDelete}
         onOpenChange={setConfirmingDelete}
         title="Delete quotation?"
@@ -200,11 +264,75 @@ export function QuotationDetailClient({
         </div>
       )}
 
+      {quotation.status === "SUPERSEDED" && (
+        <div className="px-4 py-3 rounded-lg bg-muted/30 border border-white/10 text-sm text-muted-foreground flex items-center gap-2">
+          <Archive className="size-4 shrink-0" />
+          This version has been replaced by a revision. Its link no longer accepts a
+          response — open the latest version below to send or track it.
+        </div>
+      )}
+
       {quotation.status === "ACCEPTED" && (
         <div className="px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-500 flex items-center gap-2">
           <CheckCircle2 className="size-4 shrink-0" />
           Client accepted this quotation on {quotation.respondedAt ? format(new Date(quotation.respondedAt), "dd MMM yyyy 'at' HH:mm") : "—"}.
         </div>
+      )}
+
+      {/* Version history — only appears once there IS a negotiation to read. */}
+      {revisions.length > 1 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <History className="size-4 text-muted-foreground" />
+              Negotiation history
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ol className="space-y-0">
+              {revisions.map((v, i) => {
+                const vcfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG.DRAFT
+                return (
+                  <li
+                    key={v.id}
+                    className={`flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm ${
+                      i > 0 ? "border-t border-white/[0.06]" : ""
+                    }`}
+                  >
+                    <span className="font-mono text-xs text-muted-foreground w-16 shrink-0">
+                      {v.revisionNumber === 0 ? "Original" : `R${v.revisionNumber}`}
+                    </span>
+                    {v.isCurrent ? (
+                      <span className="font-medium">{v.quotationNumber}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/proposals/quotations/${v.id}`)}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {v.quotationNumber}
+                      </button>
+                    )}
+                    <Badge variant="outline" className={`${vcfg.cls} text-[10px]`}>
+                      {vcfg.label}
+                    </Badge>
+                    <span className="tabular-nums text-muted-foreground">
+                      ₹{v.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {format(new Date(v.createdAt), "dd MMM yyyy")}
+                    </span>
+                    {v.rejectionReason && (
+                      <p className="w-full pl-16 text-xs text-muted-foreground/80">
+                        Declined: {v.rejectionReason}
+                      </p>
+                    )}
+                  </li>
+                )
+              })}
+            </ol>
+          </CardContent>
+        </Card>
       )}
 
       {quotation.status === "REJECTED" && (

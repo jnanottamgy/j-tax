@@ -12,6 +12,7 @@ type TimelineEventType =
   | "PAYMENT_RECEIVED"
   | "EMAIL_SENT"
   | "NOTE_ADDED" | "EMPLOYEE_ASSIGNED"
+  | "PORTAL_ACCESS_GRANTED" | "PORTAL_ACCESS_REVOKED"
 
 export async function recordTimelineEvent(params: {
   clientId?: string | null

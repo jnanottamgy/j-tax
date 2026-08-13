@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { AuthProvider } from "@/components/auth/auth-provider"
 import { ErrorBoundary } from "@/components/error/error-boundary"
 import { getSession } from "@/lib/auth/session"
-import { prisma } from "@/lib/prisma"
+import { resolvePortalClient } from "@/lib/client-portal/resolve"
 import { ClientSidebar } from "@/components/client-portal/client-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -25,36 +25,21 @@ export default async function ClientPortalLayout({
     redirect("/")
   }
 
-  // Find the Client record for this user — match on email only.
-  // HIGH-04: removed GSTIN fallback which allowed any user whose email matched
-  // a client's GSTIN to gain access to that client's portal.
-  // Client.email is not unique, so if two client records share an email we must
-  // NOT silently bind to whichever findFirst returns (cross-client exposure).
-  const matches = await prisma.client.findMany({
-    where: { email: session.user.email },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      phone: true,
-      pan: true,
-      gstin: true,
-      status: true,
-    },
-    take: 2,
-  })
+  // Resolution lives in one place now — see lib/client-portal/resolve.ts. It
+  // prefers the explicit Client.portalUserId grant and keeps the old email
+  // match as a fallback (with the same refuse-on-ambiguity guard) so logins
+  // created before portal invites existed keep working.
+  const resolved = await resolvePortalClient(session)
 
-  if (matches.length === 0) {
-    // No client record found - show unauthorized or redirect
-    redirect("/unauthorized")
+  if (!resolved.ok) {
+    redirect(
+      resolved.reason === "ambiguous"
+        ? "/unauthorized?reason=ambiguous_client"
+        : "/unauthorized"
+    )
   }
 
-  if (matches.length > 1) {
-    // Ambiguous identity — refuse rather than risk showing the wrong client's data.
-    redirect("/unauthorized?reason=ambiguous_client")
-  }
-
-  const clientRecord = matches[0]
+  const clientRecord = resolved.client
 
   return (
     <AuthProvider user={session.user}>

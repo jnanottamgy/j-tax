@@ -55,6 +55,25 @@ export const serviceAssignmentSchema = z.object({
     .optional()
     .transform((v) => v?.trim() || undefined)
     .refine((v) => !v || !Number.isNaN(Date.parse(v)), "Invalid due date"),
+  /**
+   * Fee agreed per billing occurrence, excluding GST.
+   *
+   * This is the engagement's commercial term. Carried across from the accepted
+   * quotation when the client is converted, so the price the client agreed to
+   * survives into the record the firm bills against — previously it was shown
+   * once on the quotation and then lost.
+   */
+  agreedFee: z.coerce
+    .number()
+    .min(0, "Fee cannot be negative")
+    .max(99_999_999, "Fee is out of range")
+    .optional(),
+  /** Null/undefined = bill on the same cycle the work is filed on. */
+  billingFrequency: z
+    .enum(["MONTHLY", "QUARTERLY", "ANNUAL", "ONE_TIME"])
+    .optional(),
+  /** Provenance: the quotation line this fee came from. */
+  sourceQuotationItemId: z.string().optional(),
   /** Required name when serviceType is OTHER; ignored for standard types. */
   customName: z
     .string()

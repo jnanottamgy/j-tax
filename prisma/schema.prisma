@@ -242,6 +242,15 @@ model Client {
   /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
   deletedAt            DateTime?
 
+  // ── Client portal access ──────────────────────────────────────────────────
+  /// The auth account this client signs in with. The portal used to resolve
+  /// the client by matching session email against `email`, which meant access
+  /// could not be granted from the app at all and broke the moment a client
+  /// changed their address. Access is now an explicit, revocable link.
+  portalUserId         String?
+  portalInvitedAt      DateTime?
+  portalLastSeenAt     DateTime?
+
   services             ClientService[]
   documentChecklist    ClientDocumentChecklistItem[]
   tasks                Task[]
@@ -281,6 +290,8 @@ model Client {
   @@unique([firmId, clientCode])
   @@unique([firmId, gstin])
   @@unique([firmId, pan])
+  @@unique([firmId, portalUserId])
+  @@index([portalUserId])
 }
 
 model ClientService {
@@ -294,6 +305,24 @@ model ClientService {
   frequency   ServiceFrequency
   isActive    Boolean          @default(true)
   nextDueDate DateTime?
+
+  // ── Commercial terms ──────────────────────────────────────────────────────
+  // A ClientService IS the engagement: this client, this service, at this fee,
+  // on this cycle. Before these columns the agreed price was captured on the
+  // quotation, shown to the client, and then dropped — every invoice after that
+  // was a number typed from memory, and no report could say whether the firm
+  // was billing what it had quoted.
+  /// Fee agreed per billing occurrence, excluding GST. Null = not yet agreed.
+  agreedFee            Decimal?          @db.Decimal(12, 2)
+  /// How often the fee is charged. Null = same as the filing `frequency`;
+  /// they differ often enough (monthly GST work billed quarterly) to matter.
+  billingFrequency     ServiceFrequency?
+  /// The quotation line this fee came from, so the engagement can be traced
+  /// back to what the client actually accepted.
+  sourceQuotationItemId String?
+  /// When the fee was last agreed or revised — the renewal anchor.
+  feeAgreedAt          DateTime?
+
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -1300,6 +1329,9 @@ enum QuotationStatus {
   ACCEPTED
   REJECTED
   EXPIRED
+  /// Replaced by a revision. Terminal — kept for the audit trail and pipeline
+  /// analytics, but no longer answerable on its public link.
+  SUPERSEDED
 }
 
 model Lead {
@@ -1364,6 +1396,17 @@ model Quotation {
   /// Set once this (accepted) quotation has been converted into a client —
   /// blocks double-conversion and flips the "Create client" CTA to "View client".
   convertedClientId String?
+
+  // ── Revisions ─────────────────────────────────────────────────────────────
+  // Negotiation is normal in professional services — LeadStatus even has a
+  // NEGOTIATION state — but a quotation could only be deleted and rebuilt,
+  // losing its number, its sent/viewed timestamps and its email log. Revisions
+  // mirror the invoice chain so the back-and-forth stays on the record.
+  revisedFromId   String?
+  revisedFrom     Quotation?      @relation("QuotationRevisions", fields: [revisedFromId], references: [id], onDelete: SetNull)
+  revisions       Quotation[]     @relation("QuotationRevisions")
+  revisionNumber  Int             @default(0)
+
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 

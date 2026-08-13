@@ -14,6 +14,13 @@ export type OnboardingServiceConfig = {
   nextDueDate: string
   /** Name for the service when serviceType is OTHER. */
   customName?: string
+  /**
+   * Agreed fee per billing occurrence, excluding GST. Kept as a string because
+   * it is bound straight to an input; "" means no fee agreed yet.
+   */
+  agreedFee: string
+  /** The quotation line this fee came from, when converted from a quotation. */
+  sourceQuotationItemId?: string
 }
 
 export type BasicInfo = {
@@ -52,6 +59,8 @@ export type OnboardingPrefill = {
     serviceType: ServiceType
     frequency: ServiceFrequency
     customName?: string
+    agreedFee?: number
+    sourceQuotationItemId?: string
   }>
   sourceQuotationId?: string
   /** Set when onboarding straight from a lead with no accepted quotation. */
@@ -155,6 +164,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
               selected: true,
               frequency: "MONTHLY",
               nextDueDate: "",
+              agreedFee: "",
             }
           }
 
@@ -191,6 +201,10 @@ export const useClientOnboardingStore = create<OnboardingState>()(
               frequency: s.frequency,
               nextDueDate: "",
               customName: s.customName,
+              // The price the client accepted, carried through as the
+              // engagement fee rather than being dropped at conversion.
+              agreedFee: s.agreedFee != null && s.agreedFee > 0 ? String(s.agreedFee) : "",
+              sourceQuotationItemId: s.sourceQuotationItemId,
             }
           }
           return {

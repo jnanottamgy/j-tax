@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react"
 
-import { createInvoice, createRevisedInvoice } from "@/app/actions/invoices"
+import {
+  createInvoice,
+  createRevisedInvoice,
+  getClientEngagements,
+  type ClientEngagement,
+} from "@/app/actions/invoices"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
 import { SubmitButton } from "@/components/forms/submit-button"
@@ -108,6 +113,8 @@ export function AddInvoiceDialog({
   const isRevision = Boolean(revisedFromId)
   const seed = () => ({ ...emptyForm, issueDate: defaultIssueDate, ...initialValues })
   const [formData, setFormData] = useState(seed)
+  // What this client is actually engaged for, and at what fee.
+  const [engagements, setEngagements] = useState<ClientEngagement[]>([])
 
   const { submit, getError, isPending, formError, clearErrors } = useValidatedForm({
     schema: invoiceSchema,
@@ -138,7 +145,18 @@ export function AddInvoiceDialog({
   useEffect(() => {
     if (open) {
       clearErrors()
-      setFormData(seed())
+      const fresh = seed()
+      setFormData(fresh)
+      // The dialog can open with a client already chosen (task → invoice, or a
+      // revision), which never routes through handleClientChange — load the
+      // engagements for that path too, or the fee prompt silently goes missing
+      // in exactly the flow it is most useful in.
+      setEngagements([])
+      if (fresh.clientId) {
+        getClientEngagements(fresh.clientId)
+          .then(setEngagements)
+          .catch(() => { /* manual fee entry still works */ })
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clearErrors])
@@ -162,7 +180,31 @@ export function AddInvoiceDialog({
       firmState ??
       ""
     setFormData((prev) => ({ ...prev, clientId, placeOfSupply: autoState }))
+    setEngagements([])
+    if (clientId) {
+      getClientEngagements(clientId)
+        .then(setEngagements)
+        .catch(() => { /* the form still works with a manually typed fee */ })
+    }
   }
+
+  // Choosing the service pulls the fee the client actually agreed to, instead
+  // of leaving the partner to remember what was quoted months ago.
+  const handleServiceChange = (serviceType: string) => {
+    const engagement = engagements.find((e) => e.serviceType === serviceType)
+    setFormData((prev) => ({
+      ...prev,
+      serviceType,
+      // Never overwrite a fee already typed — the agreed fee is a default,
+      // not a rule, and one-off work legitimately differs.
+      professionalFee:
+        prev.professionalFee || (engagement?.agreedFee ? String(engagement.agreedFee) : ""),
+      serviceDescription:
+        prev.serviceDescription || (engagement ? `${engagement.label} — professional fees` : ""),
+    }))
+  }
+
+  const activeEngagement = engagements.find((e) => e.serviceType === formData.serviceType)
 
   // Live billing breakdown: total payable = professional fee + GST
   const fee = parseFloat(formData.professionalFee) || 0
@@ -245,16 +287,24 @@ export function AddInvoiceDialog({
               <select
                 id="serviceType"
                 value={formData.serviceType}
-                onChange={(e) => setFormData({ ...formData, serviceType: e.target.value })}
+                onChange={(e) => handleServiceChange(e.target.value)}
                 className="input-premium h-10 w-full rounded-xl px-3 text-sm"
                 disabled={isPending}
               >
                 <option value="">Select…</option>
-                {SERVICE_TYPE_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
+                {SERVICE_TYPE_OPTIONS.map((s) => {
+                  const eng = engagements.find((x) => x.serviceType === s.value)
+                  return (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                      {eng?.agreedFee
+                        ? ` — ₹${eng.agreedFee.toLocaleString("en-IN")} agreed`
+                        : eng
+                          ? " — engaged, no fee set"
+                          : ""}
+                    </option>
+                  )
+                })}
               </select>
             </FormField>
 
@@ -295,6 +345,39 @@ export function AddInvoiceDialog({
                 disabled={isPending}
                 aria-invalid={!!getError("professionalFee")}
               />
+              {/* Billing against the agreed fee, visible at the moment it
+                  matters. Under-billing a long-running engagement is otherwise
+                  invisible until someone reconciles by hand at year end. */}
+              {activeEngagement?.agreedFee != null && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Agreed{" "}
+                  <span className="tabular-nums text-foreground">
+                    ₹{activeEngagement.agreedFee.toLocaleString("en-IN")}
+                  </span>{" "}
+                  per {(activeEngagement.billingFrequency ?? activeEngagement.frequency).toLowerCase().replace("_", " ")}
+                  {activeEngagement.invoicedToDate > 0 && (
+                    <>
+                      {" · "}
+                      <span className="tabular-nums">
+                        ₹{activeEngagement.invoicedToDate.toLocaleString("en-IN")}
+                      </span>{" "}
+                      invoiced to date
+                    </>
+                  )}
+                  {fee > 0 && Math.abs(fee - activeEngagement.agreedFee) > 0.5 && (
+                    <span className="text-amber-400">
+                      {" "}
+                      · {fee < activeEngagement.agreedFee ? "below" : "above"} the agreed fee
+                    </span>
+                  )}
+                </p>
+              )}
+              {activeEngagement && activeEngagement.agreedFee == null && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  No fee agreed on this engagement yet — set it on the client so future
+                  invoices default to it.
+                </p>
+              )}
             </FormField>
 
             <FormField label="GST Rate" htmlFor="taxRate" error={getError("taxRate")}>

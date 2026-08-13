@@ -131,3 +131,77 @@ describe("mapQuotationItemsToServices — never produces an unusable result", ()
     }
   })
 })
+
+describe("mapQuotationItemsToServices — the agreed fee survives conversion", () => {
+  test("a line's pre-tax value becomes the engagement fee", () => {
+    const out = mapQuotationItemsToServices([
+      { id: "qi_1", serviceType: "Statutory Audit", unitPrice: 75000, quantity: 1 },
+    ])
+    assert.equal(out.length, 1)
+    assert.equal(out[0].serviceType, "AUDIT")
+    assert.equal(out[0].agreedFee, 75000)
+    assert.equal(out[0].sourceQuotationItemId, "qi_1")
+  })
+
+  test("quantity multiplies into the fee", () => {
+    // "GST filing, 12 months @ 5000" is one engagement worth 60000 a year.
+    const out = mapQuotationItemsToServices([
+      { id: "qi_1", serviceType: "GST Filing (Monthly)", unitPrice: 5000, quantity: 12 },
+    ])
+    assert.equal(out[0].agreedFee, 60000)
+  })
+
+  test("two lines collapsing onto one service type sum their fees", () => {
+    // Both map to AUDIT. Keeping only the first would silently halve the
+    // engagement's value.
+    const out = mapQuotationItemsToServices([
+      { id: "a", serviceType: "Statutory Audit", unitPrice: 60000, quantity: 1 },
+      { id: "b", serviceType: "Internal Audit", unitPrice: 40000, quantity: 1 },
+    ])
+    assert.equal(out.length, 1)
+    assert.equal(out[0].serviceType, "AUDIT")
+    assert.equal(out[0].agreedFee, 100000)
+  })
+
+  test("unmapped lines pool into a single OTHER engagement", () => {
+    const out = mapQuotationItemsToServices([
+      { id: "a", serviceType: "Trademark Registration", unitPrice: 12000, quantity: 1 },
+      { id: "b", serviceType: "Advisory Retainer", unitPrice: 8000, quantity: 1 },
+    ])
+    const other = out.find((s) => s.serviceType === "OTHER")
+    assert.ok(other)
+    assert.equal(other.agreedFee, 20000)
+    assert.equal(other.sourceQuotationItemId, "a")
+  })
+
+  test("Prisma Decimals arrive as objects, not numbers", () => {
+    // unitPrice crosses from Prisma as a Decimal; Number() must be applied or
+    // the fee lands as NaN and the engagement records nothing.
+    const decimalLike = { toString: () => "25000.50" }
+    const out = mapQuotationItemsToServices([
+      { id: "a", serviceType: "Income Tax Return", unitPrice: decimalLike, quantity: 1 },
+    ])
+    assert.equal(out[0].agreedFee, 25000.5)
+  })
+
+  test("a missing price yields no fee rather than a zero one", () => {
+    // Zero is a real agreed fee (pro bono); absent is "not agreed yet". The
+    // caller distinguishes them, so 0 here must not be mistaken for a price.
+    const out = mapQuotationItemsToServices([{ id: "a", serviceType: "TDS Filing" }])
+    assert.equal(out[0].agreedFee, 0)
+  })
+
+  test("a nonsense price does not produce NaN", () => {
+    const out = mapQuotationItemsToServices([
+      { id: "a", serviceType: "Payroll Processing", unitPrice: "not a number", quantity: 1 },
+    ])
+    assert.equal(out[0].agreedFee, 0)
+  })
+
+  test("negative prices are floored at zero", () => {
+    const out = mapQuotationItemsToServices([
+      { id: "a", serviceType: "Bookkeeping", unitPrice: -5000, quantity: 1 },
+    ])
+    assert.equal(out[0].agreedFee, 0)
+  })
+})

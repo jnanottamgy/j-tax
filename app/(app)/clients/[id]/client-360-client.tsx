@@ -51,6 +51,7 @@ import { GlassCard } from "@/components/dashboard/glass-card"
 import { ClientComplianceTab } from "@/components/compliance/client-compliance-tab"
 import { ClientTimeline } from "@/components/clients/client-timeline"
 import { EditClientDialog } from "@/components/clients/edit-client-dialog"
+import { PortalAccessCard } from "@/components/clients/portal-access-card"
 import { WhatsAppButton } from "@/components/messaging/whatsapp-button"
 import { draftGeneral } from "@/lib/messaging/whatsapp-drafts"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
@@ -339,7 +340,7 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
                 exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.2 }}
               >
-                <OverviewTab data={data} />
+                <OverviewTab data={data} clientId={clientId} canManage={canManage} />
               </motion.div>
             )}
             {activeTab === "services" && (
@@ -481,9 +482,21 @@ function MetricCard({ label, value, icon: Icon, color }: { label: string; value:
   )
 }
 
-function OverviewTab({ data }: { data: any }) {
+function OverviewTab({
+  data,
+  clientId,
+  canManage,
+}: {
+  data: any
+  clientId: string
+  canManage: boolean
+}) {
   return (
     <div className="space-y-6">
+      {/* Portal access sits on Overview because that is the screen open when
+          someone asks "can the client see this themselves?" */}
+      <PortalAccessCard clientId={clientId} canManage={canManage} />
+
       <GlassCard hover={false} className="p-6">
         <h3 className="text-lg font-semibold mb-4">Client Summary</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

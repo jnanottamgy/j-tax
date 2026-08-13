@@ -173,7 +173,15 @@ export async function createClientWithOnboarding(
         address: input.address,
         notes: input.notes,
         priority: input.priority,
-        status: "PENDING",
+        // ACTIVE, not PENDING.
+        //
+        // generateRecurringComplianceTasks() only queries clients with
+        // status ACTIVE, so every client created here used to be skipped by the
+        // compliance engine forever — no error, no empty state, just no filings
+        // ever generated. A firm that genuinely wants a client paused has
+        // ON_HOLD and INACTIVE; PENDING was never a choice anyone made, it was
+        // the column default leaking into the product.
+        status: "ACTIVE",
         assignedEmployeeId: input.assignedEmployeeId,
         assignedEmployeeName,
       },
@@ -312,6 +320,14 @@ export async function updateClient(id: string, data: UpdateClientInput) {
 
     for (const svc of services) {
       const customName = svc.serviceType === "OTHER" ? svc.customName ?? null : null;
+      // A fee is only written when one was supplied. `undefined` means the
+      // caller isn't touching commercial terms — a form that edits frequency
+      // must not silently wipe the agreed fee off the engagement.
+      const hasFee = typeof svc.agreedFee === "number" && svc.agreedFee > 0;
+      const feeFields = hasFee
+        ? { agreedFee: svc.agreedFee, feeAgreedAt: new Date() }
+        : {};
+
       await tx.clientService.upsert({
         where: { clientId_serviceType: { clientId: id, serviceType: svc.serviceType } },
         create: {
@@ -323,8 +339,19 @@ export async function updateClient(id: string, data: UpdateClientInput) {
           nextDueDate: svc.nextDueDate
             ? new Date(svc.nextDueDate)
             : calculateNextDueDate(svc.frequency),
+          billingFrequency: svc.billingFrequency ?? null,
+          sourceQuotationItemId: svc.sourceQuotationItemId ?? null,
+          ...feeFields,
         },
-        update: { frequency: svc.frequency, customName, isActive: true },
+        update: {
+          frequency: svc.frequency,
+          customName,
+          isActive: true,
+          ...(svc.billingFrequency !== undefined
+            ? { billingFrequency: svc.billingFrequency }
+            : {}),
+          ...feeFields,
+        },
       });
     }
 

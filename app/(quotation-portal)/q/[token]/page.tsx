@@ -44,6 +44,7 @@ export default async function QuotationPortalPage({
     ACCEPTED: { label: "Accepted", icon: CheckCircle, color: "text-emerald-600" },
     REJECTED: { label: "Rejected", icon: XCircle, color: "text-red-600" },
     EXPIRED: { label: "Expired", icon: XCircle, color: "text-slate-500" },
+    SUPERSEDED: { label: "Replaced by a newer version", icon: XCircle, color: "text-slate-500" },
   }
 
   const statusCfg = STATUS_CONFIG[isExpired && quotation.status !== "ACCEPTED" ? "EXPIRED" : quotation.status] || STATUS_CONFIG.SENT
@@ -135,7 +136,19 @@ export default async function QuotationPortalPage({
 
         {/* Response actions */}
         <div className="print:hidden space-y-6">
-          {isExpired && !["ACCEPTED", "REJECTED"].includes(quotation.status) && (
+          {/* A superseded quote is still readable — the client may have this
+              link bookmarked — but it must not be acceptable, or they could
+              agree to a price the firm has already withdrawn. */}
+          {quotation.status === "SUPERSEDED" && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
+              <p className="text-sm text-slate-500">
+                This quotation has been replaced by an updated version, which has been
+                sent to you separately. Please respond to that one, or contact us if you
+                have not received it.
+              </p>
+            </div>
+          )}
+          {isExpired && !["ACCEPTED", "REJECTED", "SUPERSEDED"].includes(quotation.status) && (
             <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
               <p className="text-sm text-slate-500">
                 This quotation has expired — reply to the original email or contact

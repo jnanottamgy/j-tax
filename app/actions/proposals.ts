@@ -383,11 +383,167 @@ export async function approveAndSendQuotation(quotationId: string): Promise<Quot
   }
 }
 
+/**
+ * Open a new revision of an existing quotation.
+ *
+ * Renegotiation is ordinary — the pipeline even has a NEGOTIATION lead state —
+ * but a quotation had no update path at all, so the only way to change a price
+ * was to delete it and rebuild. That threw away the quotation number, the
+ * sent/viewed timestamps, the email log and the follow-up schedule, and made
+ * the pipeline analytics under-count how many rounds a deal actually took.
+ *
+ * This mirrors the invoice revision chain: the original is superseded and kept,
+ * the copy carries the same number with an -R suffix, and the two are linked so
+ * the negotiation reads as one conversation.
+ */
+export async function reviseQuotation(
+  quotationId: string
+): Promise<{ success?: boolean; quotationId?: string; error?: string }> {
+  try {
+    const session = await requirePartnerOrManager()
+
+    const original = await prisma.quotation.findUnique({
+      where: { id: quotationId },
+      include: { items: { orderBy: { sortOrder: "asc" } } },
+    })
+    if (!original) return { error: "Quotation not found." }
+
+    if (original.status === "SUPERSEDED") {
+      return { error: "This quotation has already been revised. Open the latest version." }
+    }
+    if (original.convertedClientId) {
+      return {
+        error:
+          "This quotation has already been converted to a client. Change the engagement fee on the client instead.",
+      }
+    }
+
+    // Revisions chain off the ROOT quotation so a third revision is R3, not a
+    // revision-of-a-revision numbered R2 again.
+    const rootId = original.revisedFromId ?? original.id
+    const siblingCount = await prisma.quotation.count({
+      where: { OR: [{ revisedFromId: rootId }, { id: rootId }] },
+    })
+    const baseNumber = original.quotationNumber.replace(/-R\d+$/, "")
+    const revisionNumber = siblingCount // root counts as 1 → first revision is R1
+
+    const revised = await prisma.$transaction(async (tx) => {
+      const copy = await tx.quotation.create({
+        data: {
+          quotationNumber: `${baseNumber}-R${revisionNumber}`,
+          token: randomBytes(32).toString("hex"),
+          leadId: original.leadId,
+          clientName: original.clientName,
+          clientEmail: original.clientEmail,
+          clientPhone: original.clientPhone,
+          clientCompany: original.clientCompany,
+          // A revision restarts the clock — the old window was quoted against
+          // terms the client has just pushed back on.
+          validUntil: addDays(new Date(), 15),
+          notes: original.notes,
+          terms: original.terms,
+          subtotal: original.subtotal,
+          taxAmount: original.taxAmount,
+          total: original.total,
+          createdBy: session.user.id,
+          // Same approval gate as a fresh quotation: a Manager's revision still
+          // needs a Partner to release it, otherwise revising would be a way
+          // around the approval step.
+          status: session.user.role === "PARTNER" ? "APPROVED" : "PENDING_APPROVAL",
+          revisedFromId: rootId,
+          revisionNumber,
+          items: {
+            create: original.items.map((i) => ({
+              description: i.description,
+              serviceType: i.serviceType,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              taxRate: i.taxRate,
+              taxAmount: i.taxAmount,
+              total: i.total,
+              sortOrder: i.sortOrder,
+            })),
+          },
+        },
+      })
+
+      await tx.quotation.update({
+        where: { id: original.id },
+        data: { status: "SUPERSEDED" },
+      })
+
+      // The old link must stop being answerable — otherwise a client sitting on
+      // yesterday's email could accept a price the firm has already withdrawn.
+      await tx.quotationFollowUp.updateMany({
+        where: { quotationId: original.id, status: "PENDING" },
+        data: { status: "SKIPPED" },
+      })
+
+      return copy
+    })
+
+    if (original.leadId) {
+      await prisma.lead
+        .update({ where: { id: original.leadId }, data: { status: "NEGOTIATION" } })
+        .catch(() => {})
+    }
+
+    revalidatePath("/proposals")
+    revalidatePath(`/proposals/quotations/${quotationId}`)
+    return { success: true, quotationId: revised.id }
+  } catch (err) {
+    return { error: toUserError(err) }
+  }
+}
+
+/** Every version of a quotation, oldest first, for the revision history panel. */
+export async function getQuotationRevisions(quotationId: string) {
+  await requirePartnerOrManager()
+
+  const q = await prisma.quotation.findUnique({
+    where: { id: quotationId },
+    select: { id: true, revisedFromId: true },
+  })
+  if (!q) return []
+
+  const rootId = q.revisedFromId ?? q.id
+  const versions = await prisma.quotation.findMany({
+    where: { OR: [{ id: rootId }, { revisedFromId: rootId }] },
+    select: {
+      id: true,
+      quotationNumber: true,
+      revisionNumber: true,
+      status: true,
+      total: true,
+      createdAt: true,
+      respondedAt: true,
+      rejectionReason: true,
+    },
+    orderBy: { revisionNumber: "asc" },
+  })
+
+  // Only a chain worth showing is worth showing.
+  if (versions.length < 2) return []
+
+  return versions.map((v) => ({
+    ...v,
+    total: Number(v.total),
+    isCurrent: v.id === quotationId,
+  }))
+}
+
 export async function getQuotations(filters?: { status?: string; search?: string }) {
   await requirePartnerOrManager()
 
   const where: Record<string, unknown> = {}
-  if (filters?.status && filters.status !== "ALL") where.status = filters.status
+  if (filters?.status && filters.status !== "ALL") {
+    where.status = filters.status
+  } else {
+    // Superseded versions stay reachable from the revision history on the live
+    // quotation, but they should not clutter the pipeline — three rounds of
+    // negotiation would otherwise fill the list with two dead rows.
+    where.status = { not: "SUPERSEDED" }
+  }
   if (filters?.search) {
     where.OR = [
       { clientName: { contains: filters.search, mode: "insensitive" } },
@@ -827,7 +983,10 @@ export async function getProposalAnalytics() {
   ] = await Promise.all([
     prisma.lead.count(),
     prisma.lead.groupBy({ by: ["status"], _count: true }),
-    prisma.quotation.count(),
+    // Revisions are the same deal quoted again, not a second deal. Counting
+    // superseded versions would make a single hard-fought negotiation look
+    // like three separate opportunities.
+    prisma.quotation.count({ where: { status: { not: "SUPERSEDED" } } }),
     prisma.quotation.groupBy({ by: ["status"], _count: true }),
     prisma.quotation.findMany({
       where: { status: "ACCEPTED" },

@@ -702,3 +702,109 @@ export async function generateStatutoryComplianceEvents(clientId: string) {
     return { error: "Failed to generate compliance events." }
   }
 }
+
+// ─── Compliance coverage ─────────────────────────────────────────────────────
+
+export type ExcludedClient = {
+  id: string
+  name: string
+  clientCode: string
+  status: string
+  serviceCount: number
+}
+
+/**
+ * Clients the recurring compliance engine will not generate filings for.
+ *
+ * generateRecurringComplianceTasks() queries `client: { status: "ACTIVE" }`.
+ * That exclusion was invisible: a client sitting on any other status simply
+ * never appeared in the job, with no error and no empty state, so a firm could
+ * run for months believing its calendar was being kept up to date. Anything
+ * carrying active services but not ACTIVE status is reported here so the gap is
+ * something you see rather than something you discover by missing a due date.
+ */
+export async function getComplianceCoverageGaps(): Promise<ExcludedClient[]> {
+  await requirePartnerOrManager()
+
+  const clients = await prisma.client.findMany({
+    where: {
+      deletedAt: null,
+      status: { not: "ACTIVE" },
+      services: { some: { isActive: true } },
+    },
+    select: {
+      id: true,
+      name: true,
+      clientCode: true,
+      status: true,
+      _count: { select: { services: { where: { isActive: true } } } },
+    },
+    orderBy: { name: "asc" },
+  })
+
+  return clients.map((c) => ({
+    id: c.id,
+    name: c.name,
+    clientCode: c.clientCode,
+    status: c.status,
+    serviceCount: c._count.services,
+  }))
+}
+
+/**
+ * Put excluded clients back into the engine and immediately backfill the
+ * filings they missed while they were out of it — activating alone would leave
+ * them waiting until the 1st of next month for a calendar that should already
+ * be full.
+ */
+export async function activateClientsForCompliance(
+  clientIds: string[]
+): Promise<{ success: boolean; activated: number; eventsCreated: number; error?: string }> {
+  try {
+    await requirePartnerOrManager()
+  } catch {
+    return { success: false, activated: 0, eventsCreated: 0, error: "Permission denied." }
+  }
+
+  const ids = clientIds.filter(Boolean).slice(0, 500)
+  if (ids.length === 0) {
+    return { success: true, activated: 0, eventsCreated: 0 }
+  }
+
+  try {
+    // updateMany is tenant-scoped by the Prisma extension, so ids belonging to
+    // another firm match nothing rather than being activated.
+    const updated = await prisma.client.updateMany({
+      where: { id: { in: ids }, deletedAt: null },
+      data: { status: "ACTIVE" },
+    })
+
+    const clients = await prisma.client.findMany({
+      where: { id: { in: ids }, status: "ACTIVE" },
+      select: { id: true, services: { where: { isActive: true }, select: { serviceType: true } } },
+    })
+
+    let eventsCreated = 0
+    for (const client of clients) {
+      const result = await generateComplianceEventsForClient(
+        client.id,
+        client.services.map((s) => s.serviceType)
+      )
+      eventsCreated += result.count
+    }
+
+    revalidatePath("/compliance")
+    revalidatePath("/compliance-calendar")
+    revalidatePath("/clients")
+
+    return { success: true, activated: updated.count, eventsCreated }
+  } catch (error) {
+    console.error("Failed to activate clients for compliance:", error)
+    return {
+      success: false,
+      activated: 0,
+      eventsCreated: 0,
+      error: "Could not activate those clients. Please try again.",
+    }
+  }
+}

@@ -76,3 +76,36 @@ describe("taskFirmFilter", () => {
     assert.throws(() => taskFirmFilter(session()), /no tenant context/i)
   })
 })
+
+describe("clientFirmFilter — merging into an existing client condition", () => {
+  // ClientService carries no firmId, so the Prisma tenant extension injects
+  // nothing for it. Every engagement query has to reach the firm through the
+  // parent Client — and the spread has to MERGE into that nested object, not
+  // replace it. Getting this wrong is silent: the query still runs, still
+  // returns rows, and simply returns other firms' rows too.
+  test("merged into a nested client condition, both conditions survive", () => {
+    const where = {
+      isActive: true,
+      client: { ...clientFirmFilter(session("firm_a")).client, id: "cli_1" },
+    }
+    assert.deepEqual(where, {
+      isActive: true,
+      client: { firmId: "firm_a", id: "cli_1" },
+    })
+  })
+
+  test("spreading ALONGSIDE a client key drops the firm — the shape to avoid", () => {
+    // Pinned as a counter-example so the correct form above is not "fixed"
+    // back into this one by someone tidying the spread.
+    const wrong = { ...clientFirmFilter(session("firm_a")), client: { id: "cli_1" } }
+    assert.deepEqual(wrong.client, { id: "cli_1" })
+    assert.equal("firmId" in wrong.client, false)
+  })
+
+  test("still fails closed with no tenant context", () => {
+    assert.throws(
+      () => ({ client: { ...clientFirmFilter(session()).client, id: "cli_1" } }),
+      /Unauthorized: no tenant context/
+    )
+  })
+})

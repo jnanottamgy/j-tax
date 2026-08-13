@@ -136,13 +136,21 @@ export function ClientOnboardingWizard({
         .filter((entry): entry is [ServiceType, OnboardingServiceConfig] =>
           Boolean(entry[1]?.selected)
         )
-        .map(([serviceType, config]) => ({
-          serviceType,
-          frequency: config.frequency,
-          nextDueDate: config.nextDueDate || undefined,
-          customName:
-            serviceType === "OTHER" ? config.customName?.trim() || undefined : undefined,
-        })),
+        .map(([serviceType, config]) => {
+          const fee = Number(config.agreedFee)
+          return {
+            serviceType,
+            frequency: config.frequency,
+            nextDueDate: config.nextDueDate || undefined,
+            customName:
+              serviceType === "OTHER" ? config.customName?.trim() || undefined : undefined,
+            // The engagement's commercial term. Omitted rather than sent as 0
+            // when blank, so "no fee agreed yet" stays distinguishable from
+            // "agreed at nil".
+            agreedFee: Number.isFinite(fee) && fee > 0 ? fee : undefined,
+            sourceQuotationItemId: config.sourceQuotationItemId,
+          }
+        }),
     [services]
   )
 
@@ -851,7 +859,7 @@ function ConfigurationStep({
           return (
             <div
               key={serviceType}
-              className="surface-elevated grid gap-4 rounded-xl p-4 md:grid-cols-[1fr_160px_180px]"
+              className="surface-elevated grid gap-4 rounded-xl p-4 md:grid-cols-[1fr_140px_150px_160px]"
             >
               {serviceType === "OTHER" ? (
                 <Field label="Specify the service *">
@@ -907,6 +915,26 @@ function ConfigurationStep({
                   }
                   className="input-premium h-10 rounded-xl"
                 />
+              </Field>
+              {/* The fee this engagement is billed at. Prefilled from the
+                  accepted quotation when there is one, so the price the client
+                  agreed to becomes the number invoices default to. */}
+              <Field label="Fee (₹, excl. GST)">
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="decimal"
+                  value={config?.agreedFee ?? ""}
+                  onChange={(event) =>
+                    updateService(serviceType, { agreedFee: event.target.value })
+                  }
+                  placeholder="Not set"
+                  className="input-premium h-10 rounded-xl tabular-nums"
+                />
+                {config?.sourceQuotationItemId && (
+                  <p className="mt-1 text-xs text-muted-foreground">From the quotation</p>
+                )}
               </Field>
             </div>
           )

@@ -3,6 +3,7 @@ import { format } from "date-fns"
 import { MessageSquare, Send, Clock, Check, X } from "lucide-react"
 
 import { getSession } from "@/lib/auth/session"
+import { resolvePortalClient } from "@/lib/client-portal/resolve"
 import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -13,15 +14,18 @@ export default async function ClientMessagesPage() {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  // Find the Client record for this user
-  const clientRecord = await prisma.client.findFirst({
-    where: { email: session.user.email },
-    select: { id: true, name: true },
-  })
-
-  if (!clientRecord) {
-    redirect("/unauthorized")
+  // Same resolution as the portal layout: the explicit portalUserId grant
+  // first, then the legacy email match. Shared so a page can never disagree
+  // with the layout about who the visitor is.
+  const resolved = await resolvePortalClient(session)
+  if (!resolved.ok) {
+    redirect(
+      resolved.reason === "ambiguous"
+        ? "/unauthorized?reason=ambiguous_client"
+        : "/unauthorized"
+    )
   }
+  const clientRecord = resolved.client
 
   // Fetch messages for this client
   const messages = await prisma.message.findMany({

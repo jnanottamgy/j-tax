@@ -235,6 +235,175 @@ async function sendInviteEmail(opts: {
   }
 }
 
+export type ClientPortalProvisionResult =
+  | { ok: true; userId: string; tempPassword: string | null; emailSent: boolean; emailError?: string }
+  | { ok: false; error: string }
+
+/**
+ * Give a client a login for the client portal.
+ *
+ * The portal had six built pages and no way in: it resolved the viewer by
+ * matching their session email against `Client.email`, so access could only be
+ * granted by hand-creating a Supabase user outside the product — and it broke
+ * the moment a client changed their address. Access is now an explicit link
+ * from the client record to an auth account.
+ *
+ * Deliberately separate from provisionStaffAccount: a CLIENT must never be
+ * creatable through the staff path, where an EMPLOYEE/MANAGER role could be
+ * passed by mistake.
+ */
+export async function provisionClientPortalAccount(opts: {
+  clientName: string
+  email: string
+  firmName: string
+}): Promise<ClientPortalProvisionResult> {
+  const { clientName, email } = opts
+
+  let admin
+  try {
+    admin = getAuthAdminClient()
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Provisioning unavailable." }
+  }
+
+  const tempPassword = generateTempPassword()
+
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true,
+    user_metadata: { name: clientName, role: "CLIENT", must_change_password: true },
+  })
+
+  if (error) {
+    const msg = error.message.toLowerCase()
+    if (msg.includes("already") && (msg.includes("registered") || msg.includes("exists"))) {
+      // Supabase auth emails are global. The address might belong to this
+      // firm's own staff, to a client of a different firm on the platform, or
+      // to this same client from an earlier invite — and only the last is safe
+      // to reuse. prisma.user is firm-scoped, so it can only see our own.
+      const existing = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, role: true },
+      })
+
+      if (!existing) {
+        return {
+          ok: false,
+          error:
+            "That email already has an account elsewhere on this platform. Ask the client for a different address, or contact support to move the account.",
+        }
+      }
+      if (existing.role !== "CLIENT") {
+        return {
+          ok: false,
+          error:
+            "That email belongs to a staff login in your firm. Client portal access needs a separate address.",
+        }
+      }
+
+      // Re-inviting the same client: issue fresh credentials rather than
+      // leaving them with a password nobody remembers.
+      const reset = await resetStaffPassword(existing.id)
+      if (!reset.ok) return { ok: false, error: reset.error }
+
+      const invite = await sendPortalInviteEmail({
+        clientName,
+        email,
+        firmName: opts.firmName,
+        tempPassword: reset.tempPassword,
+      })
+      return {
+        ok: true,
+        userId: existing.id,
+        tempPassword: reset.tempPassword,
+        emailSent: invite.sent,
+        ...(invite.error ? { emailError: invite.error } : {}),
+      }
+    }
+    console.error("[provisioning] client portal createUser failed:", error.message)
+    return { ok: false, error: "Could not create the portal login. Please try again." }
+  }
+
+  const authUserId = data.user.id
+
+  try {
+    await prisma.user.upsert({
+      where: { email },
+      update: { name: clientName, role: "CLIENT" },
+      create: { id: authUserId, email, name: clientName, role: "CLIENT" },
+    })
+  } catch (err) {
+    console.error("[provisioning] client user mirror failed:", err)
+  }
+
+  const invite = await sendPortalInviteEmail({
+    clientName,
+    email,
+    firmName: opts.firmName,
+    tempPassword,
+  })
+
+  return {
+    ok: true,
+    userId: authUserId,
+    tempPassword,
+    emailSent: invite.sent,
+    ...(invite.error ? { emailError: invite.error } : {}),
+  }
+}
+
+async function sendPortalInviteEmail(opts: {
+  clientName: string
+  email: string
+  firmName: string
+  tempPassword: string
+}): Promise<{ sent: boolean; error?: string }> {
+  try {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;margin:0;">
+  <div style="max-width:600px;margin:0 auto;padding:20px;">
+    <div style="background:linear-gradient(135deg,#1e3a8a 0%,#3b82f6 100%);padding:30px;text-align:center;border-radius:10px 10px 0 0;">
+      <h1 style="color:white;margin:0;font-size:28px;">${opts.firmName}</h1>
+      <p style="color:#bfdbfe;margin:8px 0 0;font-size:16px;">Your client portal is ready</p>
+    </div>
+    <div style="background:#f9fafb;padding:30px;border-radius:0 0 10px 10px;">
+      <p>Dear ${opts.clientName},</p>
+      <p>We've set up a secure portal where you can see your upcoming compliance
+      deadlines, filing status, and invoices from <strong>${opts.firmName}</strong> at any time.</p>
+      <div style="background:white;padding:20px;border-radius:8px;margin:20px 0;border-left:4px solid #3b82f6;">
+        <p style="margin:4px 0;"><strong>Login email:</strong> ${opts.email}</p>
+        <p style="margin:4px 0;"><strong>Temporary password:</strong> <code style="background:#eef2ff;padding:2px 6px;border-radius:4px;">${opts.tempPassword}</code></p>
+      </div>
+      <p>You'll be asked to choose your own password when you first sign in.</p>
+      <a href="${appUrl}/login" style="display:inline-block;background:#3b82f6;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;margin-top:12px;">Open your portal</a>
+      <p style="margin-top:24px;font-size:12px;color:#6b7280;">If you weren't expecting this, please contact us before signing in.</p>
+    </div>
+  </div>
+</body></html>`
+
+    const result = await resendProvider.send({
+      to: opts.email,
+      subject: `Your client portal at ${opts.firmName}`,
+      content: html,
+      metadata: { kind: "client_portal_invite" },
+    })
+    if (!result.success) {
+      console.error("[provisioning] portal invite rejected:", result.error)
+      return { sent: false, error: result.error ?? "Email provider rejected the message." }
+    }
+    return { sent: true }
+  } catch (err) {
+    console.error("[provisioning] portal invite failed:", err)
+    return {
+      sent: false,
+      error: err instanceof Error ? err.message : "Invite email failed to send.",
+    }
+  }
+}
+
 /**
  * Block or unblock a staff member's ability to log in. Used by
  * disable/enable employee so "disabled" actually means locked out.
