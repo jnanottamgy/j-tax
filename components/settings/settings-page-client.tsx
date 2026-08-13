@@ -433,6 +433,45 @@ export function SettingsPageClient({
 
               <Separator className="bg-white/[0.06]" />
 
+              {/* ICAI identity. Belongs on every audit report and certificate,
+                  and the membership number is what UDIN is keyed on. */}
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-medium">ICAI registration</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Printed on audit reports and certificates, and required when
+                    generating a UDIN.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="icaiFrn">Firm Registration Number</Label>
+                    <Input
+                      id="icaiFrn"
+                      name="icaiFrn"
+                      defaultValue={initialFirmSettings?.icaiFrn ?? ""}
+                      placeholder="012345S"
+                      className="input-premium h-10 rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="icaiMembershipNo">
+                      Membership number{" "}
+                      <span className="text-xs text-muted-foreground">(signing partner)</span>
+                    </Label>
+                    <Input
+                      id="icaiMembershipNo"
+                      name="icaiMembershipNo"
+                      defaultValue={initialFirmSettings?.icaiMembershipNo ?? ""}
+                      placeholder="234567"
+                      className="input-premium h-10 rounded-xl"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator className="bg-white/[0.06]" />
+
               {/* Delegation limit. A ₹5,000 quotation already needed your
                   approval; a ₹5,00,000 invoice needed none. */}
               <div className="space-y-3">

@@ -18,6 +18,7 @@
  */
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 
 import { clientFirmFilter, taskFirmFilter } from "@/lib/auth/scope"
 import type { SessionInfo } from "@/lib/auth/types"
@@ -108,4 +109,44 @@ describe("clientFirmFilter — merging into an existing client condition", () =>
       /Unauthorized: no tenant context/
     )
   })
+})
+
+describe("TENANT_MODELS covers every model that carries a firmId", () => {
+  // The extension in lib/prisma.ts injects firmId only for models named in
+  // TENANT_MODELS. Adding a new top-level model and forgetting to register it
+  // produces no error, no type failure and no test failure — the queries simply
+  // run unscoped and read across every firm on the platform. This reads the
+  // schema and the registry directly so the omission cannot go unnoticed.
+  const schema = readFileSync(
+    new URL("../prisma/schema.prisma", import.meta.url),
+    "utf8"
+  )
+  const source = readFileSync(new URL("../lib/prisma.ts", import.meta.url), "utf8")
+
+  const registered = new Set(
+    (/const TENANT_MODELS = new Set\(\[([\s\S]*?)\]\)/.exec(source)?.[1] ?? "")
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean)
+  )
+
+  /** Models declaring their own `firmId` scalar — i.e. top-level tenant data. */
+  const withFirmId = [...schema.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)]
+    .filter(([, , body]) => /^\s*firmId\s+String/m.test(body))
+    .map(([, name]) => name)
+    // Firm itself is the tenant, not tenant-scoped data.
+    .filter((name) => name !== "Firm")
+
+  test("the schema actually has tenant models to check", () => {
+    assert.ok(withFirmId.length > 20, `found only ${withFirmId.length}`)
+  })
+
+  for (const model of withFirmId) {
+    test(`${model} is registered`, () => {
+      assert.ok(
+        registered.has(model),
+        `${model} declares firmId but is missing from TENANT_MODELS in lib/prisma.ts — its queries would run unscoped across every firm.`
+      )
+    })
+  }
 })

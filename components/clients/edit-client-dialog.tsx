@@ -43,6 +43,11 @@ import {
   CLIENT_TYPE_OPTIONS,
   ENTITY_TYPE_LABELS,
 } from "@/lib/clients/master-data"
+import {
+  MONTH_NAMES,
+  indicateTaxAudit,
+  resolveGstScheme,
+} from "@/lib/compliance/gst-scheme"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 import { cn } from "@/lib/utils"
 
@@ -76,6 +81,19 @@ export function EditClientDialog({
     initialState
   )
   const [clientType, setClientType] = useState(client.clientType ?? "")
+  // Live, so the partner sees the consequence of the number as they type it
+  // rather than discovering it when the wrong returns appear.
+  const [turnover, setTurnover] = useState(
+    client.annualTurnover != null ? String(client.annualTurnover) : ""
+  )
+  const turnoverNum = turnover.trim() ? Number(turnover) : null
+  const gstHint = resolveGstScheme({
+    explicit: client.gstFilingScheme,
+    annualTurnover: turnoverNum,
+  }).reason
+  const audit = indicateTaxAudit({ annualTurnover: turnoverNum })
+  const auditHint =
+    audit.likely || audit.checkCashRatio ? `Tax audit: ${audit.reason}` : ""
   const [isIncorporated, setIsIncorporated] = useState(client.isIncorporated ?? true)
 
   // Editable services — seeded from the client's current service mix.
@@ -317,6 +335,83 @@ export function EditClientDialog({
                   />
                 </Field>
               </div>
+            </section>
+
+            {/* Accounting year and scale. These are not paperwork: turnover
+                decides whether the client files GST monthly or quarterly, and
+                the year end decides when their books actually close. */}
+            <section className="space-y-4">
+              <h3 className="label-premium">Year end &amp; scale</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Books close at end of" name="fyEndMonth">
+                  <select
+                    id="fyEndMonth"
+                    name="fyEndMonth"
+                    defaultValue={String(client.fyEndMonth ?? 3)}
+                    className="input-premium h-10 w-full rounded-xl px-3 text-sm"
+                    disabled={isPending}
+                  >
+                    {MONTH_NAMES.map((label, i) => (
+                      <option key={label} value={i + 1}>
+                        {label}
+                        {i === 2 ? " (standard Indian FY)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Indian tax deadlines stay on April–March by law; this is the
+                    client&apos;s own accounting year.
+                  </p>
+                </Field>
+
+                <Field label="GST filing" name="gstFilingScheme">
+                  <select
+                    id="gstFilingScheme"
+                    name="gstFilingScheme"
+                    defaultValue={client.gstFilingScheme ?? ""}
+                    className="input-premium h-10 w-full rounded-xl px-3 text-sm"
+                    disabled={isPending}
+                  >
+                    <option value="">Decide from turnover</option>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="QRMP">Quarterly (QRMP)</option>
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {gstHint}
+                  </p>
+                </Field>
+
+                <Field label="Annual turnover (₹)" name="annualTurnover">
+                  <Input
+                    id="annualTurnover"
+                    name="annualTurnover"
+                    type="number"
+                    min="0"
+                    step="1000"
+                    defaultValue={client.annualTurnover ?? ""}
+                    onChange={(e) => setTurnover(e.target.value)}
+                    placeholder="Not recorded"
+                    className="input-premium h-10 rounded-xl tabular-nums"
+                    disabled={isPending}
+                  />
+                </Field>
+
+                <Field label="Turnover is for FY" name="turnoverFy">
+                  <Input
+                    id="turnoverFy"
+                    name="turnoverFy"
+                    defaultValue={client.turnoverFy ?? ""}
+                    placeholder="2024-25"
+                    className="input-premium h-10 rounded-xl"
+                    disabled={isPending}
+                  />
+                </Field>
+              </div>
+              {auditHint && (
+                <p className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-2.5 text-xs text-muted-foreground">
+                  {auditHint}
+                </p>
+              )}
             </section>
 
             <section className="space-y-4">

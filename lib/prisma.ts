@@ -57,6 +57,7 @@ const TENANT_MODELS = new Set([
   "StatutoryRegistration", "DscRecord", "UdinRecord", "JobTemplate",
   "TimeEntry", "GstReconRun", "ItrComputation", "TaxNotice",
   "FinancialStatement", "FirmSettings",
+  "EngagementLetter", "FilingRecord",
 ])
 
 const WHERE_OPS = new Set([

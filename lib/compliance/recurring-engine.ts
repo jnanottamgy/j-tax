@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { addDays, addMonths, startOfMonth, format } from "date-fns"
 
 import { statutoryEventsInWindow } from "@/lib/compliance/statutory-calendar"
+import { resolveGstScheme, type GstScheme } from "@/lib/compliance/gst-scheme"
 
 /**
  * Monthly cron (1st, 03:00) with two halves:
@@ -112,6 +113,9 @@ type ClientServices = {
   clientName: string
   assignedEmployeeId: string | null
   serviceTypes: string[]
+  /** Resolved GST cadence — see lib/compliance/gst-scheme.ts. */
+  gstScheme: GstScheme
+  stateCode: string | null
 }
 
 async function createEventWithTask(input: {
@@ -183,7 +187,21 @@ export async function generateRecurringComplianceTasks(): Promise<{ created: num
 
   const clientServices = await prisma.clientService.findMany({
     where: { isActive: true, client: { status: "ACTIVE" } },
-    include: { client: { select: { id: true, name: true, assignedEmployeeId: true } } },
+    include: {
+      client: {
+        select: {
+          id: true,
+          name: true,
+          assignedEmployeeId: true,
+          // The client's own facts decide which returns are actually due —
+          // a QRMP filer owes four GSTR-3Bs a year, not twelve.
+          annualTurnover: true,
+          gstFilingScheme: true,
+          stateCode: true,
+          gstin: true,
+        },
+      },
+    },
   })
 
   // Group services per client — the full list matters (an AUDIT engagement
@@ -195,6 +213,12 @@ export async function generateRecurringComplianceTasks(): Promise<{ created: num
       clientName: cs.client.name,
       assignedEmployeeId: cs.client.assignedEmployeeId,
       serviceTypes: [],
+      gstScheme: resolveGstScheme({
+        explicit: cs.client.gstFilingScheme,
+        annualTurnover:
+          cs.client.annualTurnover != null ? Number(cs.client.annualTurnover) : null,
+      }).scheme,
+      stateCode: cs.client.stateCode ?? cs.client.gstin?.slice(0, 2) ?? null,
     }
     entry.serviceTypes.push(cs.serviceType)
     byClient.set(cs.clientId, entry)
@@ -204,7 +228,10 @@ export async function generateRecurringComplianceTasks(): Promise<{ created: num
   const windowEnd = addDays(now, STATUTORY_LOOKAHEAD_DAYS)
 
   for (const client of byClient.values()) {
-    const specs = statutoryEventsInWindow(client.serviceTypes, now, windowEnd)
+    const specs = statutoryEventsInWindow(client.serviceTypes, now, windowEnd, {
+      gstScheme: client.gstScheme,
+      stateCode: client.stateCode,
+    })
     if (specs.length === 0) continue
 
     const existing = await prisma.complianceEvent.findMany({

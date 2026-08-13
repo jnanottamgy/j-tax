@@ -26,6 +26,7 @@ import {
   Trash2,
   Loader2,
   Sparkles,
+  FileSignature,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -52,13 +53,14 @@ import { ClientComplianceTab } from "@/components/compliance/client-compliance-t
 import { ClientTimeline } from "@/components/clients/client-timeline"
 import { EditClientDialog } from "@/components/clients/edit-client-dialog"
 import { PortalAccessCard } from "@/components/clients/portal-access-card"
+import { EngagementTab } from "@/components/clients/engagement-tab"
 import { WhatsAppButton } from "@/components/messaging/whatsapp-button"
 import { draftGeneral } from "@/lib/messaging/whatsapp-drafts"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 import { serviceLabel } from "@/lib/clients/constants"
 import { cn } from "@/lib/utils"
 
-type TabType = "overview" | "services" | "tasks" | "payments" | "documents" | "compliance" | "activity" | "timeline"
+type TabType = "overview" | "services" | "tasks" | "payments" | "documents" | "compliance" | "engagement" | "activity" | "timeline"
 
 /** Humanize raw Prisma enum values, e.g. ON_HOLD → "On Hold" */
 function humanizeEnum(value?: string | null) {
@@ -150,6 +152,11 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
       : []),
     { id: "documents" as TabType, label: "Documents", icon: Folder },
     { id: "compliance" as TabType, label: "Compliance", icon: Calendar },
+    // Terms and filing history. Partner/Manager only — the engagement fee
+    // is commercial information an employee is walled off from elsewhere.
+    ...(canManage
+      ? [{ id: "engagement" as TabType, label: "Engagement", icon: FileSignature }]
+      : []),
     { id: "activity" as TabType, label: "Activity", icon: Activity },
     { id: "timeline" as TabType, label: "Timeline", icon: TrendingUp },
   ]
@@ -390,6 +397,18 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
                 />
               </motion.div>
             )}
+            {activeTab === "engagement" && (
+              <motion.div
+                key="engagement"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <EngagementTab clientId={clientId} canManage={canManage} />
+              </motion.div>
+            )}
+
             {activeTab === "compliance" && (
               <motion.div
                 key="compliance"

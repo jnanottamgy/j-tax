@@ -55,6 +55,7 @@ import {
 } from "@/lib/clients/onboarding-store"
 import type { EmployeeOption } from "@/lib/clients/types"
 import { validateGSTIN, validatePAN, gstinPanMismatch } from "@/lib/india/validators"
+import { MONTH_NAMES, resolveGstScheme } from "@/lib/compliance/gst-scheme"
 import { cn } from "@/lib/utils"
 
 const initialState: ClientActionState = {}
@@ -314,6 +315,13 @@ export function ClientOnboardingWizard({
             <input type="hidden" name="whatsapp" value={basic.whatsapp} />
             <input type="hidden" name="address" value={basic.address} />
             <input type="hidden" name="notes" value={basic.notes} />
+            {/* Turnover decides whether this client files GST monthly or
+                quarterly, so it has to be known BEFORE the compliance
+                calendar is generated at creation. */}
+            <input type="hidden" name="annualTurnover" value={basic.annualTurnover} />
+            <input type="hidden" name="turnoverFy" value={basic.turnoverFy} />
+            <input type="hidden" name="gstFilingScheme" value={basic.gstFilingScheme} />
+            <input type="hidden" name="fyEndMonth" value={basic.fyEndMonth} />
             <input type="hidden" name="assignedEmployeeId" value={assignedEmployeeId} />
             <input type="hidden" name="priority" value={priority} />
             <input
@@ -569,6 +577,11 @@ function BasicInfoStep({
   const panCheck = basic.pan.trim().length >= 10 ? validatePAN(basic.pan) : null
   const crossCheck =
     gstinCheck?.valid && panCheck?.valid ? gstinPanMismatch(basic.gstin, basic.pan) : null
+  // What the entered turnover means, shown while it is being entered.
+  const gstSchemeHint = resolveGstScheme({
+    explicit: basic.gstFilingScheme || null,
+    annualTurnover: basic.annualTurnover.trim() ? Number(basic.annualTurnover) : null,
+  }).reason
 
   return (
     <StepFrame
@@ -676,6 +689,58 @@ function BasicInfoStep({
             </p>
           )}
         </Field>
+
+        {/* Turnover has to be asked here, not on a later edit: the compliance
+            calendar is generated the instant this client is created, and this
+            number is what decides whether it carries monthly or quarterly GST
+            returns. Left blank it defaults to monthly, which is the safe way
+            to be wrong. */}
+        <Field label="Annual turnover (₹)">
+          <Input
+            value={basic.annualTurnover}
+            onChange={(event) => updateBasic({ annualTurnover: event.target.value })}
+            type="number"
+            min="0"
+            step="1000"
+            placeholder="Optional — decides GST filing frequency"
+            className="input-premium h-10 rounded-xl tabular-nums"
+          />
+          <p className="mt-1.5 text-xs text-muted-foreground">{gstSchemeHint}</p>
+        </Field>
+        <Field label="Turnover is for FY">
+          <Input
+            value={basic.turnoverFy}
+            onChange={(event) => updateBasic({ turnoverFy: event.target.value })}
+            placeholder="2024-25"
+            className="input-premium h-10 rounded-xl"
+          />
+        </Field>
+        <Field label="GST filing frequency">
+          <select
+            value={basic.gstFilingScheme}
+            onChange={(event) => updateBasic({ gstFilingScheme: event.target.value })}
+            className="input-premium h-10 w-full rounded-xl px-3 text-sm"
+          >
+            <option value="">Decide from turnover</option>
+            <option value="MONTHLY">Monthly</option>
+            <option value="QRMP">Quarterly (QRMP)</option>
+          </select>
+        </Field>
+        <Field label="Books close at end of">
+          <select
+            value={basic.fyEndMonth}
+            onChange={(event) => updateBasic({ fyEndMonth: event.target.value })}
+            className="input-premium h-10 w-full rounded-xl px-3 text-sm"
+          >
+            {MONTH_NAMES.map((label, i) => (
+              <option key={label} value={String(i + 1)}>
+                {label}
+                {i === 2 ? " (standard)" : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         <Field label="Email" error={errors?.email?.[0]}>
           <Input
             value={basic.email}

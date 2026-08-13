@@ -213,6 +213,10 @@ const firmSettingsSchema = z.object({
   bankAccountNumber: z.string().max(30).optional().or(z.literal("")),
   bankIfsc: z.string().max(11).optional().or(z.literal("")),
   upiId: z.string().max(100).optional().or(z.literal("")),
+  // ICAI identity. The FRN belongs on every audit report and certificate;
+  // the membership number is what the UDIN portal is keyed on.
+  icaiFrn: z.string().max(20).optional().or(z.literal("")),
+  icaiMembershipNo: z.string().max(20).optional().or(z.literal("")),
   // Blank = no limit. Coerced from the form string; a non-numeric entry
   // fails validation rather than silently becoming "no limit".
   invoiceApprovalLimit: z
@@ -259,6 +263,8 @@ export async function saveFirmSettings(
       bankAccountNumber: formData.get("bankAccountNumber") || undefined,
       bankIfsc: formData.get("bankIfsc") || undefined,
       upiId: formData.get("upiId") || undefined,
+      icaiFrn: formData.get("icaiFrn") || undefined,
+      icaiMembershipNo: formData.get("icaiMembershipNo") || undefined,
       invoiceApprovalLimit: formData.get("invoiceApprovalLimit") || undefined,
     }
 
@@ -301,6 +307,8 @@ export async function saveFirmSettings(
         bankAccountNumber: parsed.data.bankAccountNumber || null,
         bankIfsc: parsed.data.bankIfsc || null,
         upiId: parsed.data.upiId || null,
+        icaiFrn: parsed.data.icaiFrn?.trim().toUpperCase() || null,
+        icaiMembershipNo: parsed.data.icaiMembershipNo?.trim() || null,
         invoiceApprovalLimit: parsed.data.invoiceApprovalLimit?.trim()
           ? Number(parsed.data.invoiceApprovalLimit)
           : null,

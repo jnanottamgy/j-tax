@@ -42,6 +42,11 @@ export type FirmConfig = {
   bankIfsc: string | null
   bankName: string | null
   upiId: string | null
+  // ── ICAI identity ────────────────────────────────────────────────────────
+  /** Firm Registration Number, e.g. "012345S". Prints on audit reports. */
+  icaiFrn: string | null
+  /** Signing partner's membership number — what UDIN is keyed on. */
+  icaiMembershipNo: string | null
   // ── Delegation limits ────────────────────────────────────────────────────
   /**
    * Invoice value (incl. GST) above which a Manager needs Partner sign-off.
@@ -75,6 +80,8 @@ const ENV_DEFAULTS: FirmConfig = {
   bankIfsc: null,
   bankName: null,
   upiId: null,
+  icaiFrn: null,
+  icaiMembershipNo: null,
   invoiceApprovalLimit: null,
   logoUpdatedAt: null,
   logoFileName: null,
@@ -109,6 +116,8 @@ const FIRM_CONFIG_SELECT = {
   bankIfsc: true,
   bankName: true,
   upiId: true,
+  icaiFrn: true,
+  icaiMembershipNo: true,
   invoiceApprovalLimit: true,
   logoUpdatedAt: true,
   logoFileName: true,
@@ -200,6 +209,8 @@ export async function getFirmSettingsForFirm(
       bankIfsc: row.bankIfsc || null,
       bankName: row.bankName || null,
       upiId: row.upiId || null,
+      icaiFrn: row.icaiFrn || null,
+      icaiMembershipNo: row.icaiMembershipNo || null,
       invoiceApprovalLimit:
         row.invoiceApprovalLimit != null ? Number(row.invoiceApprovalLimit) : null,
       logoUpdatedAt: row.logoUpdatedAt ?? null,
@@ -353,6 +364,8 @@ export async function upsertFirmSettings(
       bankIfsc: data.bankIfsc ?? null,
       bankName: data.bankName ?? null,
       upiId: data.upiId ?? null,
+      icaiFrn: data.icaiFrn ?? null,
+      icaiMembershipNo: data.icaiMembershipNo ?? null,
       invoiceApprovalLimit: data.invoiceApprovalLimit ?? null,
       updatedBy,
     },
@@ -380,6 +393,8 @@ export async function upsertFirmSettings(
     bankIfsc: row.bankIfsc,
     bankName: row.bankName,
     upiId: row.upiId,
+    icaiFrn: row.icaiFrn,
+    icaiMembershipNo: row.icaiMembershipNo,
     invoiceApprovalLimit:
       row.invoiceApprovalLimit != null ? Number(row.invoiceApprovalLimit) : null,
     logoUpdatedAt: row.logoUpdatedAt,

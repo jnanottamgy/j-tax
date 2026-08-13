@@ -1,5 +1,7 @@
 import { addMonths, format } from "date-fns"
 
+import { qrmpGstr3bDueDay, type GstScheme } from "@/lib/compliance/gst-scheme"
+
 /**
  * Single source of truth for Indian statutory filing due dates.
  *
@@ -83,11 +85,23 @@ function monthLabel(year: number, monthIdx: number): string {
 export function statutoryEventsInWindow(
   serviceTypes: string[],
   from: Date,
-  to: Date
+  to: Date,
+  /**
+   * Client-specific facts that change which returns are actually due.
+   * Omitted → the previous behaviour (monthly GST), so existing callers and
+   * clients with nothing recorded are unaffected.
+   */
+  profile?: {
+    /** MONTHLY | QRMP. See lib/compliance/gst-scheme.ts. */
+    gstScheme?: GstScheme
+    /** GST state code — QRMP's GSTR-3B falls on the 22nd or 24th by state. */
+    stateCode?: string | null
+  }
 ): StatutoryEventSpec[] {
   const services = new Set(serviceTypes)
   const events: StatutoryEventSpec[] = []
   const isAuditCase = services.has("AUDIT")
+  const qrmp = profile?.gstScheme === "QRMP"
 
   // FYs whose periods/dues can intersect the window. Annual dues lag the FY
   // start by up to ~20 months (Apr Y → MGT-7 Nov Y+1), hence the -2 margin.
@@ -104,7 +118,7 @@ export function statutoryEventsInWindow(
       const pMonth = period.getMonth()
       const pLabel = monthLabel(pYear, pMonth)
 
-      if (services.has("GST_RETURN")) {
+      if (services.has("GST_RETURN") && !qrmp) {
         const gstr1Due = new Date(pYear, pMonth + 1, 11)
         if (inWindow(gstr1Due, from, to)) {
           events.push({
@@ -121,6 +135,21 @@ export function statutoryEventsInWindow(
             title: `GSTR-3B — ${pLabel}`,
             filingPeriod: pLabel, dueDate: gstr3bDue, reminderDays: 5,
             description: `Summary return & tax payment for ${pLabel} (due 20th of the following month)`,
+          })
+        }
+      }
+
+      // QRMP still has a MONTHLY obligation — the tax itself. Only the returns
+      // go quarterly. Missing PMT-06 is what actually costs the client interest,
+      // so it matters that a quarterly filer still sees eleven dates a year.
+      if (services.has("GST_RETURN") && qrmp && m % 3 !== 2) {
+        const pmt06Due = new Date(pYear, pMonth + 1, 25)
+        if (inWindow(pmt06Due, from, to)) {
+          events.push({
+            serviceType: "GST_RETURN", type: "GSTR_3B", cadence: "MONTHLY",
+            title: `GST PMT-06 — ${pLabel}`,
+            filingPeriod: pLabel, dueDate: pmt06Due, reminderDays: 4,
+            description: `Monthly tax payment under QRMP for ${pLabel} (due 25th of the following month)`,
           })
         }
       }
@@ -151,6 +180,40 @@ export function statutoryEventsInWindow(
     }
 
     // ── Quarterly cadences ──────────────────────────────────────────────────
+
+    // QRMP returns. Quarters follow the FY: Q1 = Apr-Jun. GSTR-1 lands on the
+    // 13th; GSTR-3B on the 22nd or 24th depending on the taxpayer's state,
+    // which is why the profile carries a state code.
+    if (services.has("GST_RETURN") && qrmp) {
+      const gstr3bDay = qrmpGstr3bDueDay(profile?.stateCode)
+      const quarters = [
+        { q: "Q1", endMonth: 6 },  // Apr-Jun → due in Jul
+        { q: "Q2", endMonth: 9 },  // Jul-Sep → due in Oct
+        { q: "Q3", endMonth: 12 }, // Oct-Dec → due in Jan
+        { q: "Q4", endMonth: 15 }, // Jan-Mar → due in Apr
+      ]
+      for (const { q, endMonth } of quarters) {
+        const gstr1Due = new Date(fy, endMonth, 13)
+        if (inWindow(gstr1Due, from, to)) {
+          events.push({
+            serviceType: "GST_RETURN", type: "GSTR_1", cadence: "QUARTERLY",
+            title: `GSTR-1 (QRMP) — ${q} ${label}`,
+            filingPeriod: `${q} ${label}`, dueDate: gstr1Due, reminderDays: 7,
+            description: `Quarterly outward supplies return for ${q} ${label} (due 13th of the month following the quarter)`,
+          })
+        }
+        const gstr3bDue = new Date(fy, endMonth, gstr3bDay)
+        if (inWindow(gstr3bDue, from, to)) {
+          events.push({
+            serviceType: "GST_RETURN", type: "GSTR_3B", cadence: "QUARTERLY",
+            title: `GSTR-3B (QRMP) — ${q} ${label}`,
+            filingPeriod: `${q} ${label}`, dueDate: gstr3bDue, reminderDays: 7,
+            description: `Quarterly summary return for ${q} ${label} (due ${gstr3bDay}th of the month following the quarter)`,
+          })
+        }
+      }
+    }
+
     if (services.has("TDS")) {
       // TDS returns 24Q/26Q — Q4 (Jan-Mar) is due May 31 of the NEXT year.
       const tdsReturns = [

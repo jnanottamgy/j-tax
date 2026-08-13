@@ -25,6 +25,14 @@ export type ClientListItem = {
   assignedEmployee: string
   status: ClientStatus
   priority: ClientPriority
+  // ── Accounting year & scale ────────────────────────────────────────────
+  /** Month the client's books close, 1–12. 3 = 31 March (the Indian default). */
+  fyEndMonth?: number | null
+  /** Aggregate annual turnover in rupees — drives GST cadence and s.44AB. */
+  annualTurnover?: number | null
+  turnoverFy?: string | null
+  /** MONTHLY | QRMP. Null = derive from turnover. */
+  gstFilingScheme?: string | null
   services: {
     type: ServiceType
     frequency: ServiceFrequency

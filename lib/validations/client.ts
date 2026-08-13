@@ -119,6 +119,34 @@ const clientBaseSchema = z.object({
     .string()
     .optional()
     .transform((v) => v?.trim().toUpperCase() || undefined),
+  // ── Accounting year & scale ────────────────────────────────────────────────
+  /**
+   * Month the client's books close, 1–12. The app assumed 31 March everywhere;
+   * a foreign-parented subsidiary usually closes in December to match its group.
+   * Indian statutory deadlines still run April–March by law, so this drives the
+   * firm's own planning rather than the statutory calendar.
+   */
+  fyEndMonth: z.coerce.number().int().min(1).max(12).optional().default(3),
+  /** Aggregate annual turnover in rupees. Drives GST cadence and s.44AB. */
+  annualTurnover: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => {
+      if (v === undefined || v === null || v === "") return undefined
+      const n = Number(v)
+      return Number.isFinite(n) && n >= 0 ? n : undefined
+    }),
+  /** Which FY the turnover figure is from, e.g. "2024-25". */
+  turnoverFy: z
+    .string()
+    .max(9)
+    .optional()
+    .transform((v) => v?.trim() || undefined),
+  /** Blank = derive from turnover; see lib/compliance/gst-scheme.ts. */
+  gstFilingScheme: z
+    .enum(["MONTHLY", "QRMP"])
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   email: z
     .string()
     .optional()

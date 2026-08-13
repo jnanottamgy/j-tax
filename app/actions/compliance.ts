@@ -12,6 +12,7 @@ import {
   clientGenerationWindow,
   statutoryEventsInWindow,
 } from "@/lib/compliance/statutory-calendar"
+import { resolveGstScheme } from "@/lib/compliance/gst-scheme"
 
 export type ComplianceActionState = {
   success?: boolean
@@ -632,9 +633,23 @@ export async function generateComplianceEventsForClient(
 ): Promise<{ count: number }> {
   const client = await prisma.client.findUnique({
     where: { id: clientId },
-    select: { name: true },
+    select: {
+      name: true,
+      annualTurnover: true,
+      gstFilingScheme: true,
+      stateCode: true,
+      gstin: true,
+    },
   })
   if (!client) return { count: 0 }
+
+  // Turnover decides the GST cadence, so a QRMP client gets four returns and
+  // eight tax payments a year instead of twenty-four monthly returns it does
+  // not owe. Previously every GST client got the monthly set regardless.
+  const { scheme } = resolveGstScheme({
+    explicit: client.gstFilingScheme,
+    annualTurnover: client.annualTurnover != null ? Number(client.annualTurnover) : null,
+  })
 
   const now = new Date()
   const { from, to, monthlyCap } = clientGenerationWindow(now)
@@ -642,9 +657,35 @@ export async function generateComplianceEventsForClient(
   // Statutory due dates come from the shared calendar (single source of truth
   // with the recurring cron). Monthly cadences are capped so the calendar
   // isn't flooded a year+ ahead — the cron tops them up on a rolling window.
-  const specs = statutoryEventsInWindow(serviceTypes, from, to).filter(
-    (s) => s.cadence !== "MONTHLY" || s.dueDate <= monthlyCap
-  )
+  const specs = statutoryEventsInWindow(serviceTypes, from, to, {
+    gstScheme: scheme,
+    stateCode: client.stateCode ?? client.gstin?.slice(0, 2) ?? null,
+  }).filter((s) => s.cadence !== "MONTHLY" || s.dueDate <= monthlyCap)
+
+  // Clear GST events belonging to the OTHER cadence before adding these.
+  //
+  // Dedupe is by title, so without this a client switched from monthly to QRMP
+  // would keep twelve monthly GSTR-3Bs on the calendar and gain four quarterly
+  // ones on top — sixteen deadlines for a client that owes four. Only future,
+  // untouched events are removed: anything started, filed, or already due is
+  // history and stays.
+  if (serviceTypes.includes("GST_RETURN")) {
+    const staleTitlePrefixes =
+      scheme === "QRMP"
+        ? ["GSTR-1 — ", "GSTR-3B — "] // the monthly set
+        : ["GSTR-1 (QRMP) — ", "GSTR-3B (QRMP) — ", "GST PMT-06 — "]
+
+    await prisma.complianceEvent.deleteMany({
+      where: {
+        clientId,
+        isStatutory: true,
+        dueDate: { gt: now },
+        workflowStatus: "NOT_STARTED",
+        status: { not: "COMPLETED" },
+        OR: staleTitlePrefixes.map((p) => ({ title: { startsWith: p } })),
+      },
+    })
+  }
   if (specs.length === 0) return { count: 0 }
 
   // ComplianceEvent has no unique constraint, so createMany+skipDuplicates

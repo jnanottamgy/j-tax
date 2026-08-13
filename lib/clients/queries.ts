@@ -48,6 +48,10 @@ function mapClientToListItem(
       "Unassigned",
     status: client.status,
     priority: client.priority,
+    fyEndMonth: client.fyEndMonth,
+    annualTurnover: client.annualTurnover != null ? Number(client.annualTurnover) : null,
+    turnoverFy: client.turnoverFy,
+    gstFilingScheme: client.gstFilingScheme,
     services: client.services.map((service) => ({
       type: service.serviceType,
       frequency: service.frequency,
@@ -167,6 +171,12 @@ export async function createClientWithOnboarding(
         isIncorporated: input.isIncorporated,
         gstin: input.gstin,
         pan: input.pan,
+        // Accounting year and scale. Turnover is what lets the compliance
+        // engine pick the right GST cadence instead of assuming monthly.
+        fyEndMonth: input.fyEndMonth ?? 3,
+        annualTurnover: input.annualTurnover ?? null,
+        turnoverFy: input.turnoverFy ?? null,
+        gstFilingScheme: input.gstFilingScheme ?? null,
         email: input.email,
         phone: input.phone,
         whatsapp: input.whatsapp,

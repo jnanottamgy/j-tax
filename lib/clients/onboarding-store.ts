@@ -39,6 +39,16 @@ export type BasicInfo = {
   whatsapp: string
   address: string
   notes: string
+  // ── Accounting year & scale ──────────────────────────────────────────
+  // Turnover has to be known here, not on a later edit: the compliance
+  // calendar is generated the moment the client is created, and it decides
+  // whether that calendar carries monthly or quarterly GST returns.
+  /** Month the books close, as a string because it binds to a <select>. */
+  fyEndMonth: string
+  annualTurnover: string
+  turnoverFy: string
+  /** "" = derive from turnover, else MONTHLY | QRMP. */
+  gstFilingScheme: string
 }
 
 type ComplianceSetup = {
@@ -116,6 +126,10 @@ const emptyBasic: BasicInfo = {
   whatsapp: "",
   address: "",
   notes: "",
+  fyEndMonth: "3",
+  annualTurnover: "",
+  turnoverFy: "",
+  gstFilingScheme: "",
 }
 
 const emptyCompliance: ComplianceSetup = {

@@ -54,6 +54,8 @@ model Firm {
   itrComputations ItrComputation[]
   taxNotices TaxNotice[]
   financialStatements FinancialStatement[]
+  engagementLetters EngagementLetter[]
+  filingRecords FilingRecord[]
 
   @@map("firms")
 }
@@ -96,6 +98,14 @@ model FirmSettings {
   bankIfsc          String?
   bankName          String?
   upiId             String?
+
+  // ── ICAI identity ─────────────────────────────────────────────────────────
+  /// Firm Registration Number allotted by the ICAI, e.g. "012345S". Belongs on
+  /// every audit report, certificate and UDIN — and was not collected anywhere.
+  icaiFrn              String?
+  /// Membership number of the partner who signs, e.g. "234567". This, not the
+  /// FRN, is what the UDIN portal is keyed on.
+  icaiMembershipNo     String?
 
   // ── Delegation limits ─────────────────────────────────────────────────────
   /// Invoice value (incl. GST) above which a Manager needs a Partner to sign
@@ -244,6 +254,25 @@ model Client {
   entityTypeCustom     String?
   /// GST place-of-supply state (falls back to the state encoded in gstin)
   stateCode            String?
+
+  // ── Accounting year ───────────────────────────────────────────────────────
+  /// Month the client's financial year ends, 1–12. Defaults to 3 (31 March),
+  /// which the whole app previously assumed without asking. Foreign-parented
+  /// subsidiaries commonly close in December to match the group.
+  fyEndMonth           Int            @default(3)
+
+  // ── Scale ─────────────────────────────────────────────────────────────────
+  /// Aggregate annual turnover in rupees. Drives two real decisions: GST
+  /// filing cadence (the ₹5 crore QRMP threshold) and whether a s.44AB tax
+  /// audit applies. Filing frequency used to be picked by hand with nothing
+  /// behind it.
+  annualTurnover       Decimal?       @db.Decimal(15, 2)
+  /// Which FY the turnover figure is from, e.g. "2024-25". A turnover with no
+  /// year attached cannot be trusted to decide anything.
+  turnoverFy           String?
+  /// MONTHLY | QRMP. Null = derive from turnover; set explicitly to override
+  /// (a client can opt into monthly filing below the threshold).
+  gstFilingScheme      String?
   groupId              String?
   group                ClientGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
   /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
@@ -280,6 +309,8 @@ model Client {
   itrComputations      ItrComputation[]
   taxNotices           TaxNotice[]
   financialStatements  FinancialStatement[]
+  engagementLetters    EngagementLetter[]
+  filingRecords        FilingRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -419,6 +450,7 @@ model Task {
   checklistItems    TaskChecklistItem[]
   timeEntries       TimeEntry[]
   /// Dependencies where THIS task is blocked (must wait for blockers)
+  filingRecords     FilingRecord[]
   blockedBy         TaskDependency[]  @relation("TaskBlockedBy")
   /// Dependencies where THIS task is the blocker (others wait on it)
   blocking          TaskDependency[]  @relation("TaskBlocks")
@@ -1572,12 +1604,111 @@ model ClientContact {
   email     String?
   phone     String?
   isPrimary Boolean  @default(false)
+  /// Which service areas this person actually handles. A client typically has
+  /// an accountant who answers GST queries and a finance director who answers
+  /// audit ones — but every reminder went to the single address on the client
+  /// record, so the right person never saw it. Empty = general contact.
+  handles   ServiceType[]
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([clientId])
   @@map("client_contacts")
+}
+
+enum EngagementLetterStatus {
+  DRAFT
+  ISSUED
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+/// The signed terms of an engagement.
+///
+/// ICAI's SA 210 expects an engagement letter agreed before work starts, and a
+/// peer review asks to see them. There was nowhere in the product to record
+/// that one exists, when it was signed, or what it covers — so the one document
+/// that defines the firm's obligations lived in somebody's email.
+model EngagementLetter {
+  firmId String @default("")
+  firm   Firm   @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  /// "2025-26" — engagement letters are renewed per financial year.
+  financialYear String
+  /// Services this letter actually covers. Anything outside it is out of scope.
+  serviceTypes  ServiceType[]
+  /// Free-text scope beyond the service list (exclusions, deliverables).
+  scope         String?
+  /// Total fee stated in the letter, excluding GST.
+  feeAgreed     Decimal?               @db.Decimal(12, 2)
+
+  status        EngagementLetterStatus @default(DRAFT)
+  issuedAt      DateTime?
+  signedAt      DateTime?
+  /// When the terms lapse. Drives the renewal reminder.
+  expiresAt     DateTime?
+
+  /// The letter itself in the document vault, once uploaded.
+  documentId    String?
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([clientId, financialYear])
+  @@index([status, expiresAt])
+  @@index([firmId])
+  @@map("engagement_letters")
+}
+
+/// A filing that has actually happened — ours or a predecessor's.
+///
+/// Two gaps, one shape. A client moving across from another CA arrives with
+/// history the app could not hold, so the firm had no idea what had already
+/// been filed for the year. And our own filings recorded no acknowledgement
+/// number, so proving a return went in meant digging through the portal.
+model FilingRecord {
+  firmId String @default("")
+  firm   Firm   @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  /// "2024-25"
+  financialYear String
+  /// "GSTR-3B", "ITR-6", "24Q", "AOC-4" — free text, because the list is long
+  /// and changes with every Finance Act.
+  filingType    String
+  serviceType   ServiceType?
+  /// "Apr 2024", "Q2", "Annual" — the return period within the year.
+  period        String?
+
+  filedOn           DateTime?
+  /// ARN, acknowledgement number, SRN — whatever the portal issued.
+  acknowledgementNo String?
+
+  /// Set to the previous firm's name when this is inherited history. Null means
+  /// we filed it, in which case taskId points at the work that produced it.
+  filedByExternal String?
+  taskId          String?
+  task            Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  /// Acknowledgement PDF in the document vault.
+  documentId      String?
+
+  notes     String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId, financialYear])
+  @@index([taskId])
+  @@index([firmId])
+  @@map("filing_records")
 }
 
 model ClientGroup {

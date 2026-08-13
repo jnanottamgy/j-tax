@@ -30,6 +30,12 @@ export type ContactItem = {
   email: string | null
   phone: string | null
   isPrimary: boolean
+  /**
+   * Service areas this person is the contact for. A client's accountant answers
+   * GST queries and its finance director answers audit ones; before this, every
+   * reminder went to the one address on the client record.
+   */
+  handles: string[]
   notes: string | null
 }
 
@@ -129,6 +135,15 @@ const contactSchema = z.object({
     .nullable()
     .transform((v) => v?.trim() || null),
   isPrimary: z.boolean().optional(),
+  handles: z
+    .array(
+      z.enum([
+        "GST_RETURN", "INCOME_TAX", "TDS", "PAYROLL", "BOOKKEEPING",
+        "AUDIT", "COMPANY_LAW", "INCORPORATION", "OTHER",
+      ])
+    )
+    .optional()
+    .default([]),
 })
 
 export type ContactInput = z.input<typeof contactSchema>
@@ -149,6 +164,7 @@ export async function listContacts(clientId: string): Promise<ContactItem[]> {
     email: c.email,
     phone: c.phone,
     isPrimary: c.isPrimary,
+    handles: c.handles,
     notes: c.notes,
   }))
 }
@@ -179,6 +195,7 @@ export async function createContact(
           clientId,
           name: fields.name,
           role: fields.role || null,
+          handles: (fields.handles ?? []) as never,
           email: fields.email || null,
           phone: fields.phone || null,
           notes: fields.notes || null,
@@ -226,6 +243,7 @@ export async function updateContact(
         data: {
           name: fields.name,
           role: fields.role || null,
+          handles: (fields.handles ?? []) as never,
           email: fields.email || null,
           phone: fields.phone || null,
           notes: fields.notes || null,

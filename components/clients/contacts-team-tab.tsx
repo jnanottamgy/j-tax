@@ -57,6 +57,7 @@ import {
   type TeamRoleValue,
 } from "@/lib/clients/master-data"
 import { cn } from "@/lib/utils"
+import { ALL_SERVICE_TYPES, SERVICE_TYPE_LABELS } from "@/lib/clients/constants"
 
 type EmployeeOption = { id: string; name: string; department: string | null }
 
@@ -378,6 +379,7 @@ function ContactFormDialog({
   const [phone, setPhone] = useState(contact?.phone ?? "")
   const [notes, setNotes] = useState(contact?.notes ?? "")
   const [isPrimary, setIsPrimary] = useState(contact?.isPrimary ?? false)
+  const [handles, setHandles] = useState<string[]>(contact?.handles ?? [])
   const [pending, setPending] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
 
@@ -390,6 +392,7 @@ function ContactFormDialog({
     setPhone("")
     setNotes("")
     setIsPrimary(false)
+    setHandles([])
     setFieldErrors({})
   }
 
@@ -406,6 +409,7 @@ function ContactFormDialog({
         phone: phone || null,
         notes: notes || null,
         isPrimary,
+        handles: handles as never,
       }
       const result = isEdit
         ? await updateContact(contact.id, input)
@@ -475,6 +479,40 @@ function ContactFormDialog({
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-[13px]">Handles which work</Label>
+              {/* Routing, not decoration: a GST reminder should reach the
+                  person who actually does the GST, not the one address on the
+                  client record. */}
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_SERVICE_TYPES.map((key) => {
+                  const on = handles.includes(key)
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={pending}
+                      onClick={() =>
+                        setHandles((h) =>
+                          h.includes(key) ? h.filter((x) => x !== key) : [...h, key]
+                        )
+                      }
+                      className={cn(
+                        "rounded-lg border px-2.5 py-1 text-xs transition-colors",
+                        on
+                          ? "border-primary/40 bg-primary/10 text-primary"
+                          : "border-white/[0.1] text-muted-foreground hover:border-white/25"
+                      )}
+                    >
+                      {SERVICE_TYPE_LABELS[key]}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Leave all unselected for a general contact.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="contact-phone" className="text-[13px]">
