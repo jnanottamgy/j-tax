@@ -130,11 +130,20 @@ export function OnboardingWizard() {
   const [firmInfo, setFirmInfo] = useState({
     firmName: "",
     gstin: "",
+    pan: "",
     address: "",
     phone: "",
     email: "",
     replyToEmail: "",
     website: "",
+    // Printed on every invoice PDF and shown in the client portal's Pay
+    // dialog. Collected here because a firm that finishes onboarding and never
+    // opens Settings would otherwise send its first invoice with no way to pay it.
+    bankName: "",
+    bankAccountName: "",
+    bankAccountNumber: "",
+    bankIfsc: "",
+    upiId: "",
   })
   const [firmError, setFirmError] = useState("")
 
@@ -182,11 +191,17 @@ export function OnboardingWizard() {
         setFirmInfo((prev) => ({
           firmName: firm.firmName || prev.firmName,
           gstin: firm.gstin || prev.gstin,
+          pan: firm.pan || prev.pan,
           address: firm.firmAddress || prev.address,
           phone: firm.firmPhone || prev.phone,
           email: firm.fromEmail || prev.email,
           replyToEmail: firm.replyToEmail || prev.replyToEmail,
           website: firm.website || prev.website,
+          bankName: firm.bankName || prev.bankName,
+          bankAccountName: firm.bankAccountName || prev.bankAccountName,
+          bankAccountNumber: firm.bankAccountNumber || prev.bankAccountNumber,
+          bankIfsc: firm.bankIfsc || prev.bankIfsc,
+          upiId: firm.upiId || prev.upiId,
         }))
       }
 
@@ -680,15 +695,27 @@ function StepFirmInformation({
             )}
           </div>
 
-          <div>
-            <Label htmlFor="gstin">GSTIN</Label>
-            <Input
-              id="gstin"
-              value={data.gstin}
-              onChange={(e) => onChange({ ...data, gstin: e.target.value })}
-              placeholder="22AAAAA0000A1Z5 (optional)"
-              className="mt-2"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="gstin">GSTIN</Label>
+              <Input
+                id="gstin"
+                value={data.gstin}
+                onChange={(e) => onChange({ ...data, gstin: e.target.value })}
+                placeholder="22AAAAA0000A1Z5 (optional)"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="firmPan">PAN</Label>
+              <Input
+                id="firmPan"
+                value={data.pan}
+                onChange={(e) => onChange({ ...data, pan: e.target.value })}
+                placeholder="AAAAA0000A (optional)"
+                className="mt-2"
+              />
+            </div>
           </div>
 
           <div>
@@ -755,6 +782,77 @@ function StepFirmInformation({
                 className="mt-2"
               />
             </div>
+          </div>
+
+          {/* Payment details — these print on every invoice PDF and appear in
+              the client portal's Pay dialog. Without them a firm's very first
+              invoice goes out with no way for the client to settle it. */}
+          <div className="pt-2">
+            <p className="text-sm font-medium">How clients pay you</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Printed on your invoices and shown to clients in the portal. You can
+              add these later, but invoices sent before then won&apos;t show payment
+              instructions.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="bankName">Bank</Label>
+              <Input
+                id="bankName"
+                value={data.bankName}
+                onChange={(e) => onChange({ ...data, bankName: e.target.value })}
+                placeholder="HDFC Bank"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="bankAccountName">Account name</Label>
+              <Input
+                id="bankAccountName"
+                value={data.bankAccountName}
+                onChange={(e) => onChange({ ...data, bankAccountName: e.target.value })}
+                placeholder="As it appears on the account"
+                className="mt-2"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="bankAccountNumber">Account number</Label>
+              <Input
+                id="bankAccountNumber"
+                value={data.bankAccountNumber}
+                onChange={(e) => onChange({ ...data, bankAccountNumber: e.target.value })}
+                placeholder="Account number"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="bankIfsc">IFSC</Label>
+              <Input
+                id="bankIfsc"
+                value={data.bankIfsc}
+                onChange={(e) => onChange({ ...data, bankIfsc: e.target.value })}
+                placeholder="HDFC0001234"
+                className="mt-2"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="upiId">
+              UPI ID <span className="text-muted-foreground text-xs">(optional)</span>
+            </Label>
+            <Input
+              id="upiId"
+              value={data.upiId}
+              onChange={(e) => onChange({ ...data, upiId: e.target.value })}
+              placeholder="yourfirm@okhdfcbank"
+              className="mt-2"
+            />
           </div>
         </div>
       </Card>

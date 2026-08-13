@@ -91,11 +91,19 @@ export async function skipOnboarding() {
 export async function saveFirmInformation(data: {
   firmName: string
   gstin?: string
+  pan?: string
   address?: string
   phone?: string
   email?: string
   replyToEmail?: string
   website?: string
+  // Payment details print on invoices and drive the client portal's Pay
+  // dialog — collected during onboarding so a firm's first invoice is payable.
+  bankName?: string
+  bankAccountName?: string
+  bankAccountNumber?: string
+  bankIfsc?: string
+  upiId?: string
 }) {
   const session = await requireAuth()
 
@@ -127,7 +135,13 @@ export async function saveFirmInformation(data: {
           firmPhone: data.phone?.trim() || null,
           firmAddress: data.address?.trim() || null,
           gstin: data.gstin?.trim() || null,
+          pan: data.pan?.trim() || null,
           website: data.website?.trim() || null,
+          bankName: data.bankName?.trim() || null,
+          bankAccountName: data.bankAccountName?.trim() || null,
+          bankAccountNumber: data.bankAccountNumber?.trim() || null,
+          bankIfsc: data.bankIfsc?.trim() || null,
+          upiId: data.upiId?.trim() || null,
           firmDomain,
           // Domain verification is owned by the email provider and starts
           // fresh for a new sender domain — see lib/messaging/resend-domains.
