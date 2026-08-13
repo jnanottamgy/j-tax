@@ -11,6 +11,7 @@ import { ManagerDashboard } from "@/components/dashboard/manager-dashboard"
 import { OutstandingPayments } from "@/components/dashboard/outstanding-payments"
 import { PartnerCommandCenter } from "@/components/dashboard/partner-command-center"
 import { WorkQueuePanel } from "@/components/dashboard/work-queue-panel"
+import { DashboardIdentity } from "@/components/dashboard/dashboard-identity"
 import { QuickActions } from "@/components/dashboard/quick-actions"
 import { RecentActivity } from "@/components/dashboard/recent-activity"
 import { RevenueTrendChart } from "@/components/dashboard/revenue-trend-chart"
@@ -524,6 +525,7 @@ export default async function DashboardPage() {
           label={`Welcome back, ${user.name}`}
           title="My Work Dashboard"
           description="Your tasks, clients, compliance queue, and personal performance."
+          action={<DashboardIdentity name={user.name} role={user.role} />}
         />
         {/* Handoff queues first: what is waiting on this person beats a count. */}
         <WorkQueuePanel />
@@ -551,6 +553,7 @@ export default async function DashboardPage() {
           label={`Welcome back, ${user.name}`}
           title="Team Operations Dashboard"
           description="Team workload, compliance status, SLA tracking, and urgent items."
+          action={<DashboardIdentity name={user.name} role={user.role} />}
         />
         <SetupChecklist
           data={{
@@ -634,6 +637,7 @@ export default async function DashboardPage() {
         label={`Welcome back, ${user.name}`}
         title="Partner Command Center"
         description="Full firm visibility — revenue, compliance, workforce intelligence, and approvals."
+        action={<DashboardIdentity name={user.name} role={user.role} />}
       />
 
       <WorkQueuePanel />
