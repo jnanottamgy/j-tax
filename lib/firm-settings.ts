@@ -83,14 +83,47 @@ export function getPlatformFallbackFrom(): string {
 }
 
 /**
- * Read firm settings from the database. Falls back to env vars if the singleton
- * row does not exist yet (first-run before onboarding is complete).
+ * Which firm's settings are we reading/writing?
+ *
+ * `tenantContext` alone is not enough. `enterWith()` inside an awaited guard
+ * does not survive the await boundary back into a server action or page — the
+ * same reason lib/prisma.ts carries a resolver instead of trusting the store
+ * (see lib/tenant/resolve.ts). Reading only the store made getFirmSettings()
+ * silently return ENV_DEFAULTS and upsertFirmSettings() throw, so a firm could
+ * complete onboarding and still see "Your Tax Firm" everywhere.
+ *
+ * Order matters: the explicit store wins, because cron loops set it per firm
+ * via tenantContext.run() and there is no request cookie to fall back to.
+ */
+async function resolveFirmId(): Promise<string | null> {
+  const fromStore = currentFirmId()
+  if (fromStore) return fromStore
+  const { resolveRequestFirmId } = await import("@/lib/tenant/resolve")
+  return resolveRequestFirmId()
+}
+
+/**
+ * Read firm settings from the database. Falls back to env vars if the row does
+ * not exist yet (first-run before onboarding is complete).
  */
 export async function getFirmSettings(): Promise<FirmConfig> {
+  const firmId = await resolveFirmId()
+  return getFirmSettingsForFirm(firmId)
+}
+
+/**
+ * Settings for an explicitly-named firm.
+ *
+ * Needed by PUBLIC surfaces — the tokenised quotation portal and its PDF —
+ * which have no session, so nothing can be derived from the request. They must
+ * pass the firm that owns the record being displayed. Without this they fell
+ * through to ENV_DEFAULTS and showed prospects "Your Tax Firm" instead of the
+ * firm's actual name.
+ */
+export async function getFirmSettingsForFirm(
+  firmId: string | null | undefined
+): Promise<FirmConfig> {
   try {
-    // Multi-tenant: settings are per-firm, resolved from the tenant context
-    // (set by requireAuth in requests, or tenantContext.run in cron loops).
-    const firmId = currentFirmId()
     if (!firmId) return ENV_DEFAULTS
 
     const row = await prisma.firmSettings.findUnique({
@@ -198,7 +231,7 @@ export async function upsertFirmSettings(
   data: Partial<Omit<FirmConfig, never>>,
   updatedBy: string
 ): Promise<FirmConfig> {
-  const firmId = currentFirmId()
+  const firmId = await resolveFirmId()
   if (!firmId) {
     throw new Error("Cannot save firm settings without a tenant context")
   }

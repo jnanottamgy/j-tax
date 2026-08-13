@@ -3,7 +3,7 @@ import { format } from "date-fns"
 import { CheckCircle, XCircle, Clock, Eye, FileText, Download } from "lucide-react"
 import { prisma } from "@/lib/prisma"
 import { markQuotationViewed } from "@/app/actions/proposals"
-import { getFirmSettings } from "@/lib/firm-settings"
+import { getFirmSettingsForFirm } from "@/lib/firm-settings"
 import { QuotationDocument } from "@/components/proposals/quotation-document"
 import { PrintButton } from "@/components/proposals/print-button"
 import { QuotationResponseClient } from "./quotation-response-client"
@@ -15,15 +15,17 @@ export default async function QuotationPortalPage({
 }) {
   const { token } = await params
 
-  const [quotation, cfg] = await Promise.all([
-    prisma.quotation.findUnique({
-      where: { token },
-      include: { items: { orderBy: { sortOrder: "asc" } } },
-    }),
-    getFirmSettings(),
-  ])
+  // Public route — no session, so the firm cannot be derived from the request.
+  // Resolve it from the quotation itself, otherwise the prospect sees the
+  // platform defaults instead of the firm's own letterhead.
+  const quotation = await prisma.quotation.findUnique({
+    where: { token },
+    include: { items: { orderBy: { sortOrder: "asc" } } },
+  })
 
   if (!quotation) notFound()
+
+  const cfg = await getFirmSettingsForFirm(quotation.firmId)
 
   // Mark as viewed if currently SENT
   if (quotation.status === "SENT") {

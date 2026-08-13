@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { generateQuotationPDF } from "@/lib/quotations/pdf-generator"
-import { getFirmSettings } from "@/lib/firm-settings"
+import { getFirmSettingsForFirm } from "@/lib/firm-settings"
 import { checkApiRateLimit, getRateLimitHeaders } from "@/lib/security/rate-limiter"
 
 // Public, token-authenticated PDF download for the client quotation portal.
@@ -30,7 +30,9 @@ export async function GET(
   if (!quotation) return new NextResponse("Not found", { status: 404 })
 
   try {
-    const cfg = await getFirmSettings()
+    // Public route — resolve branding from the quotation's own firm,
+    // since there is no session to derive it from.
+    const cfg = await getFirmSettingsForFirm(quotation.firmId)
     const pdfBuffer = await generateQuotationPDF({
       quotationNumber: quotation.quotationNumber,
       createdAt: quotation.createdAt,

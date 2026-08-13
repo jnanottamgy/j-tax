@@ -129,9 +129,8 @@ export async function saveFirmInformation(data: {
           gstin: data.gstin?.trim() || null,
           website: data.website?.trim() || null,
           firmDomain,
-          // Generate a verification token now so the DNS instructions are
-          // ready to show on the email configuration step.
-          verificationToken: `jtacs-verify=${randomBytes(16).toString("hex")}`,
+          // Domain verification is owned by the email provider and starts
+          // fresh for a new sender domain — see lib/messaging/resend-domains.
           domainVerified: false,
           domainVerifiedAt: null,
           platformFallbackEnabled: true,
@@ -139,9 +138,15 @@ export async function saveFirmInformation(data: {
         session.user.id
       )
     } catch (e) {
-      // Non-fatal: if firm_settings table isn't migrated yet, we still
-      // proceed with onboarding; PARTNER can re-save from Settings later.
+      // Surfaced, not swallowed: this used to fail silently, so a firm would
+      // finish onboarding believing its details were saved while Settings and
+      // every outbound email still showed the defaults.
       console.error("FirmSettings upsert from onboarding failed:", e)
+      return {
+        success: false,
+        error:
+          "Your firm details could not be saved. Please try again, or set them in Settings → Firm Details.",
+      }
     }
   }
 
@@ -157,7 +162,11 @@ export async function saveFirmInformation(data: {
     },
   })
 
+  // Settings renders firm details server-side, so it must be revalidated too —
+  // otherwise the page keeps serving the pre-onboarding cache and looks like
+  // nothing was saved.
   revalidatePath("/")
+  revalidatePath("/settings")
 
   return { success: true }
 }

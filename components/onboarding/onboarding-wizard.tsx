@@ -48,6 +48,7 @@ import {
   createEmployeeFromOnboarding,
   createClientFromOnboarding,
 } from "@/app/actions/onboarding"
+import { loadFirmSettings } from "@/app/actions/settings"
 import { cn } from "@/lib/utils"
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
@@ -168,7 +169,27 @@ export function OnboardingWizard() {
 
   const checkOnboardingStatus = useCallback(async () => {
     try {
-      const status = await getOnboardingStatus()
+      // Firm details are already captured at signup (firm name) and may have
+      // been saved on an earlier pass through this wizard. Load them so the
+      // user is never asked twice for the same thing — they see their details
+      // filled in and can correct them rather than retype them.
+      const [status, firm] = await Promise.all([
+        getOnboardingStatus(),
+        loadFirmSettings().catch(() => null),
+      ])
+
+      if (firm) {
+        setFirmInfo((prev) => ({
+          firmName: firm.firmName || prev.firmName,
+          gstin: firm.gstin || prev.gstin,
+          address: firm.firmAddress || prev.address,
+          phone: firm.firmPhone || prev.phone,
+          email: firm.fromEmail || prev.email,
+          replyToEmail: firm.replyToEmail || prev.replyToEmail,
+          website: firm.website || prev.website,
+        }))
+      }
+
       if (status.completed) {
         router.push("/")
       } else {
@@ -214,7 +235,14 @@ export function OnboardingWizard() {
             return
           }
           setFirmError("")
-          await saveFirmInformation(firmInfo)
+          // Stop on the step if the save failed — advancing would leave the
+          // firm believing its details were stored when they were not.
+          const firmResult = await saveFirmInformation(firmInfo)
+          if (firmResult && firmResult.success === false) {
+            setFirmError(firmResult.error ?? "Could not save your firm details.")
+            setSaving(false)
+            return
+          }
           break
         }
 
