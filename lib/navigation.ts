@@ -12,6 +12,7 @@ import {
   ClipboardList,
   FileText,
   FileWarning,
+  IndianRupee,
   GitCompareArrows,
   KeyRound,
   LayoutDashboard,
@@ -199,6 +200,12 @@ export const navigationGroups: NavGroup[] = [
         description: "Analytics & exports",
       },
       {
+        title: "Revenue",
+        href: "/reports/revenue",
+        icon: IndianRupee,
+        description: "Invoice-level revenue ledger & Excel export",
+      },
+      {
         title: "Audit Logs",
         href: "/activity",
         icon: Activity,
@@ -297,6 +304,7 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "Job Templates", href: "/templates", icon: LayoutTemplate, description: "Reusable engagement checklists" },
           { title: "Registers", href: "/registers", icon: KeyRound, description: "Credentials, DSC, UDIN & registrations" },
           { title: "Reports", href: "/reports", icon: PieChart, description: "Analytics & exports" },
+          { title: "Revenue", href: "/reports/revenue", icon: IndianRupee, description: "Invoice-level revenue ledger & Excel export" },
           { title: "Notifications", href: "/notifications", icon: Bell, description: "Alerts & reminders" },
           { title: "Settings", href: "/settings", icon: Settings, description: "Account settings" },
         ],

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   Activity,
   AlertTriangle,
@@ -18,8 +19,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatINRCompact } from "@/lib/india/format"
-import { AmountBreakdownDialog } from "@/components/dashboard/amount-breakdown-dialog"
-import type { AmountMetric } from "@/app/actions/dashboard-drilldown"
 
 interface PartnerCommandCenterProps {
   stats: {
@@ -129,7 +128,9 @@ export function PartnerCommandCenter({
   crmMetrics,
 }: PartnerCommandCenterProps) {
   const formatCurrency = formatINRCompact
-  const [drilldown, setDrilldown] = useState<AmountMetric | null>(null)
+  // Money tiles open the full revenue ledger (filtered to the tile's metric)
+  // rather than a summary popup — the detail and the export live there.
+  const router = useRouter()
 
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
@@ -148,26 +149,26 @@ export function PartnerCommandCenter({
           <MetricTile
             label="Total Revenue"
             value={formatCurrency(stats.totalRevenue)}
-            subtext={`${stats.collectionRate}% collected · tap for clients`}
+            subtext={`${stats.collectionRate}% collected · tap for full ledger`}
             icon={IndianRupee}
             color="bg-green-500/10 text-green-400"
-            onDrillDown={() => setDrilldown("revenue")}
+            onDrillDown={() => router.push("/reports/revenue?metric=revenue")}
           />
           <MetricTile
             label="Outstanding"
             value={formatCurrency(stats.totalOutstanding)}
-            subtext="tap for client breakdown"
+            subtext="tap for full ledger"
             icon={TrendingDown}
             color="bg-amber-500/10 text-amber-400"
-            onDrillDown={() => setDrilldown("outstanding")}
+            onDrillDown={() => router.push("/reports/revenue?metric=outstanding")}
           />
           <MetricTile
             label="Overdue Amount"
             value={formatCurrency(stats.totalOverdue)}
-            subtext="tap for client breakdown"
+            subtext="tap for full ledger"
             icon={AlertTriangle}
             color="bg-red-500/10 text-red-400"
-            onDrillDown={() => setDrilldown("overdue")}
+            onDrillDown={() => router.push("/reports/revenue?metric=overdue")}
             trend={stats.totalOverdue > 50000 ? "down" : "neutral"}
           />
           <MetricTile
@@ -331,11 +332,6 @@ export function PartnerCommandCenter({
         </div>
       </CardContent>
 
-      <AmountBreakdownDialog
-        metric={drilldown}
-        open={drilldown !== null}
-        onOpenChange={(open) => !open && setDrilldown(null)}
-      />
     </Card>
   )
 }
