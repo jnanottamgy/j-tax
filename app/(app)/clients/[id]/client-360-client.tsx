@@ -142,7 +142,11 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
     { id: "overview" as TabType, label: "Overview", icon: Activity },
     { id: "services" as TabType, label: "Services", icon: Building2 },
     { id: "tasks" as TabType, label: "Tasks", icon: CheckSquare },
-    { id: "payments" as TabType, label: "Payments", icon: IndianRupee },
+    // Billing is Partner/Manager only — the server sends employees no invoice
+    // rows at all, so the tab would be empty as well as off-limits.
+    ...(canManage
+      ? [{ id: "payments" as TabType, label: "Payments", icon: IndianRupee }]
+      : []),
     { id: "documents" as TabType, label: "Documents", icon: Folder },
     { id: "compliance" as TabType, label: "Compliance", icon: Calendar },
     { id: "activity" as TabType, label: "Activity", icon: Activity },
@@ -281,12 +285,16 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
             icon={AlertCircle}
             color="text-red-400"
           />
-          <MetricCard
-            label="Outstanding"
-            value={`₹${(metrics.outstandingPayments || 0).toLocaleString()}`}
-            icon={IndianRupee}
-            color="text-yellow-400"
-          />
+          {/* Money is Partner/Manager only. Employees receive no invoice rows,
+              so this would read a misleading ₹0 rather than the real figure. */}
+          {canManage && (
+            <MetricCard
+              label="Outstanding"
+              value={`₹${(metrics.outstandingPayments || 0).toLocaleString()}`}
+              icon={IndianRupee}
+              color="text-yellow-400"
+            />
+          )}
           <MetricCard
             label="Active Services"
             value={metrics.activeServices || 0}
@@ -356,7 +364,7 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
                 <TasksTab tasks={data.tasks} />
               </motion.div>
             )}
-            {activeTab === "payments" && (
+            {activeTab === "payments" && canManage && (
               <motion.div
                 key="payments"
                 initial={{ opacity: 0, x: -20 }}

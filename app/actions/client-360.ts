@@ -24,6 +24,9 @@ export async function getClient360Data(clientId: string) {
     throw new Error("You do not have permission to view this client")
   }
 
+  const canSeeBilling =
+    session.user.role === "PARTNER" || session.user.role === "MANAGER"
+
   // Fetch all client-related data in parallel
   const [
     client,
@@ -46,11 +49,17 @@ export async function getClient360Data(clientId: string) {
       include: { assignedEmployee: true },
       take: 500,
     }),
-    prisma.invoice.findMany({
-      where: { clientId },
-      orderBy: { dueDate: "desc" },
-      take: 500,
-    }),
+    // Billing is a Partner/Manager concern: EMPLOYEE is blocked from /payments,
+    // from getInvoicesData, and from the invoice PDF route. Client-360 was the
+    // one back door — and hiding the tab client-side is not enough, because the
+    // rows would still ship inside the page payload. Fetch nothing instead.
+    canSeeBilling
+      ? prisma.invoice.findMany({
+          where: { clientId },
+          orderBy: { dueDate: "desc" },
+          take: 500,
+        })
+      : Promise.resolve([]),
     prisma.clientService.findMany({
       where: { clientId },
     }),

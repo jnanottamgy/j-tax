@@ -234,6 +234,12 @@ export async function getClientDetail(
 ) {
   const visibility = await getVisibleClientWhere(opts)
 
+  // Billing stays with Partner/Manager. EMPLOYEE is blocked from /payments,
+  // getInvoicesData and the invoice PDF, so this detail payload — reachable via
+  // getClientProfile and GET /api/clients/[id] — must not hand them the
+  // invoice ledger and payment receipts for their assigned clients either.
+  const canSeeBilling = opts?.role === "PARTNER" || opts?.role === "MANAGER"
+
   return prisma.client.findFirst({
     where: { id, ...visibility },
     include: {
@@ -242,10 +248,12 @@ export async function getClientDetail(
       tasks: { orderBy: { createdAt: "desc" } },
       complianceSchedules: { orderBy: { dueDate: "asc" } },
       documents: { orderBy: { createdAt: "desc" } },
-      invoices: {
-        orderBy: { createdAt: "desc" },
-        include: { payments: true },
-      },
+      invoices: canSeeBilling
+        ? {
+            orderBy: { createdAt: "desc" as const },
+            include: { payments: true },
+          }
+        : { where: { id: "__billing_hidden__" } },
       assignedEmployee: true,
       reminders: { orderBy: { dueAt: "asc" } },
     },

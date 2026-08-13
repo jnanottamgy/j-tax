@@ -581,6 +581,13 @@ export async function getExpiringRegisterItems(days = 60): Promise<{
   registrations: ExpiringRegistration[]
   dscs: ExpiringDsc[]
 }> {
+  // The only action in the module that carried no guard. /registers is
+  // Partner/Manager-only, but a server action is callable directly — so an
+  // Employee could have read every client's statutory registration numbers and
+  // DSC holders, and an unauthenticated call would have run with no firm scope
+  // at all. Matched to the route.
+  await requirePartnerOrManager()
+
   const cutoff = addDays(new Date(), days)
 
   const [registrationRows, dscRows] = await Promise.all([
