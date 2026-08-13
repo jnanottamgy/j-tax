@@ -48,6 +48,7 @@ import {
   indicateTaxAudit,
   resolveGstScheme,
 } from "@/lib/compliance/gst-scheme"
+import { deriveClientFields, entityTypeLabelFromPan } from "@/lib/clients/derive"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 import { cn } from "@/lib/utils"
 
@@ -81,6 +82,12 @@ export function EditClientDialog({
     initialState
   )
   const [clientType, setClientType] = useState(client.clientType ?? "")
+  // Uncontrolled inputs elsewhere in this form, but these three interlock: a
+  // GSTIN carries the PAN and the state, and a PAN encodes the constitution.
+  const [gstin, setGstin] = useState(client.gstin ?? "")
+  const [pan, setPan] = useState(client.pan ?? "")
+  const panEntityLabel = entityTypeLabelFromPan(pan)
+  const derivedFromGstin = deriveClientFields({ gstin, pan, clientType })
   // Live, so the partner sees the consequence of the number as they type it
   // rather than discovering it when the wrong returns appear.
   const [turnover, setTurnover] = useState(
@@ -146,6 +153,8 @@ export function EditClientDialog({
   useEffect(() => {
     if (!actualOpen) return
     setClientType(client.clientType ?? "")
+    setGstin(client.gstin ?? "")
+    setPan(client.pan ?? "")
     setIsIncorporated(client.isIncorporated ?? true)
     setServices(
       Object.fromEntries(
@@ -320,19 +329,44 @@ export function EditClientDialog({
                   <Input
                     id="gstin"
                     name="gstin"
-                    defaultValue={client.gstin ?? ""}
+                    value={gstin}
+                    onChange={(e) => {
+                      const next = e.target.value.toUpperCase()
+                      setGstin(next)
+                      // Fill only what is empty — a typed value is a decision,
+                      // and a GSTIN/PAN can legitimately disagree mid-restructure.
+                      const d = deriveClientFields({ gstin: next, pan, clientType })
+                      if (d.pan) setPan(d.pan)
+                      if (d.clientType) setClientType(d.clientType)
+                    }}
                     className="input-premium h-10 rounded-xl font-mono text-sm uppercase"
                     disabled={isPending}
                   />
+                  {derivedFromGstin.stateCode && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Place of supply {derivedFromGstin.stateCode} — taken from the GSTIN.
+                    </p>
+                  )}
                 </Field>
                 <Field label="PAN" name="pan" error={state.fieldErrors?.pan?.[0]}>
                   <Input
                     id="pan"
                     name="pan"
-                    defaultValue={client.pan ?? ""}
+                    value={pan}
+                    onChange={(e) => {
+                      const next = e.target.value.toUpperCase()
+                      setPan(next)
+                      const d = deriveClientFields({ gstin, pan: next, clientType })
+                      if (d.clientType) setClientType(d.clientType)
+                    }}
                     className="input-premium h-10 rounded-xl font-mono text-sm uppercase"
                     disabled={isPending}
                   />
+                  {panEntityLabel && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      PAN says: {panEntityLabel}
+                    </p>
+                  )}
                 </Field>
               </div>
             </section>

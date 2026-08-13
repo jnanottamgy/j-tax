@@ -5,6 +5,7 @@ import { z } from "zod"
 import { toUserError } from "@/lib/forms/errors"
 import { requireAuth, requirePartner } from "@/lib/auth/guards"
 import type { FormActionState } from "@/lib/forms/types"
+import { bankFromIfsc } from "@/lib/india/validators"
 import { prisma } from "@/lib/prisma"
 import { createClient } from "@/lib/supabase/server"
 import { passwordSchema, profileSchema } from "@/lib/validations/settings"
@@ -302,10 +303,13 @@ export async function saveFirmSettings(
             }
           : {}),
         platformFallbackEnabled: parsed.data.platformFallbackEnabled ?? true,
-        bankName: parsed.data.bankName || null,
+        // Derived from the IFSC when not given — the bank code is the first
+        // four characters, so asking for both is asking twice.
+        bankName:
+          parsed.data.bankName || bankFromIfsc(parsed.data.bankIfsc) || null,
         bankAccountName: parsed.data.bankAccountName || null,
         bankAccountNumber: parsed.data.bankAccountNumber || null,
-        bankIfsc: parsed.data.bankIfsc || null,
+        bankIfsc: parsed.data.bankIfsc?.toUpperCase() || null,
         upiId: parsed.data.upiId || null,
         icaiFrn: parsed.data.icaiFrn?.trim().toUpperCase() || null,
         icaiMembershipNo: parsed.data.icaiMembershipNo?.trim() || null,

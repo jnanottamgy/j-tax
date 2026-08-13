@@ -58,6 +58,13 @@ export function buildOnboardingArtifacts(
     notificationPreferences?: string[]
     /** Checklist document labels already collected at onboarding. */
     collectedDocuments?: string[]
+    /**
+     * Who owns this client. Onboarding tasks used to be created with no
+     * assignee at all, even though the client record had one — so a four-service
+     * client dropped eight items into the "Nobody assigned" queue on day one and
+     * somebody had to hand-assign work that already had an obvious owner.
+     */
+    assignedEmployeeId?: string | null
   }
 ): {
   services: Prisma.ClientServiceCreateManyInput[]
@@ -74,6 +81,10 @@ export function buildOnboardingArtifacts(
 
   const now = new Date()
   const reminderDaysBefore = options?.reminderDaysBefore ?? 7
+  const assignedEmployeeId = options?.assignedEmployeeId ?? null
+  // Assigned work waits to be accepted; unassigned work has nobody to accept
+  // it, so it starts ACCEPTED — the same convention createTask uses.
+  const acceptanceStatus = assignedEmployeeId ? ("PENDING" as const) : ("ACCEPTED" as const)
   const notificationLabel = options?.notificationPreferences?.length
     ? ` via ${options.notificationPreferences.join(", ")}`
     : ""
@@ -109,6 +120,8 @@ export function buildOnboardingArtifacts(
       status: "NOT_STARTED",
       dueDate: addDays(now, 7),
       serviceType: svc.serviceType,
+      assignedEmployeeId,
+      acceptanceStatus,
     })
 
     tasks.push({
@@ -118,6 +131,8 @@ export function buildOnboardingArtifacts(
       status: "NOT_STARTED",
       dueDate: addDays(now, 14),
       serviceType: svc.serviceType,
+      assignedEmployeeId,
+      acceptanceStatus,
     })
 
     complianceSchedules.push({

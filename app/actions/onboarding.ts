@@ -10,6 +10,7 @@ import {
   validatePAN,
   gstinPanMismatch,
   isValidIFSC,
+  bankFromIfsc,
 } from "@/lib/india/validators"
 
 /** Steps in the setup wizard — mirrors STEPS in the onboarding wizard. */
@@ -226,7 +227,9 @@ export async function saveFirmInformation(data: {
           gstin: gstin || null,
           pan: pan || null,
           website: data.website?.trim() || null,
-          bankName: data.bankName?.trim() || null,
+          // The IFSC's first four characters are the bank code, so the
+          // name is only asked for when it can't be worked out.
+          bankName: data.bankName?.trim() || bankFromIfsc(bankIfsc) || null,
           bankAccountName: data.bankAccountName?.trim() || null,
           bankAccountNumber: data.bankAccountNumber?.trim() || null,
           bankIfsc: bankIfsc || null,

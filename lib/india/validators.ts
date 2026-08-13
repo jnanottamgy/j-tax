@@ -230,3 +230,87 @@ export function normalizeIFSC(input: string | null | undefined): string {
 export function isValidIFSC(input: string | null | undefined): boolean {
   return IFSC_SHAPE.test(normalizeIFSC(input))
 }
+
+/**
+ * IFSC bank codes → bank names.
+ *
+ * Deliberately partial: the RBI list runs to hundreds of entries once every
+ * district co-operative is counted, and a wrong bank name on an invoice is
+ * worse than a blank one. These are the banks an Indian practice and its
+ * clients actually hold accounts with; anything else returns null and the user
+ * types it, exactly as before.
+ */
+const IFSC_BANKS: Record<string, string> = {
+  // Public sector
+  SBIN: "State Bank of India",
+  PUNB: "Punjab National Bank",
+  BARB: "Bank of Baroda",
+  CNRB: "Canara Bank",
+  UBIN: "Union Bank of India",
+  BKID: "Bank of India",
+  IOBA: "Indian Overseas Bank",
+  IDIB: "Indian Bank",
+  CBIN: "Central Bank of India",
+  MAHB: "Bank of Maharashtra",
+  UCBA: "UCO Bank",
+  PSIB: "Punjab & Sind Bank",
+  IBKL: "IDBI Bank",
+  // Private sector
+  HDFC: "HDFC Bank",
+  ICIC: "ICICI Bank",
+  UTIB: "Axis Bank",
+  KKBK: "Kotak Mahindra Bank",
+  INDB: "IndusInd Bank",
+  YESB: "YES Bank",
+  IDFB: "IDFC FIRST Bank",
+  RATN: "RBL Bank",
+  BDBL: "Bandhan Bank",
+  FDRL: "Federal Bank",
+  SIBL: "South Indian Bank",
+  KVBL: "Karur Vysya Bank",
+  CIUB: "City Union Bank",
+  TMBL: "Tamilnad Mercantile Bank",
+  KARB: "Karnataka Bank",
+  DCBL: "DCB Bank",
+  JAKA: "Jammu & Kashmir Bank",
+  CSBK: "CSB Bank",
+  DLXB: "Dhanlaxmi Bank",
+  NAIN: "Nainital Bank",
+  // Small finance
+  AUBL: "AU Small Finance Bank",
+  ESFB: "Equitas Small Finance Bank",
+  UJVN: "Ujjivan Small Finance Bank",
+  JSFB: "Jana Small Finance Bank",
+  UTKS: "Utkarsh Small Finance Bank",
+  SURY: "Suryoday Small Finance Bank",
+  // Payments
+  AIRP: "Airtel Payments Bank",
+  PYTM: "Paytm Payments Bank",
+  FINO: "Fino Payments Bank",
+  IPOS: "India Post Payments Bank",
+  NSPB: "NSDL Payments Bank",
+  // Foreign
+  SCBL: "Standard Chartered Bank",
+  CITI: "Citibank",
+  HSBC: "HSBC",
+  DEUT: "Deutsche Bank",
+  BOFA: "Bank of America",
+  // Co-operative (the larger multi-state ones)
+  SVCB: "SVC Co-operative Bank",
+  NKGS: "NKGSB Co-operative Bank",
+  ABHY: "Abhyudaya Co-operative Bank",
+  COSB: "Cosmos Co-operative Bank",
+  SRCB: "Saraswat Co-operative Bank",
+  TJSB: "TJSB Sahakari Bank",
+}
+
+/**
+ * The bank an IFSC belongs to, from its first four characters.
+ * Returns null for a malformed code or a bank not in the list above — never a
+ * guess, because this lands on invoices and payment instructions.
+ */
+export function bankFromIfsc(input: string | null | undefined): string | null {
+  const ifsc = normalizeIFSC(input)
+  if (ifsc.length < 4) return null
+  return IFSC_BANKS[ifsc.slice(0, 4)] ?? null
+}

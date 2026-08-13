@@ -27,6 +27,7 @@ import {
 } from "@/app/actions/settings"
 import type { FirmConfig } from "@/lib/firm-settings"
 import { FirmLogoUpload } from "@/components/settings/firm-logo-upload"
+import { bankFromIfsc } from "@/lib/india/validators"
 import { useAuth } from "@/components/auth/auth-provider"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
@@ -416,6 +417,17 @@ export function SettingsPageClient({
                       defaultValue={initialFirmSettings?.bankIfsc ?? ""}
                       placeholder="HDFC0001234"
                       className="input-premium h-10 rounded-xl"
+                      onChange={(e) => {
+                        // The first four characters of an IFSC are the bank
+                        // code. Fill the name only when it is still blank.
+                        const derived = bankFromIfsc(e.target.value)
+                        const nameField = document.getElementById(
+                          "bankName"
+                        ) as HTMLInputElement | null
+                        if (derived && nameField && !nameField.value.trim()) {
+                          nameField.value = derived
+                        }
+                      }}
                     />
                   </div>
                   <div className="space-y-2 sm:col-span-2">

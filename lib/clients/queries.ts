@@ -7,6 +7,7 @@ import type {
   CreateClientInput,
   UpdateClientInput,
 } from "@/lib/validations/client"
+import { panFromGstin, stateCodeFromGstin } from "@/lib/clients/derive"
 import { prisma } from "@/lib/prisma"
 
 async function generateClientCode(tx?: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]): Promise<string> {
@@ -170,7 +171,11 @@ export async function createClientWithOnboarding(
           input.clientType === "OTHER" ? input.clientTypeCustom : undefined,
         isIncorporated: input.isIncorporated,
         gstin: input.gstin,
-        pan: input.pan,
+        // Derived server-side too, not just in the form: the CSV importer and
+        // the quotation-conversion path both land here without going through a
+        // field the browser could fill in.
+        pan: input.pan || panFromGstin(input.gstin) || undefined,
+        stateCode: stateCodeFromGstin(input.gstin) ?? undefined,
         // Accounting year and scale. Turnover is what lets the compliance
         // engine pick the right GST cadence instead of assuming monthly.
         fyEndMonth: input.fyEndMonth ?? 3,
@@ -205,6 +210,7 @@ export async function createClientWithOnboarding(
         reminderDaysBefore: input.reminderDaysBefore,
         notificationPreferences: input.notificationPreferences,
         collectedDocuments: input.collectedDocuments,
+        assignedEmployeeId: input.assignedEmployeeId ?? null,
       }
     )
 
@@ -308,8 +314,14 @@ export async function updateClient(id: string, data: UpdateClientInput) {
     ...clientData
   } = data;
 
+  // Re-derive on every save. A client whose GSTIN is corrected — or added
+  // for the first time — gets the right place of supply on their next invoice
+  // without anyone remembering to update a second field.
+  const derivedState = stateCodeFromGstin(clientData.gstin)
+
   const clientUpdateData = {
     ...clientData,
+    ...(derivedState ? { stateCode: derivedState } : {}),
     ...(clientType !== undefined && { entityType: clientType || null }),
     entityTypeCustom: clientType === "OTHER" ? clientTypeCustom ?? null : null,
     ...(assignedEmployeeName !== undefined && { assignedEmployeeName }),

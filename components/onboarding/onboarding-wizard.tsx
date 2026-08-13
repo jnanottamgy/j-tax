@@ -57,6 +57,7 @@ import {
   validatePAN,
   gstinPanMismatch,
   isValidIFSC,
+  bankFromIfsc,
 } from "@/lib/india/validators"
 import { cn } from "@/lib/utils"
 
@@ -963,9 +964,20 @@ function StepFirmInformation({
               <Input
                 id="bankIfsc"
                 value={data.bankIfsc}
-                onChange={(e) =>
-                  onChange({ ...data, bankIfsc: e.target.value.toUpperCase() })
-                }
+                onChange={(e) => {
+                  const bankIfsc = e.target.value.toUpperCase()
+                  // The first four characters of an IFSC ARE the bank code.
+                  // Fill the name only while it is empty — a firm banking with
+                  // a co-op not in the list types their own and keeps it.
+                  const derivedBank = bankFromIfsc(bankIfsc)
+                  onChange({
+                    ...data,
+                    bankIfsc,
+                    ...(derivedBank && !data.bankName?.trim()
+                      ? { bankName: derivedBank }
+                      : {}),
+                  })
+                }}
                 placeholder="HDFC0001234"
                 className={cn("mt-2", fieldErrors.bankIfsc && "border-destructive/60")}
                 maxLength={11}

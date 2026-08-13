@@ -56,6 +56,11 @@ import {
 import type { EmployeeOption } from "@/lib/clients/types"
 import { validateGSTIN, validatePAN, gstinPanMismatch } from "@/lib/india/validators"
 import { MONTH_NAMES, resolveGstScheme } from "@/lib/compliance/gst-scheme"
+import {
+  clientTypeFromPan,
+  entityTypeLabelFromPan,
+  panFromGstin,
+} from "@/lib/clients/derive"
 import { cn } from "@/lib/utils"
 
 const initialState: ClientActionState = {}
@@ -577,6 +582,30 @@ function BasicInfoStep({
   const panCheck = basic.pan.trim().length >= 10 ? validatePAN(basic.pan) : null
   const crossCheck =
     gstinCheck?.valid && panCheck?.valid ? gstinPanMismatch(basic.gstin, basic.pan) : null
+
+  // A GSTIN carries the holder's PAN in characters 3–12 and their state in the
+  // first two, and a PAN encodes the constitution in its 4th character. The
+  // validators already decoded all of it; asking for the same facts a second
+  // time was just another chance to mistype something that prints on a tax
+  // invoice. Fills EMPTY fields only — a typed value is a decision.
+  // Primitives, not the object deriveClientFields returns: a fresh object every
+  // render would make the effect below depend on a new identity each time.
+  const derivedPan = basic.pan.trim() ? null : panFromGstin(basic.gstin)
+  const derivedType = basic.clientType.trim()
+    ? null
+    : clientTypeFromPan(basic.pan.trim() || derivedPan)
+
+  useEffect(() => {
+    const patch: Partial<BasicInfo> = {}
+    if (derivedPan) patch.pan = derivedPan
+    if (derivedType) patch.clientType = derivedType
+    if (Object.keys(patch).length > 0) updateBasic(patch)
+  }, [derivedPan, derivedType, updateBasic])
+
+  // PAN's own reading of the entity, shown even where it can't be mapped to one
+  // of our client types (a "C" PAN is any company; "P" is an individual OR a
+  // proprietorship). Better to tell them than to guess.
+  const panEntityLabel = entityTypeLabelFromPan(basic.pan)
   // What the entered turnover means, shown while it is being entered.
   const gstSchemeHint = resolveGstScheme({
     explicit: basic.gstFilingScheme || null,
@@ -625,6 +654,11 @@ function BasicInfoStep({
               placeholder="Enter the client type"
               className="input-premium mt-2 h-10 rounded-xl"
             />
+          )}
+          {panEntityLabel && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              PAN says: {panEntityLabel}
+            </p>
           )}
         </Field>
         <Field label="Incorporation status">
@@ -686,6 +720,11 @@ function BasicInfoStep({
                 : panCheck?.valid
                   ? `✓ ${panCheck.entityType}`
                   : panCheck?.error}
+            </p>
+          )}
+          {gstinCheck?.valid && !basic.pan.trim() && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Taken from the GSTIN — chars 3–12 are the holder&apos;s PAN.
             </p>
           )}
         </Field>
