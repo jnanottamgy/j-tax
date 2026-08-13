@@ -4,6 +4,7 @@ import { Calendar as CalendarIcon, FileText, Receipt, CheckCircle2, AlertCircle,
 
 import { getSession } from "@/lib/auth/session"
 import { resolvePortalClient } from "@/lib/client-portal/resolve"
+import { getMyOutstandingDocuments } from "@/app/actions/document-requests"
 import { prisma } from "@/lib/prisma"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -143,6 +144,11 @@ export default async function ClientDashboardPage() {
     },
   ]
 
+  // What the firm is waiting on. Document chasing used to live entirely in
+  // staff-side lists the client could not see, so "what do you still need from
+  // me?" was a phone call.
+  const outstandingDocs = await getMyOutstandingDocuments(clientRecord.id)
+
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
@@ -152,6 +158,46 @@ export default async function ClientDashboardPage() {
           Overview of your compliance status and upcoming deadlines.
         </p>
       </div>
+
+      {outstandingDocs.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/[0.06]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="size-4 text-amber-500" />
+              Documents we still need from you
+            </CardTitle>
+            <CardDescription>
+              Reply to our email with these attached, or send them over however
+              suits you.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {outstandingDocs.map((req) => (
+              <div key={req.id}>
+                <p className="text-sm font-medium">
+                  {req.title}
+                  {req.dueDate && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      by {format(new Date(req.dueDate), "d MMM yyyy")}
+                    </span>
+                  )}
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {req.items.map((item) => (
+                    <li
+                      key={item}
+                      className="flex items-start gap-2 text-sm text-muted-foreground"
+                    >
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -6,6 +6,7 @@
  * rebuilds statements from the mapped ledgers on save.
  */
 
+import { useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import {
   BookOpenCheck,
@@ -119,7 +120,11 @@ export function FinancialStatementsClient() {
   const canDelete = role === "PARTNER" || role === "MANAGER"
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([])
   const [saved, setSaved] = useState<SavedRow[]>([])
-  const [clientId, setClientId] = useState("")
+  // Seeded from ?clientId=… so Client 360 → Workpapers opens this tool already
+  // scoped, instead of dropping the user into a list of every client to find
+  // the one they were just looking at.
+  const searchParams = useSearchParams()
+  const [clientId, setClientId] = useState(() => searchParams.get("clientId") ?? "")
   const [fy, setFy] = useState(financialYearOf().short)
   const [fileName, setFileName] = useState("")
   const [ledgers, setLedgers] = useState<MappedLedger[]>([])

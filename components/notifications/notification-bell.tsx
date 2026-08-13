@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { useNotifications } from "@/components/notifications/notifications-provider"
 import type { NotificationDTO } from "@/app/actions/notifications"
+import { notificationHref } from "@/lib/notifications/entity-link"
 
 function getNotificationIcon(type: string) {
   switch (type) {
@@ -80,8 +81,13 @@ function NotificationDropdown({ onClose }: NotificationDropdownProps) {
     if (!notification.read) {
       markRead(notification.id)
     }
-    // Navigate to notifications page for full view
-    router.push("/notifications")
+    // Go to the thing the notification is ABOUT. entityType/entityId have
+    // always been stored; they were simply never read, so every notification
+    // dead-ended on the list and the user went hunting for the record by hand.
+    router.push(
+      notificationHref(notification.entityType, notification.entityId) ??
+        "/notifications"
+    )
     onClose()
   }
 

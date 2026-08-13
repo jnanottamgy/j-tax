@@ -5,6 +5,7 @@
  * and a create/edit dialog. Reply/hearing alerts ride the daily cron.
  */
 
+import { useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { FileWarning, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -120,7 +121,12 @@ export function NoticesClient() {
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([])
   const [employees, setEmployees] = useState<Array<{ id: string; name: string }>>([])
   const [statusFilter, setStatusFilter] = useState("OPEN_ALL")
-  const [clientFilter, setClientFilter] = useState("")
+  // Seeded from ?clientId=… so Client 360 → Workpapers opens the register
+  // already filtered to that client; ?new=1 opens the form with them selected.
+  const searchParams = useSearchParams()
+  const [clientFilter, setClientFilter] = useState(
+    () => searchParams.get("clientId") ?? ""
+  )
   const [loading, setLoading] = useState(true)
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -169,6 +175,17 @@ export function NoticesClient() {
     setFieldErrors({})
     setDialogOpen(true)
   }
+
+  // ?new=1 from Client 360 opens the form straight away, with the client
+  // already chosen by the filter seeded above.
+  const wantsNew = searchParams.get("new") === "1"
+  const [openedNew, setOpenedNew] = useState(false)
+  useEffect(() => {
+    if (!wantsNew || openedNew || clients.length === 0) return
+    setOpenedNew(true)
+    openCreate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsNew, openedNew, clients.length])
 
   function openEdit(n: NoticeRow) {
     setEditingId(n.id)

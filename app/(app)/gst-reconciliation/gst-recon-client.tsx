@@ -9,6 +9,7 @@
  * immutable run.
  */
 
+import { useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import {
   ArrowRight,
@@ -151,7 +152,11 @@ type PastRun = {
 export function GstReconClient() {
   const [clients, setClients] = useState<Array<{ id: string; name: string; gstin: string | null }>>([])
   const [pastRuns, setPastRuns] = useState<PastRun[]>([])
-  const [clientId, setClientId] = useState("")
+  // Seeded from ?clientId=… so Client 360 → Workpapers opens this tool already
+  // scoped, instead of dropping the user into a list of every client to find
+  // the one they were just looking at.
+  const searchParams = useSearchParams()
+  const [clientId, setClientId] = useState(() => searchParams.get("clientId") ?? "")
   const [period, setPeriod] = useState(defaultPeriod())
 
   const [portalFile, setPortalFile] = useState<{ name: string; text: string; parsed: Gstr2bParseResult } | null>(null)

@@ -74,6 +74,7 @@ export function WorkTrackerClient() {
     loadData()
   }, [loadData])
 
+
   const handleTaskClick = async (taskId: string) => {
     try {
       const detail = await getTaskDetail(taskId)
@@ -85,6 +86,21 @@ export function WorkTrackerClient() {
       toast.error("Failed to load task details")
     }
   }
+
+  // Deep link: /work-tracker?taskId=… opens that task's drawer.
+  //
+  // The dashboard queues and every task notification point here, and until now
+  // the parameter was ignored — landing the user on an unfiltered list to hunt
+  // for the row they had just clicked. Runs once per id so closing the drawer
+  // doesn't immediately reopen it.
+  const deepLinkTaskId = searchParams.get("taskId")
+  const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null)
+  useEffect(() => {
+    if (!deepLinkTaskId || openedDeepLink === deepLinkTaskId) return
+    setOpenedDeepLink(deepLinkTaskId)
+    void handleTaskClick(deepLinkTaskId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkTaskId, openedDeepLink])
 
   const handleStatusChange = async (taskId: string, newStatus: TaskStatus) => {
     try {

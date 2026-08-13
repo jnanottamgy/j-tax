@@ -7,6 +7,7 @@
  * server recomputes from raw inputs on save, so stored results can be trusted.
  */
 
+import { useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { Calculator, Loader2, Printer, Save, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -136,7 +137,11 @@ export function ItrClient() {
   const canDelete = role === "PARTNER" || role === "MANAGER"
   const [clients, setClients] = useState<ClientOption[]>([])
   const [saved, setSaved] = useState<SavedRow[]>([])
-  const [clientId, setClientId] = useState("")
+  // Seeded from ?clientId=… so Client 360 → Workpapers opens this tool already
+  // scoped, instead of dropping the user into a list of every client to find
+  // the one they were just looking at.
+  const searchParams = useSearchParams()
+  const [clientId, setClientId] = useState(() => searchParams.get("clientId") ?? "")
   const [inputs, setInputs] = useState<WireItrInputs>(EMPTY)
   const [computationId, setComputationId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)

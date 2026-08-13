@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { format, differenceInDays } from "date-fns"
@@ -103,6 +103,24 @@ export function ComplianceDashboardClient({ data }: { data: DashboardData }) {
     setSelectedEvent(event)
     setModalOpen(true)
   }
+
+  // Deep link: compliance notifications point here with ?eventId=…
+  //
+  // Only the events already on this page can be opened — the dashboard loads
+  // the next thirty days, which is the window a "due soon" notification comes
+  // from. An older event silently leaves the page as it is rather than opening
+  // the wrong record.
+  const deepLinkEventId = searchParams.get("eventId")
+  const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null)
+  useEffect(() => {
+    if (!deepLinkEventId || openedDeepLink === deepLinkEventId) return
+    const match = [...upcomingEvents, ...recentlyCompleted].find(
+      (e: any) => e.id === deepLinkEventId
+    )
+    setOpenedDeepLink(deepLinkEventId)
+    if (match) handleEventClick(match)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkEventId, openedDeepLink, upcomingEvents, recentlyCompleted])
 
   const handleDelete = async (eventId: string) => {
     const result = await deleteComplianceEvent(eventId)

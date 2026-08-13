@@ -27,6 +27,7 @@ import {
   Loader2,
   Sparkles,
   FileSignature,
+  GitCompareArrows,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -54,13 +55,15 @@ import { ClientTimeline } from "@/components/clients/client-timeline"
 import { EditClientDialog } from "@/components/clients/edit-client-dialog"
 import { PortalAccessCard } from "@/components/clients/portal-access-card"
 import { EngagementTab } from "@/components/clients/engagement-tab"
+import { WorkpapersTab } from "@/components/clients/workpapers-tab"
+import { DocumentRequests } from "@/components/clients/document-requests"
 import { WhatsAppButton } from "@/components/messaging/whatsapp-button"
 import { draftGeneral } from "@/lib/messaging/whatsapp-drafts"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 import { serviceLabel } from "@/lib/clients/constants"
 import { cn } from "@/lib/utils"
 
-type TabType = "overview" | "services" | "tasks" | "payments" | "documents" | "compliance" | "engagement" | "activity" | "timeline"
+type TabType = "overview" | "services" | "tasks" | "payments" | "documents" | "compliance" | "workpapers" | "engagement" | "activity" | "timeline"
 
 /** Humanize raw Prisma enum values, e.g. ON_HOLD → "On Hold" */
 function humanizeEnum(value?: string | null) {
@@ -152,6 +155,9 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
       : []),
     { id: "documents" as TabType, label: "Documents", icon: Folder },
     { id: "compliance" as TabType, label: "Compliance", icon: Calendar },
+    // The per-client work products — GST recon, ITR, accounts, notices —
+    // which until now lived only on four detached firm-level pages.
+    { id: "workpapers" as TabType, label: "Workpapers", icon: GitCompareArrows },
     // Terms and filing history. Partner/Manager only — the engagement fee
     // is commercial information an employee is walled off from elsewhere.
     ...(canManage
@@ -394,9 +400,22 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
                 <DocumentsTab
                   checklist={data.documentChecklist ?? []}
                   clientId={data.client.id}
+                  canManage={canManage}
                 />
               </motion.div>
             )}
+            {activeTab === "workpapers" && (
+              <motion.div
+                key="workpapers"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <WorkpapersTab clientId={clientId} />
+              </motion.div>
+            )}
+
             {activeTab === "engagement" && (
               <motion.div
                 key="engagement"
@@ -663,13 +682,18 @@ function PaymentsTab({ invoices }: { invoices: any[] }) {
 function DocumentsTab({
   checklist,
   clientId,
+  canManage,
 }: {
   checklist: any[]
   clientId: string
+  canManage: boolean
 }) {
   return (
     <div className="space-y-6">
+      {/* The standing register of what this client owes us… */}
       <DocumentChecklistCard checklist={checklist} clientId={clientId} />
+      {/* …and the rounds of chasing raised against it. */}
+      <DocumentRequests clientId={clientId} canManage={canManage} />
     </div>
   )
 }

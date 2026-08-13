@@ -265,13 +265,25 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "Clients", href: "/clients", icon: Building2, description: "Client management" },
           { title: "Work Tracker", href: "/work-tracker", icon: ClipboardList, description: "Tasks & assignments" },
           { title: "Compliance", href: "/compliance", icon: ShieldCheck, description: "Filing compliance" },
-          { title: "GST Recon", href: "/gst-reconciliation", icon: GitCompareArrows, description: "GSTR-2B ↔ purchase register" },
-          { title: "ITR Computation", href: "/itr-computation", icon: Calculator, description: "Old vs new regime, side by side" },
-          { title: "Notices", href: "/notices", icon: FileWarning, description: "Tax notice & litigation register" },
-          { title: "Financial Statements", href: "/financial-statements", icon: BookOpenCheck, description: "P&L + Balance Sheet from trial balance" },
           { title: "Compliance Calendar", href: "/compliance-calendar", icon: CalendarDays, description: "Statutory due dates" },
           { title: "Firm Calendar", href: "/calendar", icon: CalendarDays, description: "Firm-set due dates" },
           { title: "Timesheet", href: "/timesheet", icon: Timer, description: "Time tracking & billable hours" },
+        ],
+      },
+      {
+        // These four are per-client work products, not destinations of their
+        // own — every one of them stores a clientId. They sat as four separate
+        // top-level entries in an eleven-item Operations group, which put them
+        // in a different part of the app from the client they belong to. The
+        // client's own copies now live on Client 360 → Workpapers; these stay
+        // as the cross-client index.
+        id: "workpapers",
+        label: "Workpapers",
+        items: [
+          { title: "GST Recon", href: "/gst-reconciliation", icon: GitCompareArrows, description: "GSTR-2B ↔ purchase register" },
+          { title: "ITR Computation", href: "/itr-computation", icon: Calculator, description: "Old vs new regime, side by side" },
+          { title: "Financial Statements", href: "/financial-statements", icon: BookOpenCheck, description: "P&L + Balance Sheet from trial balance" },
+          { title: "Notices", href: "/notices", icon: FileWarning, description: "Tax notice & litigation register" },
         ],
       },
       {
