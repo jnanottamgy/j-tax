@@ -174,10 +174,10 @@ export function PartnerCommandCenter({
           <MetricTile
             label="Compliance Score"
             value={`${stats.complianceScore}%`}
-            subtext="portfolio health"
+            subtext="tap to see every filing"
             icon={Shield}
             color="bg-blue-500/10 text-blue-400"
-            href="/compliance"
+            href="/reports/insights?metric=compliance"
             trend={stats.complianceScore >= 80 ? "up" : "down"}
           />
         </div>
@@ -187,26 +187,26 @@ export function PartnerCommandCenter({
           <MetricTile
             label="Pending Approvals"
             value={stats.pendingApprovals}
-            subtext="quotations awaiting review"
+            subtext="tap to see what's blocked"
             icon={CheckSquare}
             color={stats.pendingApprovals > 0 ? "bg-amber-500/10 text-amber-400" : "bg-white/[0.05] text-muted-foreground"}
-            href="/proposals"
+            href="/reports/insights?metric=approvals"
           />
           <MetricTile
             label="Active Employees"
             value={stats.activeEmployees}
-            subtext="view workforce intelligence"
+            subtext="tap to see each person's load"
             icon={Users}
             color="bg-primary/10 text-primary"
-            href="/workforce"
+            href="/reports/insights?metric=employees"
           />
           <MetricTile
             label="High Risk Clients"
             value={stats.highRiskClients}
-            subtext="overdue tasks or compliance"
+            subtext="tap to see who and why"
             icon={AlertTriangle}
             color={stats.highRiskClients > 0 ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}
-            href="/clients"
+            href="/reports/insights?metric=high-risk"
             trend={stats.highRiskClients > 3 ? "down" : "neutral"}
           />
         </div>
@@ -221,26 +221,26 @@ export function PartnerCommandCenter({
               <MetricTile
                 label="Total Leads"
                 value={crmMetrics.totalLeads}
-                subtext={`${crmMetrics.wonLeads} converted`}
+                subtext={`${crmMetrics.wonLeads} converted · tap for detail`}
                 icon={Target}
                 color="bg-blue-500/10 text-blue-400"
-                href="/proposals"
+                href="/reports/insights?metric=leads"
               />
               <MetricTile
                 label="Follow-Up Required"
                 value={crmMetrics.followUpLeads}
-                subtext="leads need attention"
+                subtext="tap to see who to call"
                 icon={Activity}
                 color={crmMetrics.followUpLeads > 0 ? "bg-amber-500/10 text-amber-400" : "bg-white/[0.05] text-muted-foreground"}
-                href="/proposals"
+                href="/reports/insights?metric=followups"
               />
               <MetricTile
                 label="Revenue Pipeline"
                 value={formatCurrency(crmMetrics.revenuePipeline)}
-                subtext={`${crmMetrics.quotationsSent} quotes pending`}
+                subtext={`${crmMetrics.quotationsSent} quotes pending · tap for detail`}
                 icon={IndianRupee}
                 color="bg-purple-500/10 text-purple-400"
-                href="/proposals"
+                href="/reports/insights?metric=pipeline"
               />
             </div>
           </div>
