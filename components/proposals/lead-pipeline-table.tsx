@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { format } from "date-fns"
 import { MoreHorizontal, TrendingUp, ChevronDown, Trash2, FileText, Eye, UserPlus } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -26,7 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { updateLeadStatus, deleteLead, convertLeadToClient, type getLeads } from "@/app/actions/proposals"
+import { updateLeadStatus, deleteLead, resolveLeadConversion, type getLeads } from "@/app/actions/proposals"
 
 type Lead = Awaited<ReturnType<typeof getLeads>>[number]
 
@@ -65,6 +66,7 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
   const [rejectTarget, setRejectTarget] = useState<Lead | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const [, startTransition] = useTransition()
+  const router = useRouter()
 
   const filtered = filter === "ALL" ? leads : leads.filter((l) => l.status === filter)
 
@@ -113,14 +115,12 @@ export function LeadPipelineTable({ initialLeads }: { initialLeads: Lead[] }) {
   }
 
   function handleConvert(leadId: string) {
+    // Opens the prefilled Add Client dialog; the client is created there so the
+    // details can be reviewed and the quoted services carried across.
     startTransition(async () => {
-      const result = await convertLeadToClient(leadId)
-      if (result.success && result.clientId) {
-        setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, convertedClientId: result.clientId! } as Lead : l))
-        toast.success("Lead converted to client")
-      } else if (result.error) {
-        toast.error(result.error)
-      }
+      const result = await resolveLeadConversion(leadId)
+      if (result.href) router.push(result.href)
+      else if (result.error) toast.error(result.error)
     })
   }
 

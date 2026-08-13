@@ -54,6 +54,8 @@ export type OnboardingPrefill = {
     customName?: string
   }>
   sourceQuotationId?: string
+  /** Set when onboarding straight from a lead with no accepted quotation. */
+  sourceLeadId?: string
   /** When true, the services step is locked (must raise a new quotation to change). */
   lockServices?: boolean
 }
@@ -72,6 +74,8 @@ type OnboardingState = {
   lockedServices: boolean
   /** The quotation this onboarding was seeded from (marks it converted on save). */
   sourceQuotationId: string | null
+  /** The lead this onboarding was seeded from (marks it converted on save). */
+  sourceLeadId: string | null
   setStep: (step: number) => void
   updateBasic: (data: Partial<BasicInfo>) => void
   toggleService: (serviceType: ServiceType) => void
@@ -129,6 +133,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
       checklistReview: emptyChecklistReview,
       lockedServices: false,
       sourceQuotationId: null,
+      sourceLeadId: null,
       setStep: (step) => set({ step }),
       updateBasic: (data) =>
         set((state) => ({ basic: { ...state.basic, ...data } })),
@@ -199,6 +204,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
             checklistReview: emptyChecklistReview,
             lockedServices: prefill.lockServices ?? false,
             sourceQuotationId: prefill.sourceQuotationId ?? null,
+            sourceLeadId: prefill.sourceLeadId ?? null,
           }
         }),
       reset: () =>
@@ -213,6 +219,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
           checklistReview: emptyChecklistReview,
           lockedServices: false,
           sourceQuotationId: null,
+          sourceLeadId: null,
         }),
     }),
     {
@@ -228,6 +235,7 @@ export const useClientOnboardingStore = create<OnboardingState>()(
         checklistReview: state.checklistReview,
         lockedServices: state.lockedServices,
         sourceQuotationId: state.sourceQuotationId,
+        sourceLeadId: state.sourceLeadId,
       }),
     }
   )

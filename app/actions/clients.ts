@@ -115,14 +115,30 @@ export async function createClient(
 
     const client = await createClientWithOnboarding(parsed.data)
 
-    // If onboarded from an accepted quotation, mark it converted (best-effort).
+    // Close the loop back to the pipeline. Best-effort: the client already
+    // exists, so a bookkeeping failure here must not fail the onboarding.
     const sourceQuotationId = formData.get("sourceQuotationId")
+    const sourceLeadId = formData.get("sourceLeadId")
+
     if (typeof sourceQuotationId === "string" && sourceQuotationId) {
       try {
-        const { markQuotationConverted } = await import("@/app/actions/proposals")
+        const { markQuotationConverted, markLeadConverted, getQuotationLeadId } =
+          await import("@/app/actions/proposals")
         await markQuotationConverted(sourceQuotationId, client.id)
+        // A quotation raised against a lead converts that lead too — otherwise
+        // the lead keeps offering "Convert to Client" and a second, duplicate
+        // client can be created from the same deal.
+        const leadId = await getQuotationLeadId(sourceQuotationId)
+        if (leadId) await markLeadConverted(leadId, client.id)
       } catch (convErr) {
         console.error("mark quotation converted failed:", convErr)
+      }
+    } else if (typeof sourceLeadId === "string" && sourceLeadId) {
+      try {
+        const { markLeadConverted } = await import("@/app/actions/proposals")
+        await markLeadConverted(sourceLeadId, client.id)
+      } catch (convErr) {
+        console.error("mark lead converted failed:", convErr)
       }
     }
 

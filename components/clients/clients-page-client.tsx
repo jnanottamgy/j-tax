@@ -30,9 +30,11 @@ export function ClientsPageClient({
   // Sidebar "New Client" quick action deep-links here with ?new=1
   const openWizardOnLoad = searchParams.get("new") === "1"
   const fromQuotation = searchParams.get("fromQuotation")
+  const fromLead = searchParams.get("fromLead")
   const [prefillReady, setPrefillReady] = useState(false)
 
-  // Onboard-from-quotation: seed the wizard store, then open it prefilled + locked.
+  // Onboard-from-quotation: seed the wizard store, then open it prefilled with
+  // the quoted services locked — billing and delivery scope must agree.
   useEffect(() => {
     if (!fromQuotation || !canManage) return
     let cancelled = false
@@ -58,6 +60,33 @@ export function ClientsPageClient({
       cancelled = true
     }
   }, [fromQuotation, canManage, router])
+
+  // Onboard-from-lead: no accepted quotation, so contact details are prefilled
+  // but services stay open — there is no agreed scope to lock to.
+  useEffect(() => {
+    if (!fromLead || fromQuotation || !canManage) return
+    let cancelled = false
+    void (async () => {
+      const { getLeadClientPrefill } = await import("@/app/actions/proposals")
+      const prefill = await getLeadClientPrefill(fromLead)
+      if (cancelled || !prefill) return
+      if (prefill.alreadyConverted && prefill.convertedClientId) {
+        toast.info("This lead was already converted to a client.")
+        router.push(`/clients/${prefill.convertedClientId}`)
+        return
+      }
+      useClientOnboardingStore.getState().hydrate({
+        basic: prefill.basic,
+        sourceLeadId: prefill.leadId,
+        lockServices: false,
+      })
+      setPrefillReady(true)
+      toast.success(`Onboarding ${prefill.leadName} — choose their services to finish.`)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [fromLead, fromQuotation, canManage, router])
 
   return (
     <>

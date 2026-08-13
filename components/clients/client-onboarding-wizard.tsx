@@ -108,6 +108,7 @@ export function ClientOnboardingWizard({
     checklistReview,
     lockedServices,
     sourceQuotationId,
+    sourceLeadId,
     setStep,
     updateBasic,
     toggleService,
@@ -289,6 +290,9 @@ export function ClientOnboardingWizard({
             <input type="hidden" name="collectedDocuments" value={collectedJson} />
             {sourceQuotationId && (
               <input type="hidden" name="sourceQuotationId" value={sourceQuotationId} />
+            )}
+            {sourceLeadId && (
+              <input type="hidden" name="sourceLeadId" value={sourceLeadId} />
             )}
             <input type="hidden" name="name" value={basic.name} />
             <input type="hidden" name="companyName" value={basic.companyName} />

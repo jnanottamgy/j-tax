@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma"
 import { toUserError } from "@/lib/forms/errors"
 import { notificationService } from "@/lib/messaging/notification-service"
 import { getFirmSettings } from "@/lib/firm-settings"
+import { formatINR } from "@/lib/india/format"
 import {
   quotationEmailHTML,
   quotationSubject,
@@ -487,6 +488,16 @@ export async function getQuotationClientPrefill(quotationId: string) {
   }
 }
 
+/** The lead a quotation was raised against, if any. */
+export async function getQuotationLeadId(quotationId: string): Promise<string | null> {
+  await requirePartnerOrManager()
+  const q = await prisma.quotation.findUnique({
+    where: { id: quotationId },
+    select: { leadId: true },
+  })
+  return q?.leadId ?? null
+}
+
 /** Marks a quotation as converted into a client (blocks double-conversion). */
 export async function markQuotationConverted(quotationId: string, clientId: string) {
   try {
@@ -627,85 +638,167 @@ export async function getLeadDetail(leadId: string) {
 
 // ─── Lead → Client Conversion ───────────────────────────────────────────────
 
-export async function convertLeadToClient(leadId: string): Promise<{ success?: boolean; error?: string; clientId?: string }> {
+/**
+ * Where a lead's "Convert to Client" should take the user.
+ *
+ * This used to create a bare client on the spot: it fetched the accepted
+ * quotation and then ignored it, so the new client arrived with NO services and
+ * no chance to review or correct the details pulled off the lead.
+ *
+ * Conversion now always lands on the prefilled Add Client dialog, so the
+ * partner sees exactly what is about to be created before it exists:
+ *
+ *   accepted quotation  →  /clients?fromQuotation=…  (services locked to the
+ *                          quoted scope — billing and delivery must agree)
+ *   no quotation yet    →  /clients?fromLead=…       (contact details prefilled,
+ *                          services chosen by hand)
+ *
+ * The client is created by the wizard's own createClient action, which also
+ * marks the lead and quotation converted.
+ */
+export async function resolveLeadConversion(
+  leadId: string
+): Promise<{ href?: string; error?: string }> {
   try {
-    const session = await requirePartnerOrManager()
+    await requirePartnerOrManager()
 
     const lead = await prisma.lead.findUnique({
       where: { id: leadId },
-      include: {
-        quotations: { where: { status: "ACCEPTED" }, take: 1, orderBy: { respondedAt: "desc" } },
+      select: {
+        id: true,
+        status: true,
+        convertedClientId: true,
+        quotations: {
+          where: { status: { in: ["ACCEPTED", "APPROVED"] }, convertedClientId: null },
+          orderBy: { respondedAt: "desc" },
+          take: 1,
+          select: { id: true },
+        },
       },
     })
 
     if (!lead) return { error: "Lead not found." }
-    if (lead.convertedClientId) return { error: "This lead has already been converted to a client." }
-    if (lead.status !== "WON") return { error: "Only leads with WON status can be converted." }
+    if (lead.convertedClientId) {
+      return { href: `/clients/${lead.convertedClientId}` }
+    }
+    if (lead.status !== "WON") {
+      return { error: "Mark the lead as Won before converting it to a client." }
+    }
 
-    const count = await prisma.client.count()
-    const clientCode = `CLI-${String(count + 1).padStart(4, "0")}`
+    const quotation = lead.quotations[0]
+    return {
+      href: quotation
+        ? `/clients?fromQuotation=${quotation.id}`
+        : `/clients?fromLead=${lead.id}`,
+    }
+  } catch (err) {
+    return { error: toUserError(err) }
+  }
+}
 
-    const client = await prisma.$transaction(async (tx) => {
-      const newClient = await tx.client.create({
-        data: {
-          clientCode,
-          name: lead.company || lead.name,
-          email: lead.email,
-          phone: lead.phone || null,
-          notes: lead.notes || null,
-          status: "ACTIVE",
-          priority: "MEDIUM",
+/**
+ * Prefill for onboarding straight from a lead (no accepted quotation).
+ * Services are intentionally absent — with nothing quoted there is no agreed
+ * scope to lock to, so the partner picks them in the wizard.
+ */
+export async function getLeadClientPrefill(leadId: string) {
+  await requirePartnerOrManager()
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: {
+      id: true,
+      name: true,
+      company: true,
+      email: true,
+      phone: true,
+      notes: true,
+      convertedClientId: true,
+    },
+  })
+  if (!lead) return null
+
+  return {
+    leadId: lead.id,
+    leadName: lead.name,
+    alreadyConverted: Boolean(lead.convertedClientId),
+    convertedClientId: lead.convertedClientId,
+    basic: {
+      name: lead.company?.trim() || lead.name,
+      companyName: lead.company ?? "",
+      email: lead.email ?? "",
+      phone: lead.phone ?? "",
+      notes: lead.notes ?? "",
+    },
+  }
+}
+
+/**
+ * Link a lead to the client it became, and record the pipeline history on the
+ * new client's timeline so the origin story survives the conversion.
+ */
+export async function markLeadConverted(leadId: string, clientId: string) {
+  try {
+    await requirePartnerOrManager()
+
+    const lead = await prisma.lead.findUnique({
+      where: { id: leadId },
+      include: {
+        quotations: {
+          where: { status: "ACCEPTED" },
+          orderBy: { respondedAt: "desc" },
+          take: 1,
         },
-      })
+      },
+    })
+    if (!lead) return { error: "Lead not found." }
 
+    await prisma.$transaction(async (tx) => {
       await tx.lead.update({
         where: { id: leadId },
-        data: { convertedClientId: newClient.id },
+        data: { convertedClientId: clientId, status: "WON" },
       })
 
       await tx.clientTimelineEvent.createMany({
         data: [
           {
-            clientId: newClient.id,
+            clientId,
             leadId,
             eventType: "LEAD_CREATED",
             title: "Lead created",
-            description: `Lead "${lead.name}" was created via ${lead.source}`,
+            description: `Lead "${lead.name}" came in via ${lead.source.replace(/_/g, " ").toLowerCase()}`,
             performedBy: lead.createdBy,
             createdAt: lead.createdAt,
           },
           {
-            clientId: newClient.id,
+            clientId,
             leadId,
             eventType: "CLIENT_ONBOARDED",
             title: "Converted from lead",
-            description: `Lead "${lead.name}" converted to client "${newClient.name}" (${clientCode})`,
-            performedBy: session.user.id,
+            description: `Lead "${lead.name}" became a client`,
           },
         ],
       })
 
-      if (lead.quotations.length > 0) {
-        const q = lead.quotations[0]
+      const q = lead.quotations[0]
+      if (q) {
         await tx.clientTimelineEvent.create({
           data: {
-            clientId: newClient.id,
+            clientId,
             leadId,
             eventType: "QUOTATION_ACCEPTED",
             title: `Quotation ${q.quotationNumber} accepted`,
-            description: `₹${Number(q.total).toLocaleString("en-IN")} — accepted on ${q.respondedAt?.toLocaleDateString("en-IN") ?? "N/A"}`,
-            performedBy: session.user.id,
-            createdAt: q.respondedAt ?? new Date(),
+            description: `${formatINR(Number(q.total))} — accepted on ${
+              q.respondedAt?.toLocaleDateString("en-IN") ?? "an earlier date"
+            }`,
+            createdAt: q.respondedAt ?? undefined,
           },
         })
       }
-
-      return newClient
     })
 
     revalidatePath("/proposals")
     revalidatePath("/clients")
-    return { success: true, clientId: client.id }
+    return { success: true }
   } catch (err) {
     return { error: toUserError(err) }
   }

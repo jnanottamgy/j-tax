@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { toast } from "sonner"
 import { format } from "date-fns"
 import {
   ArrowRight,
@@ -37,7 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { updateLeadStatus, convertLeadToClient } from "@/app/actions/proposals"
+import { updateLeadStatus, resolveLeadConversion } from "@/app/actions/proposals"
 import { EditLeadDialog } from "@/components/proposals/edit-lead-dialog"
 
 // The lead statuses selectable in the UI (others still render via STATUS_LABELS).
@@ -149,11 +150,13 @@ export function LeadDetailClient({ lead, employees }: Props) {
   }
 
   function handleConvert() {
+    // Navigates to the prefilled Add Client dialog rather than creating the
+    // client outright — the partner reviews the details first, and services
+    // arrive locked to the accepted quotation when there is one.
     startTransition(async () => {
-      const result = await convertLeadToClient(lead.id)
-      if (result.success && result.clientId) {
-        router.push(`/clients/${result.clientId}`)
-      }
+      const result = await resolveLeadConversion(lead.id)
+      if (result.href) router.push(result.href)
+      else if (result.error) toast.error(result.error)
     })
   }
 
