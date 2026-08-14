@@ -25,6 +25,8 @@ type EmployeesTableProps = {
   onHandover: (employeeId: string) => void
   onEnable: (employeeId: string) => void
   onResetPassword: (employee: EmployeeListItem) => void
+  /** Give a login to a team member who has none. */
+  onIssueLogin: (employee: EmployeeListItem) => void
 }
 
 export function EmployeesTable({
@@ -36,6 +38,7 @@ export function EmployeesTable({
   onHandover,
   onEnable,
   onResetPassword,
+  onIssueLogin,
 }: EmployeesTableProps) {
   if (employees.length === 0) {
     return (
@@ -139,10 +142,18 @@ export function EmployeesTable({
                           Edit
                         </DropdownMenuItem>
 
-                        {employee.role && (
+                        {employee.role ? (
                           <DropdownMenuItem onClick={() => onResetPassword(employee)}>
                             <KeyRound className="h-4 w-4 mr-2" />
                             Reset password
+                          </DropdownMenuItem>
+                        ) : (
+                          /* The one action a row with no login needs, and the
+                             only one that used to be missing — leaving these
+                             people with no menu item that could help them. */
+                          <DropdownMenuItem onClick={() => onIssueLogin(employee)}>
+                            <KeyRound className="h-4 w-4 mr-2" />
+                            Issue login
                           </DropdownMenuItem>
                         )}
 

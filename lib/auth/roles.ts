@@ -16,6 +16,60 @@ export const ROLE_LABELS: Record<AppRole, string> = {
   CLIENT: "Client",
 }
 
+/**
+ * What each role actually grants.
+ *
+ * The role dropdown offered three words and no explanation, which is the same
+ * problem status chips had: a label carries a name, not a rule. Choosing
+ * someone's role is the highest-consequence decision in the app — it decides
+ * whether they can see every client's fees — and it was the least explained.
+ *
+ * `grants` is what the role can do that the one below it cannot; `withheld` is
+ * the line it stops at. Both are checked against the guards: requirePartner for
+ * firm settings and approvals, requirePartnerOrManager for client and billing
+ * mutations, and the EMPLOYEE row-scoping in lib/auth/scope.ts.
+ */
+export const ROLE_CAPABILITIES: Record<
+  Exclude<AppRole, "CLIENT">,
+  { summary: string; grants: string[]; withheld: string[] }
+> = {
+  PARTNER: {
+    summary: "Runs the firm. Sees and can do everything.",
+    grants: [
+      "Firm settings, branding and bank details",
+      "Approving invoices held over the firm's limit, and waiving them",
+      "Adding and removing Managers",
+      "Deleting clients and team members",
+    ],
+    withheld: [],
+  },
+  MANAGER: {
+    summary: "Runs the work. Everything except firm-level authority.",
+    grants: [
+      "Every client, task, invoice and quotation in the firm",
+      "Adding Employees and assigning their work",
+      "Raising invoices and recording payments",
+    ],
+    withheld: [
+      "Cannot change firm settings or run the setup wizard",
+      "Cannot add another Manager, or delete a Partner",
+      "Invoices above the approval limit still need a Partner",
+    ],
+  },
+  EMPLOYEE: {
+    summary: "Does the work. Sees only the clients assigned to them.",
+    grants: [
+      "Their own tasks, deadlines and timesheet",
+      "Clients they are assigned to",
+    ],
+    withheld: [
+      "Cannot see clients assigned to anybody else",
+      "No access to invoices, payments or fees at all",
+      "Cannot mark their own work as filed — that needs a reviewer",
+    ],
+  },
+}
+
 /** Routes that require authentication */
 export const PROTECTED_ROUTE_PREFIXES = [
   "/",

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Copy, Download, KeyRound, MailCheck, Plus, Search } from "lucide-react"
+import { ImportEmployeesDialog } from "@/components/employees/import-employees-dialog"
+import { Copy, Download, KeyRound, MailCheck, Plus, Search, Upload } from "lucide-react"
 
 import { AddEmployeeDialog } from "@/components/employees/add-employee-dialog"
 import { EmployeesTable } from "@/components/employees/employees-table"
@@ -24,6 +25,7 @@ import {
   enableEmployee,
   listEmployeesData,
   resetEmployeePassword,
+  issueEmployeeLogin,
 } from "@/app/actions/employees"
 import { toast } from "sonner"
 import type { EmployeeListItem } from "@/lib/employees/types"
@@ -39,7 +41,7 @@ export function EmployeesPageClient({
   canManage,
   viewerRole = "MANAGER",
 }: EmployeesPageClientProps) {
-  const _router = useRouter()
+  const router = useRouter()
 
   const [employees, setEmployees] = useState(initialEmployees)
   const [searchQuery, setSearchQuery] = useState("")
@@ -55,6 +57,7 @@ export function EmployeesPageClient({
   const [isLoading, setIsLoading] = useState(false)
 
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<EmployeeListItem | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
 
@@ -126,6 +129,30 @@ export function EmployeesPageClient({
     } catch {
       toast.error("Couldn't copy — select and copy manually.")
     }
+  }
+
+  /**
+   * Give a team member a login they never had.
+   *
+   * Everyone added by the setup wizard before it provisioned is sitting at
+   * userId: null with no way out — "Reset password" is hidden for a row with no
+   * role, and re-adding them fails as a duplicate. This is that way out.
+   */
+  const handleIssueLogin = async (employee: EmployeeListItem) => {
+    const result = await issueEmployeeLogin(employee.id)
+    if (!result.success) {
+      toast.error(result.error ?? "Could not issue a login.")
+      return
+    }
+    if (result.tempPassword) {
+      setResetResult({ email: result.email ?? employee.email, tempPassword: result.tempPassword })
+    }
+    toast.success(
+      result.emailSent
+        ? `Invite sent to ${employee.email}.`
+        : "Login created. Share the temporary password below."
+    )
+    router.refresh()
   }
 
   const handleDeleteEmployee = (employeeId: string) => {
@@ -249,14 +276,28 @@ export function EmployeesPageClient({
             </Button>
 
             {canManage && (
-              <Button
-                size="sm"
-                className="btn-glow h-9 gap-1.5 rounded-xl px-4"
-                onClick={() => setAddDialogOpen(true)}
-              >
-                <Plus className="size-3.5" />
-                Add employee
-              </Button>
+              <>
+                {/* Ten hires used to mean ten dialogs and ten passwords read
+                    out loud. Clients have had a CSV import since onboarding
+                    was built; staff never did. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="input-premium h-9 gap-1.5 rounded-xl border-white/[0.07] bg-transparent"
+                  onClick={() => setImportOpen(true)}
+                >
+                  <Upload className="size-3.5" />
+                  Import
+                </Button>
+                <Button
+                  size="sm"
+                  className="btn-glow h-9 gap-1.5 rounded-xl px-4"
+                  onClick={() => setAddDialogOpen(true)}
+                >
+                  <Plus className="size-3.5" />
+                  Add employee
+                </Button>
+              </>
             )}
           </>
         }
@@ -323,6 +364,7 @@ export function EmployeesPageClient({
         onHandover={(employeeId) => setHandoverFor(employeeId)}
         onEnable={handleEnableEmployee}
         onResetPassword={handleResetPassword}
+        onIssueLogin={handleIssueLogin}
       />
 
       <div className="flex items-center justify-between pt-4">
@@ -353,6 +395,12 @@ export function EmployeesPageClient({
           </Button>
         </div>
       </div>
+
+      <ImportEmployeesDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={() => router.refresh()}
+      />
 
       {addDialogOpen && (
         <AddEmployeeDialog

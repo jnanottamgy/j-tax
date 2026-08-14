@@ -60,6 +60,7 @@ import {
   bankFromIfsc,
 } from "@/lib/india/validators"
 import { cn } from "@/lib/utils"
+import { RolePicker } from "@/components/employees/role-picker"
 
 // ─── Step definitions ─────────────────────────────────────────────────────────
 
@@ -73,7 +74,19 @@ const STEPS = [
     bg: "bg-blue-500/10",
   },
   {
+    // Email comes before the team on purpose. Invites are sent through the
+    // firm's own mail configuration, so adding staff first meant every invite
+    // in a brand-new firm failed to send and the partner had to read out
+    // temporary passwords instead.
     id: 2,
+    title: "Configure Email",
+    subtitle: "So invites can actually send",
+    icon: Mail,
+    color: "text-orange-400",
+    bg: "bg-orange-500/10",
+  },
+  {
+    id: 3,
     title: "Add Employees",
     subtitle: "Build your team",
     icon: Users,
@@ -81,7 +94,7 @@ const STEPS = [
     bg: "bg-green-500/10",
   },
   {
-    id: 3,
+    id: 4,
     title: "Add Services",
     subtitle: "Configure your offerings",
     icon: Briefcase,
@@ -89,20 +102,12 @@ const STEPS = [
     bg: "bg-purple-500/10",
   },
   {
-    id: 4,
+    id: 5,
     title: "Add First Client",
     subtitle: "Onboard your first client",
     icon: UserPlus,
     color: "text-yellow-400",
     bg: "bg-yellow-500/10",
-  },
-  {
-    id: 5,
-    title: "Configure Email",
-    subtitle: "Set up notifications",
-    icon: Mail,
-    color: "text-orange-400",
-    bg: "bg-orange-500/10",
   },
   {
     id: 6,
@@ -123,8 +128,17 @@ type EmployeeRow = {
   name: string
   email: string
   department: string
+  /** What this person will be able to see. Defaults to the narrower option. */
+  role: "EMPLOYEE" | "MANAGER"
   status: "pending" | "saving" | "saved" | "error"
   error?: string
+  /**
+   * Shown when the invite could not be emailed. Provisioning always issues a
+   * password; if delivery fails and this is not surfaced, the new hire has an
+   * account and no way to reach it.
+   */
+  tempPassword?: string
+  emailSent?: boolean
 }
 
 type FirmFieldErrors = Partial<Record<"firmName" | "gstin" | "pan" | "bankIfsc", string>>
@@ -212,7 +226,7 @@ export function OnboardingWizard() {
 
   // Employees
   const [employees, setEmployees] = useState<EmployeeRow[]>([
-    { id: "1", name: "", email: "", department: "", status: "pending" },
+    { id: "1", name: "", email: "", department: "", role: "EMPLOYEE", status: "pending" },
   ])
   const [employeesCreated, setEmployeesCreated] = useState(false)
 
@@ -337,6 +351,11 @@ export function OnboardingWizard() {
         }
 
         case 2: {
+          await saveEmailConfiguration(emailConfig)
+          break
+        }
+
+        case 3: {
           // Create any pending employees that have name + email filled
           const toCreate = employees.filter(
             (e) => e.name.trim() && e.email.trim() && e.status === "pending"
@@ -354,10 +373,16 @@ export function OnboardingWizard() {
                 name: emp.name,
                 email: emp.email,
                 department: emp.department || undefined,
+                role: emp.role,
               })
               const idx = updated.findIndex((e) => e.id === emp.id)
               if (result.success) {
-                updated[idx] = { ...updated[idx], status: "saved" }
+                updated[idx] = {
+                  ...updated[idx],
+                  status: "saved",
+                  tempPassword: result.tempPassword,
+                  emailSent: result.emailSent,
+                }
               } else {
                 updated[idx] = { ...updated[idx], status: "error", error: result.error }
               }
@@ -368,12 +393,12 @@ export function OnboardingWizard() {
           break
         }
 
-        case 3: {
+        case 4: {
           await saveServiceConfiguration(serviceConfig)
           break
         }
 
-        case 4: {
+        case 5: {
           // If client form has a name, create the client
           if (clientInfo.name.trim() && !clientCreated) {
             const result = await createClientFromOnboarding({
@@ -390,11 +415,6 @@ export function OnboardingWizard() {
             setClientError("")
             setClientCreated({ id: result.clientId!, name: result.clientName! })
           }
-          break
-        }
-
-        case 5: {
-          await saveEmailConfiguration(emailConfig)
           break
         }
 
@@ -428,7 +448,14 @@ export function OnboardingWizard() {
   const addEmployeeRow = () => {
     setEmployees((prev) => [
       ...prev,
-      { id: Date.now().toString(), name: "", email: "", department: "", status: "pending" },
+      {
+        id: Date.now().toString(),
+        name: "",
+        email: "",
+        department: "",
+        role: "EMPLOYEE",
+        status: "pending",
+      },
     ])
   }
 
@@ -465,7 +492,8 @@ export function OnboardingWizard() {
   }
 
   const progressPct = Math.round(((currentStep - 1) / TOTAL_STEPS) * 100)
-  const isOptionalStep = currentStep === 2 || currentStep === 4
+  // Employees and the first client — the two a firm can genuinely defer.
+  const isOptionalStep = currentStep === 3 || currentStep === 5
 
   return (
     <div className="fixed inset-0 bg-background z-50 flex flex-col overflow-auto">
@@ -585,12 +613,13 @@ export function OnboardingWizard() {
                   onNext={handleNext}
                 />
               )}
-              {currentStep === 2 && (
+              {currentStep === 3 && (
                 <StepAddEmployees
                   key="employees"
                   employees={employees}
                   created={employeesCreated}
                   saving={saving}
+                  canGrantManager
                   onAdd={addEmployeeRow}
                   onRemove={removeEmployeeRow}
                   onUpdate={updateEmployee}
@@ -599,7 +628,7 @@ export function OnboardingWizard() {
                   onSkip={handleSkipStep}
                 />
               )}
-              {currentStep === 3 && (
+              {currentStep === 4 && (
                 <StepAddServices
                   key="services"
                   data={serviceConfig}
@@ -610,7 +639,7 @@ export function OnboardingWizard() {
                   onBack={handleBack}
                 />
               )}
-              {currentStep === 4 && (
+              {currentStep === 5 && (
                 <StepAddFirstClient
                   key="client"
                   data={clientInfo}
@@ -625,7 +654,7 @@ export function OnboardingWizard() {
                   onSkip={handleSkipStep}
                 />
               )}
-              {currentStep === 5 && (
+              {currentStep === 2 && (
                 <StepConfigureEmail
                   key="email"
                   data={emailConfig}
@@ -1017,6 +1046,7 @@ function StepAddEmployees({
   employees,
   created,
   saving,
+  canGrantManager,
   onAdd,
   onRemove,
   onUpdate,
@@ -1027,6 +1057,8 @@ function StepAddEmployees({
   employees: EmployeeRow[]
   created: boolean
   saving: boolean
+  /** Only a Partner may create a Manager — and only a Partner sees this wizard. */
+  canGrantManager: boolean
   onAdd: () => void
   onRemove: (id: string) => void
   onUpdate: (id: string, field: keyof EmployeeRow, value: string) => void
@@ -1086,6 +1118,21 @@ function StepAddEmployees({
                 </div>
               </div>
 
+              {/* Provisioning always issues a password. If the invite could not
+                  be emailed and this is not shown, the new hire has an account
+                  and no way to reach it. */}
+              {emp.status === "saved" && emp.tempPassword && !emp.emailSent && (
+                <div className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] p-3">
+                  <p className="text-xs text-amber-400">
+                    The invite email could not be sent. Give {emp.name || "them"} this
+                    temporary password — they will be asked to change it at first sign-in.
+                  </p>
+                  <code className="mt-2 block rounded bg-black/30 px-2 py-1.5 font-mono text-sm">
+                    {emp.tempPassword}
+                  </code>
+                </div>
+              )}
+
               <div
                 className={cn(
                   "grid gap-3",
@@ -1116,6 +1163,18 @@ function StepAddEmployees({
                       onChange={(e) => onUpdate(emp.id, "email", e.target.value)}
                       placeholder="rajesh@yourfirm.com"
                       className="mt-1.5 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Role</Label>
+                  <div className="mt-1.5">
+                    <RolePicker
+                      id={`emp-role-${emp.id}`}
+                      value={emp.role}
+                      onChange={(role) => onUpdate(emp.id, "role", role)}
+                      canGrantManager={canGrantManager}
+                      disabled={saving}
                     />
                   </div>
                 </div>

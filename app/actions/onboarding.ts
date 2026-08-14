@@ -397,19 +397,47 @@ export async function saveNotificationPreferences(data: {
   return { success: true }
 }
 
+/**
+ * Add a team member during firm setup — with a login, like every other path.
+ *
+ * This used to write an Employee row with `userId: null` and stop there: no
+ * auth account, no password, no invite. A partner who used the wizard exactly
+ * as designed ended up with a team that could not sign in, and every escape was
+ * closed — adding them again failed as a duplicate, editing never provisioned,
+ * and "Reset password" was hidden because the row had no role. The only way out
+ * was deleting the employee, which is itself blocked once they hold work.
+ *
+ * It now does what the Employees page does. The two paths differing at all was
+ * the bug.
+ */
 export async function createEmployeeFromOnboarding(data: {
   name: string
   email: string
   department?: string
-}): Promise<{ success: boolean; error?: string; employeeId?: string }> {
+  role?: "EMPLOYEE" | "MANAGER"
+}): Promise<{
+  success: boolean
+  error?: string
+  employeeId?: string
+  tempPassword?: string
+  emailSent?: boolean
+  emailError?: string
+}> {
+  let session
   try {
-    await requirePartnerOrManager()
+    session = await requirePartnerOrManager()
   } catch {
     return { success: false, error: "Permission denied." }
   }
 
   if (!data.name?.trim() || !data.email?.trim()) {
     return { success: false, error: "Name and email are required." }
+  }
+
+  const role = data.role ?? "EMPLOYEE"
+  // Same rule as the Employees page: only a Partner may create a Manager.
+  if (role === "MANAGER" && session.user.role !== "PARTNER") {
+    return { success: false, error: "Only a Partner can add Managers." }
   }
 
   try {
@@ -419,10 +447,17 @@ export async function createEmployeeFromOnboarding(data: {
       return { success: false, error: "An employee with this email already exists." }
     }
 
-    const linkedUser = await prisma.user.findUnique({
-      where: { email: data.email.trim() },
-      select: { id: true },
+    const { provisionStaffAccount } = await import("@/lib/auth/provisioning")
+    const provisioned = await provisionStaffAccount({
+      name: data.name.trim(),
+      email: data.email.trim(),
+      role,
     })
+    // No Employee row without a login. A half-made team member is what this
+    // whole function exists to stop producing.
+    if (!provisioned.ok) {
+      return { success: false, error: provisioned.error }
+    }
 
     const employee = await prisma.employee.create({
       data: {
@@ -430,12 +465,20 @@ export async function createEmployeeFromOnboarding(data: {
         email: data.email.trim(),
         department: data.department?.trim() || null,
         isActive: true,
-        userId: linkedUser?.id ?? null,
+        userId: provisioned.userId,
       },
     })
 
     revalidatePath("/employees")
-    return { success: true, employeeId: employee.id }
+    return {
+      success: true,
+      employeeId: employee.id,
+      // Null when the login already existed — no fresh password was issued,
+      // and showing an empty box would suggest one was lost.
+      tempPassword: provisioned.tempPassword ?? undefined,
+      emailSent: provisioned.emailSent,
+      emailError: provisioned.emailError,
+    }
   } catch (error) {
     console.error("Failed to create employee during onboarding:", error)
     return { success: false, error: "Failed to create employee. Please try again." }

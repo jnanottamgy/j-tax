@@ -390,6 +390,77 @@ export async function resetEmployeePassword(
   return { success: true, tempPassword: result.tempPassword, email: existing.email }
 }
 
+/**
+ * Give an existing team member a login.
+ *
+ * The rescue for anyone stranded with `userId: null` — every employee the setup
+ * wizard created before it provisioned, plus anyone deliberately added before
+ * they needed access. Until this existed there was no way out: adding them
+ * again failed as a duplicate, editing never provisioned, and the "Reset
+ * password" item is hidden for a row with no role, so the one action that
+ * sounds like it would help was not even on screen.
+ *
+ * Also the honest way to add somebody who is not getting access yet — an
+ * articled assistant on the books from day one, a partner's name on the roster
+ * — because it makes "no login" a state you can leave rather than one you fall
+ * into.
+ */
+export async function issueEmployeeLogin(
+  employeeId: string,
+  role: "EMPLOYEE" | "MANAGER" = "EMPLOYEE"
+): Promise<{
+  success?: boolean
+  error?: string
+  tempPassword?: string
+  emailSent?: boolean
+  emailError?: string
+  email?: string
+}> {
+  let session
+  try {
+    session = await requirePartnerOrManager()
+  } catch {
+    return { error: "You do not have permission to issue logins." }
+  }
+
+  if (role === "MANAGER" && session.user.role !== "PARTNER") {
+    return { error: "Only a Partner can grant the Manager role." }
+  }
+
+  const existing = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    include: { user: { select: { id: true } } },
+  })
+  if (!existing) return { error: "Employee not found." }
+  if (existing.userId) {
+    return { error: "This team member already has a login. Use Reset password instead." }
+  }
+  if (!existing.email?.trim()) {
+    return { error: "Add an email address to this team member first — a login needs one." }
+  }
+
+  const provisioned = await provisionStaffAccount({
+    name: existing.name,
+    email: existing.email.trim(),
+    role,
+  })
+  if (!provisioned.ok) return { error: provisioned.error }
+
+  await prisma.employee.update({
+    where: { id: employeeId },
+    data: { userId: provisioned.userId },
+  })
+
+  revalidatePath("/employees")
+  return {
+    success: true,
+    tempPassword: provisioned.tempPassword ?? undefined,
+    emailSent: provisioned.emailSent,
+    emailError: provisioned.emailError,
+    email: existing.email,
+  }
+}
+
 export async function enableEmployee(employeeId: string) {
   let session
   try {

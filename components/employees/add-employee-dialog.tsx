@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { createEmployee, updateEmployee } from "@/app/actions/employees"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
+import { RolePicker } from "@/components/employees/role-picker"
 import { SubmitButton } from "@/components/forms/submit-button"
 import { Button } from "@/components/ui/button"
 import {
@@ -274,25 +275,17 @@ export function AddEmployeeDialog({
                   />
                 </FormField>
 
+                {/* Was a bare dropdown of three words. Deciding whether
+                    somebody can see every client's fees is the highest-
+                    consequence choice in the app and was the least explained. */}
                 <FormField label="Role" htmlFor="role" error={getError("role")}>
-                  <select
+                  <RolePicker
                     id="role"
                     value={formData.role}
-                    onChange={(e) =>
-                      setFormData({ ...formData, role: e.target.value as "EMPLOYEE" | "MANAGER" })
-                    }
-                    className="input-premium h-10 w-full rounded-xl px-3 text-sm"
-                    disabled={isPending || viewerRole !== "PARTNER"}
-                    aria-invalid={!!getError("role")}
-                  >
-                    <option value="EMPLOYEE">Employee</option>
-                    {viewerRole === "PARTNER" && <option value="MANAGER">Manager</option>}
-                  </select>
-                  {viewerRole !== "PARTNER" && (
-                    <p className="mt-1 text-[11px] text-muted-foreground/70">
-                      Only a Partner can add Managers.
-                    </p>
-                  )}
+                    onChange={(role) => setFormData({ ...formData, role })}
+                    canGrantManager={viewerRole === "PARTNER"}
+                    disabled={isPending}
+                  />
                 </FormField>
               </div>
 
