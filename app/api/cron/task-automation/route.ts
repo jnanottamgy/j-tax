@@ -94,7 +94,13 @@ export async function GET(request: Request) {
         continue
       }
 
-      // Notify the assignee AND the client's assigned employee (if different).
+      // Notify the assignee, the client's owner — and management.
+      //
+      // This used to tell only the first two, which are the people already
+      // closest to the task and already late. An escalation that reaches
+      // nobody above the person who missed the deadline is not an escalation,
+      // and three days past due on a statutory filing is exactly when a
+      // partner needs to know without being asked.
       const recipients = new Set<string>()
       if (task.assignedEmployee?.userId) {
         recipients.add(task.assignedEmployee.userId)
@@ -102,6 +108,11 @@ export async function GET(request: Request) {
       if (task.client.assignedEmployee?.userId) {
         recipients.add(task.client.assignedEmployee.userId)
       }
+      const management = await prisma.user.findMany({
+        where: { role: { in: ["PARTNER", "MANAGER"] } },
+        select: { id: true },
+      })
+      for (const u of management) recipients.add(u.id)
 
       for (const userId of recipients) {
         try {

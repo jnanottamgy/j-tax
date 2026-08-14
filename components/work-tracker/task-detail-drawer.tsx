@@ -16,6 +16,7 @@ import { addAttachment } from "@/app/actions/tasks"
 import { uploadFile } from "@/lib/storage/storage"
 import { daysWorkedSince } from "@/lib/time/format"
 import { cn } from "@/lib/utils"
+import { DECLINE_REASONS } from "@/lib/tasks/transitions"
 import { toast } from "sonner"
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DATA_AWAITED" | "UNDER_REVIEW" | "FILED_DONE" | "ON_HOLD"
@@ -71,7 +72,7 @@ interface TaskDetailDrawerProps {
   onOpenChange: (open: boolean) => void
   onStatusChange?: (taskId: string, status: TaskStatus) => void
   onAccept?: (taskId: string) => void
-  onDecline?: (taskId: string, reason: string) => void
+  onDecline?: (taskId: string, reason: string, reasonCode: string) => void
   onAddComment?: (taskId: string, content: string) => void
   onDeleteComment?: (commentId: string) => void
   onDeleteAttachment?: (attachmentId: string) => void
@@ -98,6 +99,7 @@ export function TaskDetailDrawer({
   const [commentText, setCommentText] = useState("")
   const [declineOpen, setDeclineOpen] = useState(false)
   const [declineReason, setDeclineReason] = useState("")
+  const [declineCode, setDeclineCode] = useState<string>(DECLINE_REASONS[0].value)
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
 
@@ -282,10 +284,25 @@ export function TaskDetailDrawer({
                 <div className="text-xs text-muted-foreground mb-2">This task was assigned to you</div>
                 {declineOpen ? (
                   <div className="space-y-2">
+                    {/* A category as well as the words. Free text alone could
+                        not tell the firm whether work is being refused for
+                        capacity, for skill, or for missing information — which
+                        is the only thing that makes the pattern actionable. */}
+                    <select
+                      value={declineCode}
+                      onChange={(e) => setDeclineCode(e.target.value)}
+                      className="input-premium h-9 w-full rounded-lg px-3 text-sm"
+                    >
+                      {DECLINE_REASONS.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
                     <Textarea
                       value={declineReason}
                       onChange={(e) => setDeclineReason(e.target.value)}
-                      placeholder="Reason for declining (e.g. workload, wrong assignee)…"
+                      placeholder="Anything the manager should know before reassigning it…"
                       className="min-h-20"
                     />
                     <div className="flex gap-2">
@@ -294,9 +311,10 @@ export function TaskDetailDrawer({
                         variant="destructive"
                         disabled={!declineReason.trim()}
                         onClick={() => {
-                          onDecline?.(task.id, declineReason.trim())
+                          onDecline?.(task.id, declineReason.trim(), declineCode)
                           setDeclineOpen(false)
                           setDeclineReason("")
+                          setDeclineCode(DECLINE_REASONS[0].value)
                         }}
                       >
                         Submit decline

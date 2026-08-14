@@ -478,6 +478,13 @@ model Task {
   acceptedAt        DateTime?
   declinedAt        DateTime?
   declinedReason    String?
+  /// One of DECLINE_REASONS — free text alone could not tell the firm whether
+  /// work is being refused for capacity, for skill, or for missing information.
+  declinedReasonCode String?
+  /// Who refused it. Declining now unassigns the task — it used to stay on the
+  /// decliner's plate, counting against their workload while they were blocked
+  /// from touching it — so without this there would be no record of who said no.
+  declinedByEmployeeId String?
   remarks           String?
   isOverdue         Boolean          @default(false)
   escalated         Boolean          @default(false)

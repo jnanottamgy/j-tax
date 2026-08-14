@@ -3,7 +3,10 @@ import { NextResponse } from "next/server"
 
 import { prisma } from "@/lib/prisma"
 import { tenantContext } from "@/lib/tenant/context"
-import { reportUnexpectedAbsences } from "@/lib/workforce/maintenance"
+import {
+  chaseUnacceptedTasks,
+  reportUnexpectedAbsences,
+} from "@/lib/workforce/maintenance"
 
 function safeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false
@@ -39,15 +42,18 @@ export async function GET(request: Request) {
     })
 
     let flagged = 0
+    let unaccepted = 0
     for (const firm of firms) {
       await tenantContext.run({ firmId: firm.id }, async () => {
         flagged += await reportUnexpectedAbsences()
+        // Same mid-morning slot: work offered and never answered, due soon.
+        unaccepted += await chaseUnacceptedTasks()
       })
     }
 
     return NextResponse.json({
       success: true,
-      message: `Flagged ${flagged} unexplained absence(s) across ${firms.length} firm(s).`,
+      message: `Flagged ${flagged} unexplained absence(s) and ${unaccepted} unaccepted task(s) across ${firms.length} firm(s).`,
     })
   } catch (error) {
     console.error("Attendance check CRON Error:", error)

@@ -22,6 +22,7 @@ import { serviceLabel } from "@/lib/clients/constants"
 import { AddTaskDialog, type EditableTask } from "@/components/work-tracker/add-task-dialog"
 import { AddInvoiceDialog } from "@/components/payments/add-invoice-dialog"
 import { getTasksData, getTaskDetail, updateTaskStatus, acceptTask, declineTask, deleteTask, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
+import { ReasonPromptDialog } from "@/components/work-tracker/reason-prompt-dialog"
 import { toast } from "sonner"
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DATA_AWAITED" | "UNDER_REVIEW" | "FILED_DONE" | "ON_HOLD"
@@ -59,6 +60,13 @@ export function WorkTrackerClient() {
   const [filters, setFilters] = useState<TaskFilterValues>({})
   // Bumped to remount TaskFilters when filters are cleared from outside it.
   const [filtersKey, setFiltersKey] = useState(0)
+  // Raised when a status change needs a written reason before it can go through.
+  const [reasonPrompt, setReasonPrompt] = useState<{
+    taskId: string
+    status: TaskStatus
+    message: string
+  } | null>(null)
+  const [reasonText, setReasonText] = useState("")
 
   const loadData = useCallback(async () => {
     try {
@@ -112,9 +120,19 @@ export function WorkTrackerClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkTaskId, openedDeepLink])
 
-  const handleStatusChange = async (taskId: string, newStatus: TaskStatus) => {
+  const handleStatusChange = async (taskId: string, newStatus: TaskStatus, reason?: string) => {
     try {
-      const result = await updateTaskStatus(taskId, newStatus)
+      const result = await updateTaskStatus(taskId, newStatus, reason)
+
+      // Sending work back, or reopening something filed, has to say why — the
+      // assignee only ever saw "check the task comments" with no comment in
+      // them. The prompt is raised here rather than blocking with an error.
+      const needsReason = result.fieldErrors?.reason?.[0]
+      if (needsReason) {
+        setReasonPrompt({ taskId, status: newStatus, message: needsReason })
+        return
+      }
+
       if (result.success) {
         toast.success("Task status updated")
         const completed = tasks.find((t) => t.id === taskId)
@@ -176,10 +194,12 @@ export function WorkTrackerClient() {
     }
   }
 
-  const handleDecline = async (taskId: string, reason: string) => {
-    const result = await declineTask(taskId, reason)
+  const handleDecline = async (taskId: string, reason: string, reasonCode?: string) => {
+    const result = await declineTask(taskId, reason, reasonCode)
     if (result.success) {
-      toast.success("Task declined — a manager will reassign it")
+      // Declining now releases the task rather than leaving it sitting on the
+      // decliner's board, blocked and still counted against their workload.
+      toast.success("Declined — it's back in the unassigned queue")
       await loadData()
       refreshSelected(taskId)
     } else {
@@ -400,6 +420,24 @@ export function WorkTrackerClient() {
         clients={clients}
         task={editingTask}
         initialClientId={initialClientId}
+      />
+
+      <ReasonPromptDialog
+        open={reasonPrompt !== null}
+        message={reasonPrompt?.message ?? ""}
+        value={reasonText}
+        onChange={setReasonText}
+        onCancel={() => {
+          setReasonPrompt(null)
+          setReasonText("")
+        }}
+        onSubmit={() => {
+          const prompt = reasonPrompt
+          const text = reasonText.trim()
+          setReasonPrompt(null)
+          setReasonText("")
+          if (prompt && text) void handleStatusChange(prompt.taskId, prompt.status, text)
+        }}
       />
 
       {/* Filing capture — asked first, because the ARN is on screen now and

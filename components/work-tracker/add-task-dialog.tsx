@@ -1,8 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { AlertTriangle } from "lucide-react"
 
-import { createTask, updateTask } from "@/app/actions/tasks"
+import { checkTaskAssignment, createTask, updateTask } from "@/app/actions/tasks"
+import type { AssignmentConcern } from "@/lib/tasks/assignment"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
 import { SubmitButton } from "@/components/forms/submit-button"
@@ -121,8 +123,31 @@ export function AddTaskDialog({
     )
   }, [open, task, initialClientId, clearErrors])
 
+  // Checked as the assignee and due date are chosen, so the answer arrives
+  // while the choice is still open.
+  const [concerns, setConcerns] = useState<AssignmentConcern[]>([])
+  useEffect(() => {
+    const employeeId = formData.assignedEmployeeId
+    if (!employeeId) {
+      setConcerns([])
+      return
+    }
+    let cancelled = false
+    checkTaskAssignment({
+      employeeId,
+      dueDate: formData.dueDate || null,
+      taskId: task?.id,
+    })
+      .then((r) => { if (!cancelled) setConcerns(r.concerns) })
+      .catch(() => { if (!cancelled) setConcerns([]) })
+    return () => { cancelled = true }
+  }, [formData.assignedEmployeeId, formData.dueDate, task?.id])
+
+  const blocked = concerns.some((c) => c.severity === "BLOCKING")
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (blocked) return
     submit(formData)
   }
 
@@ -197,13 +222,37 @@ export function AddTaskDialog({
                 className="input-premium h-10 w-full rounded-xl px-3 text-sm"
                 disabled={isPending}
               >
-                <option value="">Unassigned</option>
+                <option value="">
+                  Unassigned — defaults to whoever owns the client
+                </option>
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>
                     {employee.name}
                   </option>
                 ))}
               </select>
+
+              {/* What this assignment actually lands on somebody. The capacity
+                  and leave data existed; assignment consulted neither, so you
+                  found out you had overloaded a person on a different page,
+                  later. */}
+              {concerns.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {concerns.map((c) => (
+                    <li
+                      key={c.kind}
+                      className={
+                        c.severity === "BLOCKING"
+                          ? "flex items-start gap-1.5 text-xs text-red-400"
+                          : "flex items-start gap-1.5 text-xs text-amber-400"
+                      }
+                    >
+                      <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
+                      {c.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </FormField>
 
             <FormField label="Priority" htmlFor="priority" error={getError("priority")}>

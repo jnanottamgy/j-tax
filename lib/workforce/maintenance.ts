@@ -130,3 +130,63 @@ export async function reportUnexpectedAbsences(now = new Date()): Promise<number
 
   return missing.length
 }
+
+/**
+ * Chase work that has been offered and not answered.
+ *
+ * A task sitting PENDING was never chased by anything. Nobody was told the work
+ * had not even been accepted, and the due date ran regardless — so the first
+ * sign was a missed deadline on a task the assignee had never opened.
+ *
+ * Only chases tasks that have been waiting more than a day and are actually due
+ * soon: an unanswered task due in three months is not yet a problem, and an
+ * alert that fires for those is one nobody reads.
+ */
+export async function chaseUnacceptedTasks(now = new Date()): Promise<number> {
+  const waitingSince = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  const dueSoon = new Date(now.getTime() + 7 * 86_400_000)
+
+  const stale = await prisma.task.findMany({
+    where: {
+      acceptanceStatus: "PENDING",
+      status: { not: "FILED_DONE" },
+      assignedEmployeeId: { not: null },
+      createdAt: { lt: waitingSince },
+      dueDate: { not: null, lte: dueSoon },
+    },
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+      assignedEmployee: { select: { name: true, userId: true } },
+    },
+    take: 100,
+  })
+  if (stale.length === 0) return 0
+
+  const { notifyRoles, notifyUser } = await import("@/lib/notifications/notify")
+
+  // The assignee first — most of the time they simply have not looked.
+  for (const t of stale) {
+    if (!t.assignedEmployee?.userId) continue
+    await notifyUser(t.assignedEmployee.userId, {
+      title: `Not yet accepted: ${t.title}`,
+      message: `This was assigned to you and is due soon. Accept it, or decline it so somebody else can pick it up.`,
+      type: "WARNING",
+      entityType: "TASK",
+      entityId: t.id,
+    })
+  }
+
+  // And management, because unanswered work due this week is their problem too.
+  await notifyRoles(["PARTNER", "MANAGER"], {
+    title: `${stale.length} assigned task${stale.length === 1 ? "" : "s"} not yet accepted`,
+    message: stale
+      .slice(0, 5)
+      .map((t) => `${t.title} (${t.assignedEmployee?.name ?? "unassigned"})`)
+      .join("; "),
+    type: "WARNING",
+  })
+
+  return stale.length
+}
