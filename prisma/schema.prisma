@@ -24,6 +24,10 @@ model Firm {
   settings    FirmSettings?
   users User[]
   employees Employee[]
+  employeeLeave EmployeeLeave[]
+  creditNotes CreditNote[]
+  clientAcceptances ClientAcceptance[]
+  peerReviews PeerReview[]
   clients Client[]
   clientGroups ClientGroup[]
   tasks Task[]
@@ -186,6 +190,7 @@ model Employee {
   timeEntries        TimeEntry[]
   reviewTasks        Task[]             @relation("TaskReviewer")
   taxNotices         TaxNotice[]
+  leave              EmployeeLeave[]
 
   @@index([name])
   @@index([department])
@@ -300,6 +305,8 @@ model Client {
   portalLastSeenAt     DateTime?
 
   services             ClientService[]
+  creditNotes          CreditNote[]
+  acceptanceChecks     ClientAcceptance[]
   documentChecklist    ClientDocumentChecklistItem[]
   tasks                Task[]
   complianceSchedules  ComplianceSchedule[]
@@ -709,6 +716,13 @@ model Document {
   version     Int               @default(1)
   expiryDate  DateTime?
   renewalDate DateTime?
+  /// Earliest date this file may be destroyed.
+  ///
+  /// SQC 1 expects working papers retained for at least seven years from the
+  /// date of the report. With no field for it, nobody could answer either half
+  /// of the question a peer reviewer asks: what must still be kept, and what
+  /// has been held past the point where keeping it is its own liability.
+  retentionUntil DateTime?
   /// Soft delete — recycle bin. Every list/query must filter deletedAt: null.
   deletedAt   DateTime?
   createdAt   DateTime          @default(now())
@@ -945,6 +959,7 @@ model Invoice {
 
   payments          PaymentReceipt[]
   followUps         FollowUp[]
+  creditNotes       CreditNote[]
   reminders         InvoiceReminder[]
 
   @@index([clientId])
@@ -2045,4 +2060,173 @@ model DocumentRequestItem {
   @@index([requestId])
   @@index([status])
   @@map("document_request_items")
+}
+
+// ─── Leave ──────────────────────────────────────────────────────────────────
+
+/// Who is away, and when.
+///
+/// Assignment had no idea. Work was routed to whoever owned the client, and if
+/// that person was on leave for the fortnight covering a GST deadline, nothing
+/// said so — the task sat in their queue looking assigned and worked-on until
+/// the deadline passed. A leave record is also the missing half of capacity:
+/// an employee with twenty tasks and ten working days left is not the same as
+/// one with twenty tasks and twenty days.
+model EmployeeLeave {
+  firmId String @default("")
+  firm   Firm   @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  /// Inclusive. A single day is startDate == endDate.
+  startDate  DateTime
+  endDate    DateTime
+  /// ANNUAL, SICK, UNPAID, SABBATICAL, OTHER
+  type       String   @default("ANNUAL")
+  /// REQUESTED, APPROVED, DECLINED, CANCELLED
+  status     String   @default("APPROVED")
+  notes      String?
+  approvedBy String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([employeeId, startDate])
+  @@index([startDate, endDate])
+  @@index([firmId])
+  @@map("employee_leave")
+}
+
+// ─── Credit notes ───────────────────────────────────────────────────────────
+
+/// A credit against an issued invoice.
+///
+/// An invoice could be revised (a new document superseding the old) or waived
+/// (written off whole), and neither is a credit note. Under GST s.34 a
+/// registered supplier reduces an already-reported invoice by issuing a credit
+/// note, which goes into GSTR-1 in its own right and carries a deadline — 30
+/// November following the financial year, after which the tax cannot be
+/// adjusted. Doing it by revising the invoice misstates a return that has
+/// already been filed; doing it by waiving overstates the write-off and loses
+/// the GST entirely.
+model CreditNote {
+  firmId String @default("")
+  firm   Firm   @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  id               String   @id @default(cuid())
+  /// CN-<FY>-NNNN, continuous per firm like the invoice series.
+  creditNoteNumber String
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  /// FEE_REDUCTION, SERVICE_NOT_RENDERED, DUPLICATE, ERROR, GOODWILL
+  reasonCode String
+  reason     String
+
+  /// Fee credited, excluding GST.
+  professionalFee Decimal  @db.Decimal(12, 2)
+  taxRate         Decimal? @db.Decimal(5, 2)
+  taxAmount       Decimal  @db.Decimal(12, 2)
+  /// Total credited, including GST — what comes off the invoice.
+  amount          Decimal  @db.Decimal(12, 2)
+  cgstAmount      Decimal? @db.Decimal(12, 2)
+  sgstAmount      Decimal? @db.Decimal(12, 2)
+  igstAmount      Decimal? @db.Decimal(12, 2)
+  placeOfSupply   String?
+
+  issueDate DateTime @default(now())
+  issuedBy  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([firmId, creditNoteNumber])
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([firmId])
+  @@map("credit_notes")
+}
+
+// ─── Client acceptance / conflict check ─────────────────────────────────────
+
+/// The check a firm is expected to run before taking on a client.
+///
+/// Nothing stood between "add client" and a live engagement. A prospect could
+/// be the opposing party in a dispute the firm is already acting on, a related
+/// party of an audit client, or simply the same entity under a second name —
+/// and the app would happily create both. ICAI's Code of Ethics makes
+/// acceptance a decision that has to be made and recorded, not assumed.
+model ClientAcceptance {
+  firmId String @default("")
+  firm   Firm   @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  id           String  @id @default(cuid())
+  prospectName String
+  pan          String?
+  gstin        String?
+  /// Names the prospect is connected to — group companies, directors, partners.
+  relatedParties String[]
+
+  /// What the automated check turned up, frozen at decision time.
+  conflictsFound Json?
+  /// ACCEPTED, DECLINED, PENDING
+  outcome   String  @default("PENDING")
+  /// Why — required when declining or accepting despite a conflict.
+  rationale String?
+
+  decidedBy String?
+  decidedAt DateTime?
+
+  /// Set once the accepted prospect becomes a client.
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([firmId])
+  @@index([clientId])
+  @@map("client_acceptances")
+}
+
+// ─── Peer review & file retention ───────────────────────────────────────────
+
+/// ICAI peer review rounds.
+///
+/// A practice unit is reviewed on a cycle and must hold a valid certificate to
+/// sign certain attest work. The firm had nowhere to record when it was last
+/// reviewed or when the next one falls due, so the date lived in a partner's
+/// memory until the certificate lapsed.
+model PeerReview {
+  firmId String @default("")
+  firm   Firm   @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  id             String   @id @default(cuid())
+  /// The period the review covered.
+  periodFrom     DateTime
+  periodTo       DateTime
+  reviewerName   String
+  reviewerFrn    String?
+  /// SCHEDULED, IN_PROGRESS, COMPLETED
+  status         String   @default("SCHEDULED")
+  reviewedOn     DateTime?
+  certificateNo  String?
+  /// When the certificate lapses and the next review falls due.
+  validUntil     DateTime?
+  observations   String?
+  notes          String?
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([firmId])
+  @@index([validUntil])
+  @@map("peer_reviews")
 }

@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Receipt,
   ShieldAlert,
+  ReceiptText,
   ShieldCheck,
   Loader2,
   Plus,
@@ -47,6 +48,7 @@ import { useValidatedForm } from "@/hooks/use-validated-form"
 import { stateName } from "@/lib/invoices/gst"
 import { followUpSchema, recordPaymentSchema } from "@/lib/validations/invoice"
 import { TDS_SECTIONS } from "@/lib/billing/tds"
+import { CreditNoteDialog } from "@/components/payments/credit-note-dialog"
 
 interface Payment {
   id: string
@@ -146,6 +148,7 @@ export function InvoiceDetailClient({
   const [paymentMethod, setPaymentMethod] = useState("")
   const [paymentRef, setPaymentRef] = useState("")
   // Follow-up dialog
+  const [creditOpen, setCreditOpen] = useState(false)
   const [followUpOpen, setFollowUpOpen] = useState(false)
   const [followUpNotes, setFollowUpNotes] = useState("")
 
@@ -523,6 +526,18 @@ export function InvoiceDetailClient({
               <ShieldAlert className="mr-2 h-4 w-4" />
               Mark as Disputed
             </Button>
+            {/* Reducing an issued invoice is a credit note, not a revision and
+                not a write-off. Sits next to Waive because that is where people
+                went looking for it and then wrote off the whole thing. */}
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              disabled={!canAct || invoice.status === "DRAFT"}
+              onClick={() => setCreditOpen(true)}
+            >
+              <ReceiptText className="mr-2 h-4 w-4" />
+              Issue Credit Note
+            </Button>
             <Button
               variant="outline"
               className="w-full justify-start text-muted-foreground"
@@ -535,6 +550,21 @@ export function InvoiceDetailClient({
           </CardContent>
         </Card>
       </div>
+
+      <CreditNoteDialog
+        open={creditOpen}
+        onOpenChange={setCreditOpen}
+        invoice={{
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          issueDate: invoice.issueDate,
+          amount: invoice.amount,
+          paidAmount: invoice.paidAmount,
+          professionalFee: invoice.professionalFee ?? null,
+          taxRate: invoice.taxRate ?? null,
+        }}
+        onIssued={() => router.refresh()}
+      />
 
       {/* Payment History + Follow-ups */}
       <div className="grid gap-4 md:grid-cols-2">

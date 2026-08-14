@@ -8,6 +8,7 @@ import { canAccessClientById } from "@/lib/auth/scope"
 import { getSession } from "@/lib/auth/session"
 import { prisma } from "@/lib/prisma"
 import { recordTimelineEvent } from "@/lib/timeline/events"
+import { parseFinancialYear } from "@/lib/india/format"
 
 /**
  * Engagement letters and filing history.
@@ -405,4 +406,71 @@ export async function getClientsMissingEngagementLetter(financialYearLabel: stri
   })
 
   return clients
+}
+
+/**
+ * Open next year's engagement letter from this year's.
+ *
+ * SA 210 expects terms agreed before work starts, and in practice a firm agrees
+ * them once and rolls them forward. The app could record a letter and tell you
+ * when it expired, and then left you to retype the whole thing — so the renewal
+ * that should take a minute took long enough to postpone, and the engagement
+ * ran on lapsed terms.
+ *
+ * The copy is a DRAFT: rolling terms forward is a decision, and a letter that
+ * issued itself would be terms the client never agreed to.
+ */
+export async function renewEngagementLetter(
+  letterId: string
+): Promise<{ success: boolean; error?: string; letterId?: string }> {
+  let session
+  try {
+    session = await requirePartnerOrManager()
+  } catch {
+    return { success: false, error: "You do not have permission to renew engagement letters." }
+  }
+
+  const original = await prisma.engagementLetter.findUnique({ where: { id: letterId } })
+  if (!original) return { success: false, error: "Engagement letter not found." }
+  if (!(await canAccessClientById(session, original.clientId))) {
+    return { success: false, error: "Engagement letter not found." }
+  }
+
+  const parsedFy = parseFinancialYear(original.financialYear)
+  if (!parsedFy) {
+    return { success: false, error: `Cannot work out the year after "${original.financialYear}".` }
+  }
+  const nextStart = parsedFy.startYear + 1
+  const nextFy = `${nextStart}-${String((nextStart + 1) % 100).padStart(2, "0")}`
+
+  const existing = await prisma.engagementLetter.findFirst({
+    where: { clientId: original.clientId, financialYear: nextFy },
+    select: { id: true },
+  })
+  if (existing) {
+    return { success: false, error: `A letter for ${nextFy} already exists.` }
+  }
+
+  try {
+    const copy = await prisma.engagementLetter.create({
+      data: {
+        clientId: original.clientId,
+        financialYear: nextFy,
+        serviceTypes: original.serviceTypes,
+        scope: original.scope,
+        feeAgreed: original.feeAgreed,
+        status: "DRAFT",
+        // The new terms run to the end of the year they cover — 31 March.
+        expiresAt: new Date(nextStart + 1, 2, 31, 23, 59, 59, 999),
+        notes: original.notes,
+        createdBy: session.user.id,
+      },
+    })
+
+    revalidatePath(`/clients/${original.clientId}`)
+    return { success: true, letterId: copy.id }
+  } catch (error) {
+    console.error("Failed to renew engagement letter:", error)
+    return { success: false, error: "Could not create the renewal. Please try again." }
+  }
 }
