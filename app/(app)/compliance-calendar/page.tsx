@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation"
 
-import { getSession } from "@/lib/auth/session"
-import { ComplianceCalendarClient } from "../calendar/compliance-calendar-client"
-
-// Statutory, as-per-law compliance calendar — management only.
-export default async function ComplianceCalendarPage() {
-  const session = await getSession()
-  if (!session) redirect("/login")
-  if (session.user.role !== "PARTNER" && session.user.role !== "MANAGER") {
-    redirect("/unauthorized")
-  }
-  return <ComplianceCalendarClient variant="compliance" />
+/**
+ * The statutory calendar is no longer its own page — it is a filter on
+ * /calendar. This keeps every existing link, bookmark and notification href
+ * working rather than turning them into 404s.
+ *
+ * The old page was Partner/Manager only. That restriction is not carried over
+ * on purpose: getComplianceEvents already scopes an employee to the clients
+ * they are assigned, so what an employee sees here is the statutory deadlines
+ * for their own work — which is the thing they are working to.
+ */
+export default function ComplianceCalendarPage() {
+  redirect("/calendar?view=statutory")
 }

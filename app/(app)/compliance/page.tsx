@@ -20,11 +20,14 @@ export default async function CompliancePage() {
 
   return (
     <PageContainer className="space-y-6">
-      <Breadcrumb items={[{ label: "Compliance" }]} />
+      {/* "Compliance" is what the software called it; "filings" is what the
+          firm calls it. The route stays /compliance so existing links, saved
+          bookmarks and notification hrefs keep working. */}
+      <Breadcrumb items={[{ label: "Filings" }]} />
       <PageHeader
-        label="Compliance management"
-        title="Compliance Operations"
-        description="Monitor filings, deadlines, and compliance health across all clients."
+        label="Filing operations"
+        title="Filings"
+        description="What is due, what is done, and what is late — across every client."
       />
       {/* Silent-exclusion warning. Renders nothing when every client with
           active services is actually in the engine. */}

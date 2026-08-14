@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { Download, Eye, Plus, Receipt, Search, Trash2 } from "lucide-react"
+import { Download, Eye, Filter, Plus, Receipt, Search, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { deleteInvoice } from "@/app/actions/invoices"
@@ -23,6 +23,21 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { INVOICE_STATUS_MEANING, statusMeaning } from "@/lib/status/consequences"
 import { ListEmptyState } from "@/components/ui/list-empty-state"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  DUE_WINDOW_LABELS,
+  DUE_WINDOW_OPTIONS,
+  matchesDueWindow,
+  type DueWindow,
+} from "@/lib/filters/due-window"
+import { serviceLabel } from "@/lib/clients/constants"
 
 type InvoicesPageClientProps = {
   initialInvoices: any[]
@@ -35,6 +50,9 @@ type InvoicesPageClientProps = {
   }>
   firmState?: string | null
 }
+
+/** Sentinel for invoices whose client has no owner — worth filtering *to*. */
+const UNASSIGNED = "__unassigned__"
 
 const STATUS_FILTERS = [
   "ALL",
@@ -60,6 +78,12 @@ export function InvoicesPageClient({
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("ALL")
   const [search, setSearch] = useState("")
+  // The three slices a manager actually works in. Status describes how an
+  // invoice is going; none of these do, and "whose clients owe us, due when"
+  // is the question that gets asked on a Monday.
+  const [ownerFilter, setOwnerFilter] = useState<string[]>([])
+  const [serviceFilter, setServiceFilter] = useState<string[]>([])
+  const [dueWindow, setDueWindow] = useState<DueWindow | undefined>()
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
 
   // Quick actions elsewhere deep-link here with ?new=1 to open the dialog.
@@ -70,17 +94,71 @@ export function InvoicesPageClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Owners and services come from the invoices themselves rather than a
+  // separate query, so the dropdowns only ever offer values that would
+  // actually narrow something.
+  const ownerOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const inv of invoices) {
+      const name = inv.client?.assignedEmployeeName
+      if (name) seen.set(name, name)
+    }
+    return [...seen.keys()].sort()
+  }, [invoices])
+
+  const serviceOptions = useMemo(() => {
+    const seen = new Set<string>()
+    for (const inv of invoices) if (inv.serviceType) seen.add(inv.serviceType)
+    return [...seen].sort()
+  }, [invoices])
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const now = new Date()
     return invoices.filter((inv) => {
       if (statusFilter !== "ALL" && inv.status !== statusFilter) return false
+
+      if (ownerFilter.length > 0) {
+        const owner = inv.client?.assignedEmployeeName ?? UNASSIGNED
+        if (!ownerFilter.includes(owner)) return false
+      }
+      if (serviceFilter.length > 0 && !serviceFilter.includes(inv.serviceType ?? "")) {
+        return false
+      }
+      if (dueWindow && !matchesDueWindow(inv.dueDate, dueWindow, now)) return false
+
       if (!q) return true
       return (
         String(inv.invoiceNumber).toLowerCase().includes(q) ||
         String(inv.client?.name ?? "").toLowerCase().includes(q)
       )
     })
-  }, [invoices, statusFilter, search])
+  }, [invoices, statusFilter, search, ownerFilter, serviceFilter, dueWindow])
+
+  const activeFilterLabels = [
+    statusFilter !== "ALL" && `status “${statusFilter.replace(/_/g, " ").toLowerCase()}”`,
+    ownerFilter.length > 0 && `owner “${ownerFilter.join(", ")}”`,
+    serviceFilter.length > 0 &&
+      `service “${serviceFilter.map((s) => serviceLabel(s as never)).join(", ")}”`,
+    dueWindow && `due ${DUE_WINDOW_LABELS[dueWindow].toLowerCase()}`,
+    search.trim() && `search “${search.trim()}”`,
+  ].filter(Boolean) as string[]
+
+  const clearFilters = () => {
+    setStatusFilter("ALL")
+    setSearch("")
+    setOwnerFilter([])
+    setServiceFilter([])
+    setDueWindow(undefined)
+  }
+
+  const toggle = (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string
+  ) =>
+    setter((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    )
 
   const handleDeleteConfirmed = async () => {
     const target = deleteTarget
@@ -135,6 +213,97 @@ export function InvoicesPageClient({
             </button>
           ))}
         </div>
+
+        {/* Owner, service and due window — the same three slices the clients
+            list and the work tracker offer. A manager should not have to learn
+            a different way to narrow each list. */}
+        <div className="flex flex-wrap gap-1.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-xl">
+                <Filter className="size-3.5" />
+                Owner
+                {ownerFilter.length > 0 && (
+                  <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">{ownerFilter.length}</Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-72 w-56 overflow-y-auto">
+              <DropdownMenuLabel>Filter by assigned employee</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={ownerFilter.includes(UNASSIGNED)}
+                onCheckedChange={() => toggle(setOwnerFilter, UNASSIGNED)}
+              >
+                Unassigned
+              </DropdownMenuCheckboxItem>
+              {ownerOptions.map((name) => (
+                <DropdownMenuCheckboxItem
+                  key={name}
+                  checked={ownerFilter.includes(name)}
+                  onCheckedChange={() => toggle(setOwnerFilter, name)}
+                >
+                  {name}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-xl">
+                <Filter className="size-3.5" />
+                Service
+                {serviceFilter.length > 0 && (
+                  <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">{serviceFilter.length}</Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-72 w-56 overflow-y-auto">
+              <DropdownMenuLabel>Filter by service</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {serviceOptions.map((st) => (
+                <DropdownMenuCheckboxItem
+                  key={st}
+                  checked={serviceFilter.includes(st)}
+                  onCheckedChange={() => toggle(setServiceFilter, st)}
+                >
+                  {serviceLabel(st as never)}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-xl">
+                <Filter className="size-3.5" />
+                {dueWindow ? DUE_WINDOW_LABELS[dueWindow] : "Due"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel>Filter by due date</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {DUE_WINDOW_OPTIONS.map((o) => (
+                <DropdownMenuCheckboxItem
+                  key={o.value}
+                  checked={dueWindow === o.value}
+                  onCheckedChange={() =>
+                    setDueWindow(dueWindow === o.value ? undefined : o.value)
+                  }
+                >
+                  {o.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {activeFilterLabels.length > 0 && (
+            <Button variant="ghost" size="sm" className="h-8 rounded-xl" onClick={clearFilters}>
+              Clear
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="rounded-md border bg-card">
@@ -161,14 +330,8 @@ export function InvoicesPageClient({
                       filtered={invoices.length > 0}
                       noun="invoices"
                       emptyHint="Invoices are how work becomes revenue — raise one against a client to start tracking what is owed."
-                      activeFilters={[
-                        statusFilter !== "ALL" && `status “${statusFilter.replace("_", " ").toLowerCase()}”`,
-                        search.trim() && `search “${search.trim()}”`,
-                      ].filter(Boolean) as string[]}
-                      onClearFilters={() => {
-                        setStatusFilter("ALL")
-                        setSearch("")
-                      }}
+                      activeFilters={activeFilterLabels}
+                      onClearFilters={clearFilters}
                       action={{ label: "New Invoice", onClick: () => setAddDialogOpen(true) }}
                     />
                   </div>

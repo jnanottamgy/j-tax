@@ -21,13 +21,34 @@ import { cn } from "@/lib/utils"
 
 type ViewMode = "monthly" | "weekly"
 
+/**
+ * Statutory dates and firm-set dates were two separate pages, two nav entries
+ * and two mental models — and one table underneath, split by a boolean. Nobody
+ * plans a month in two calendars: a GST deadline and the internal review a
+ * manager set for three days earlier are the same week's work, and seeing them
+ * apart is how one gets scheduled on top of the other.
+ *
+ * One calendar now, with a filter. "All" is the default because that is the
+ * question being asked when someone opens a calendar.
+ */
+type SourceFilter = "all" | "statutory" | "firm"
+
+const SOURCE_LABELS: Record<SourceFilter, string> = {
+  all: "Everything",
+  statutory: "Statutory",
+  firm: "Firm-set",
+}
+
 export function ComplianceCalendarClient({
-  variant = "compliance",
+  initialSource = "all",
 }: {
-  /** "compliance" = statutory as-per-law dates; "firm" = firm-set custom dates. */
-  variant?: "compliance" | "firm"
+  /** Deep links from the old two-calendar routes land on the right filter. */
+  initialSource?: SourceFilter
 }) {
-  const isStatutory = variant === "compliance"
+  const [source, setSource] = useState<SourceFilter>(initialSource)
+  // undefined asks the action for both kinds; the split is a data filter, not
+  // a permission boundary — employees are already scoped to their own clients.
+  const isStatutory = source === "all" ? undefined : source === "statutory"
   const _router = useRouter()
   const [viewMode, setViewMode] = useState<ViewMode>("monthly")
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -93,13 +114,9 @@ export function ComplianceCalendarClient({
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {isStatutory ? "Compliance Calendar" : "Firm Calendar"}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Calendar</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {isStatutory
-              ? "Statutory, as-per-law filing due dates (GST, TDS, ITR, ROC, PF/ESIC)."
-              : "Firm-set due dates and internal deadlines scheduled by your managers."}
+            Statutory filing dates and the deadlines your managers set, in one place.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -122,6 +139,22 @@ export function ComplianceCalendarClient({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {/* What used to be two separate pages. */}
+        <div className="flex items-center gap-1 bg-white/[0.02] border border-white/[0.08] rounded-xl p-1 w-fit">
+          {(Object.keys(SOURCE_LABELS) as SourceFilter[]).map((s) => (
+            <Button
+              key={s}
+              variant={source === s ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setSource(s)}
+              className={cn("h-8 rounded-lg", source === s && "btn-glow")}
+            >
+              {SOURCE_LABELS[s]}
+            </Button>
+          ))}
+        </div>
+
       {/* View Toggle */}
       <div className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.08] rounded-xl p-1 w-fit">
         <Button
@@ -142,6 +175,7 @@ export function ComplianceCalendarClient({
           <List className="h-4 w-4" />
           Weekly
         </Button>
+      </div>
       </div>
 
       {/* Main Content */}

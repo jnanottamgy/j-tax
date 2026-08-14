@@ -74,10 +74,12 @@ export const navigationGroups: NavGroup[] = [
         description: "Tasks & assignments",
       },
       {
-        title: "Compliance",
+        // A firm does not say "do the compliance", it says "do the filings".
+        // The route stays /compliance so existing links keep working.
+        title: "Filings",
         href: "/compliance",
         icon: ShieldCheck,
-        description: "Filing compliance",
+        description: "Filing status by client and period",
       },
       {
         title: "GST Recon",
@@ -104,16 +106,12 @@ export const navigationGroups: NavGroup[] = [
         description: "P&L + Balance Sheet from trial balance",
       },
       {
-        title: "Compliance Calendar",
-        href: "/compliance-calendar",
-        icon: CalendarDays,
-        description: "Statutory, as-per-law due dates",
-      },
-      {
-        title: "Firm Calendar",
+        // One calendar. Statutory and firm-set dates were two entries over one
+        // table split by a boolean, and nobody plans a month in two calendars.
+        title: "Calendar",
         href: "/calendar",
         icon: CalendarDays,
-        description: "Firm-set custom due dates",
+        description: "Statutory and firm-set due dates",
       },
       {
         title: "Timesheet",
@@ -270,9 +268,8 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "Dashboard", href: "/", icon: LayoutDashboard, description: "Overview & KPIs" },
           { title: "Clients", href: "/clients", icon: Building2, description: "Client management" },
           { title: "Work Tracker", href: "/work-tracker", icon: ClipboardList, description: "Tasks & assignments" },
-          { title: "Compliance", href: "/compliance", icon: ShieldCheck, description: "Filing compliance" },
-          { title: "Compliance Calendar", href: "/compliance-calendar", icon: CalendarDays, description: "Statutory due dates" },
-          { title: "Firm Calendar", href: "/calendar", icon: CalendarDays, description: "Firm-set due dates" },
+          { title: "Filings", href: "/compliance", icon: ShieldCheck, description: "Filing status by client and period" },
+          { title: "Calendar", href: "/calendar", icon: CalendarDays, description: "Statutory and firm-set due dates" },
           { title: "Timesheet", href: "/timesheet", icon: Timer, description: "Time tracking & billable hours" },
         ],
       },
@@ -342,7 +339,7 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "My Tasks", href: "/work-tracker", icon: ClipboardList, description: "Tasks assigned to you" },
           { title: "My Clients", href: "/clients", icon: Building2, description: "Clients you manage" },
           { title: "My Timesheet", href: "/timesheet", icon: Timer, description: "Log your hours" },
-          { title: "Firm Calendar", href: "/calendar", icon: CalendarDays, description: "Firm-set due dates" },
+          { title: "Calendar", href: "/calendar", icon: CalendarDays, description: "Statutory and firm-set due dates" },
         ],
       },
       {
@@ -386,7 +383,7 @@ export const mainNavigation: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
   { title: "Clients", href: "/clients", icon: Building2 },
   { title: "Work Tracker", href: "/work-tracker", icon: ClipboardList },
-  { title: "Compliance", href: "/compliance", icon: ShieldCheck },
+  { title: "Filings", href: "/compliance", icon: ShieldCheck },
   { title: "Calendar", href: "/calendar", icon: CalendarDays },
   { title: "Payments", href: "/payments", icon: Wallet },
   { title: "Invoices", href: "/payments/invoices", icon: Receipt },
