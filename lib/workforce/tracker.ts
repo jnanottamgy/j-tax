@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma"
+import {
+  STALE_AFTER_MINUTES,
+  closingTimeFor,
+  creditForBeat,
+  isStale,
+} from "@/lib/workforce/presence"
 import type { EmployeeActivityType } from "@prisma/client"
+import { getAttendanceRules, isLateArrival } from "@/lib/workforce/attendance-rules"
 
 // ─── Activity Tracking ────────────────────────────────────────────────────────
 
@@ -42,15 +49,15 @@ export async function startEmployeeSession(
   userAgent?: string
 ): Promise<void> {
   try {
-    // Close any open sessions first
-    await prisma.employeeSession.updateMany({
-      where: { employeeId, isActive: true },
-      data: {
-        isActive: false,
-        logoutAt: new Date(),
-        durationMinutes: undefined,
-      },
-    })
+    // Close any open sessions first — properly.
+    //
+    // This used to updateMany with `durationMinutes: undefined`, which Prisma
+    // reads as "leave it alone", so the previous session's minutes stayed null
+    // and its day's workMinutes were never written. Every day somebody closed
+    // the tab instead of signing out recorded zero hours. Closing them one by
+    // one costs a query per stale session — there is at most one in practice —
+    // and keeps the time.
+    await closeOpenSessions(employeeId)
 
     const now = new Date()
     await prisma.employeeSession.create({
@@ -72,70 +79,139 @@ export async function startEmployeeSession(
   }
 }
 
-export async function endEmployeeSession(employeeId: string): Promise<void> {
-  try {
-    const session = await prisma.employeeSession.findFirst({
-      where: { employeeId, isActive: true },
-      orderBy: { loginAt: "desc" },
-    })
+/**
+ * Close every open session for someone, keeping the time they earned.
+ *
+ * Used by explicit sign-out, by the next login, and by the stale sweep — so
+ * there is exactly one place that knows how a session ends and what it is
+ * worth. `explicit` distinguishes "they clicked Sign out just now" from "the
+ * beats stopped a while ago": the first closes at this moment, the second at
+ * the last beat, because that is when the person actually left.
+ */
+export async function closeOpenSessions(
+  employeeId: string,
+  opts?: { explicit?: boolean }
+): Promise<void> {
+  const open = await prisma.employeeSession.findMany({
+    where: { employeeId, isActive: true },
+    orderBy: { loginAt: "desc" },
+  })
+  if (open.length === 0) return
 
-    if (!session) return
+  const now = new Date()
 
-    const now = new Date()
-    const durationMinutes = Math.round(
-      (now.getTime() - session.loginAt.getTime()) / 60000
-    )
+  for (const session of open) {
+    // Credit the stretch since the last beat, so signing out immediately after
+    // one does not silently drop those minutes.
+    const trailing = creditForBeat(session.lastActiveAt, now)
+    const minutes = session.activeMinutes + (opts?.explicit ? trailing : 0)
+    const logoutAt = opts?.explicit ? now : closingTimeFor(session.lastActiveAt)
 
     await prisma.employeeSession.update({
       where: { id: session.id },
       data: {
         isActive: false,
-        logoutAt: now,
-        durationMinutes,
+        logoutAt,
+        activeMinutes: minutes,
+        durationMinutes: minutes,
       },
     })
 
-    // Update attendance record with logout time
+    // Attendance is credited against the day the session began, so an evening
+    // that runs past midnight lands on the day it belongs to.
     const dateKey = toDateKey(session.loginAt)
     await prisma.attendanceRecord.updateMany({
       where: { employeeId, date: dateKey },
-      data: {
-        logoutAt: now,
-        workMinutes: {
-          increment: durationMinutes,
-        },
-      },
+      data: { logoutAt, workMinutes: { increment: minutes } },
     })
+  }
+}
+
+export async function endEmployeeSession(employeeId: string): Promise<void> {
+  try {
+    await closeOpenSessions(employeeId, { explicit: true })
   } catch (err) {
     console.error("[workforce] Failed to end session:", err)
   }
 }
 
+/**
+ * A heartbeat: the person is here now, and has been since the last beat.
+ *
+ * This used to only stamp `lastActiveAt`, which meant the app collected a
+ * five-minute presence signal and then measured hours off login/logout anyway.
+ * The beat now carries the minutes.
+ */
 export async function updateSessionLastActive(employeeId: string): Promise<void> {
   try {
-    await prisma.employeeSession.updateMany({
+    const session = await prisma.employeeSession.findFirst({
       where: { employeeId, isActive: true },
-      data: { lastActiveAt: new Date() },
+      orderBy: { loginAt: "desc" },
+      select: { id: true, lastActiveAt: true, loginAt: true },
+    })
+    if (!session) return
+
+    const now = new Date()
+
+    // A beat after a long silence is somebody coming back, not somebody who
+    // was here the whole time. Close the quiet session at its last beat and
+    // open a fresh one, so the gap is not credited and the day still adds up.
+    if (isStale(session.lastActiveAt, now)) {
+      await closeOpenSessions(employeeId)
+      return
+    }
+
+    await prisma.employeeSession.update({
+      where: { id: session.id },
+      data: {
+        lastActiveAt: now,
+        activeMinutes: { increment: creditForBeat(session.lastActiveAt, now) },
+      },
     })
   } catch (err) {
     console.error("[workforce] Failed to update last active:", err)
   }
 }
 
-// ─── Attendance ───────────────────────────────────────────────────────────────
+/**
+ * Close sessions whose beats stopped, across the whole firm.
+ *
+ * The backstop for a tab closed without signing out: the sweep books the time
+ * up to the last beat and marks the session over, so the day's hours are
+ * recorded even though nobody ever pressed anything. Runs from the nightly
+ * cron and is safe to run at any time.
+ */
+export async function sweepStaleSessions(): Promise<number> {
+  const cutoff = new Date(Date.now() - STALE_AFTER_MINUTES * 60_000)
+  const stale = await prisma.employeeSession.findMany({
+    where: { isActive: true, lastActiveAt: { lt: cutoff } },
+    select: { employeeId: true },
+    distinct: ["employeeId"],
+  })
 
-// Work day starts at 09:30 IST = 04:00 UTC. Login after that is "late".
-const LATE_LOGIN_HOUR_UTC = 4 // 09:30 IST = 04:00 UTC
+  for (const s of stale) {
+    await closeOpenSessions(s.employeeId)
+  }
+  return stale.length
+}
+
+// ─── Attendance ───────────────────────────────────────────────────────────────
 
 async function upsertAttendanceOnLogin(
   employeeId: string,
   loginAt: Date
 ): Promise<void> {
   const dateKey = toDateKey(loginAt)
-  const hour = loginAt.getUTCHours()
-  const minute = loginAt.getUTCMinutes()
-  const isLate = hour > LATE_LOGIN_HOUR_UTC || (hour === LATE_LOGIN_HOUR_UTC && minute > 0)
 
+  const cfg = await getAttendanceRules()
+  const isLate = isLateArrival(loginAt, cfg)
+
+  // Only the FIRST login of the day sets the arrival time and the late flag.
+  //
+  // This used to overwrite both on every login, so somebody who arrived at
+  // 9:15, lost their laptop to a flat battery and signed back in at 15:00 had
+  // their record rewritten to a 15:00 arrival and flipped to LATE_LOGIN. They
+  // were on time; the record said otherwise, and nothing could correct it.
   await prisma.attendanceRecord.upsert({
     where: { employeeId_date: { employeeId, date: dateKey } },
     create: {
@@ -144,10 +220,9 @@ async function upsertAttendanceOnLogin(
       status: isLate ? "LATE_LOGIN" : "PRESENT",
       loginAt,
     },
-    update: {
-      loginAt,
-      status: isLate ? "LATE_LOGIN" : "PRESENT",
-    },
+    // Deliberately empty. A record already exists for today, which means they
+    // have already arrived — nothing about a second login changes that.
+    update: {},
   })
 }
 

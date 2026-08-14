@@ -73,6 +73,19 @@ model FirmSettings {
   replyToEmail String?
   firmPhone    String?
   firmAddress  String?
+
+  // ── Working hours ─────────────────────────────────────────────────────────
+  // The late-arrival rule was hard-coded to 09:30 IST with no grace period, so
+  // a firm that starts at 10:00 had its entire team marked late every day and
+  // every Saturday login was late too.
+  /// Local start of the working day, "HH:MM" in the firm's own time.
+  workDayStart      String  @default("09:30")
+  /// Minutes after the start that still count as on time.
+  lateGraceMinutes  Int     @default(15)
+  /// Days the firm actually works. 1 = Monday … 7 = Sunday.
+  workingWeekdays   Int[]   @default([1, 2, 3, 4, 5, 6])
+  /// Minutes offset from UTC for the firm's local time. 330 = IST.
+  timezoneOffsetMinutes Int @default(330)
   gstin        String?
   pan          String?
   website      String?
@@ -1338,6 +1351,16 @@ model EmployeeSession {
   loginAt         DateTime  @default(now())
   logoutAt        DateTime?
   lastActiveAt    DateTime  @default(now())
+  /// Minutes accumulated from heartbeats — the actual worked time.
+  ///
+  /// durationMinutes was `logoutAt - loginAt`, which measured wall clock and
+  /// only got written when somebody explicitly signed out. Since almost nobody
+  /// does, most days recorded zero hours while a forgotten tab read as
+  /// seventy-two. This counts forward from beats instead, so a closed tab
+  /// simply stops counting.
+  activeMinutes   Int       @default(0)
+  /// Kept as the closed-out total, now copied from activeMinutes rather than
+  /// derived from the clock. Null while the session is still open.
   durationMinutes Int?
   ipAddress       String?
   userAgent       String?

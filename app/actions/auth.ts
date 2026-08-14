@@ -222,6 +222,21 @@ export async function signUp(
         await tx.firmSettings.create({
           data: { firmId: firm.id, firmName: parsed.data.firmName.trim() },
         })
+        // The founding Partner gets an Employee row too.
+        //
+        // Everything in the workforce module keys on having one — sessions,
+        // attendance, hours, capacity — so without it the person who owns the
+        // firm was the only member of staff invisible in their own team
+        // report, and their own hours were never recorded at all.
+        await tx.employee.create({
+          data: {
+            firmId: firm.id,
+            name: parsed.data.name,
+            email: parsed.data.email,
+            userId: data.user!.id,
+            isActive: true,
+          },
+        })
       })
     } catch (err) {
       console.error("[signup] firm provisioning failed:", err)

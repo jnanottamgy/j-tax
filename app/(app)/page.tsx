@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 // Dashboard components
 import { ComplianceOverview } from "@/components/dashboard/compliance-overview"
 import { EmployeeDashboard } from "@/components/dashboard/employee-dashboard"
+import { MyWorkRecordCard } from "@/components/dashboard/my-work-record"
 import { ExecutiveSummary } from "@/components/dashboard/executive-summary"
 import { FilingChart } from "@/components/dashboard/filing-chart"
 import { KpiCards } from "@/components/dashboard/kpi-cards"
@@ -531,6 +532,9 @@ export default async function DashboardPage() {
         />
         {/* Handoff queues first: what is waiting on this person beats a count. */}
         <WorkQueuePanel />
+        {/* Their own hours. The workforce module is Partner/Manager only, so
+            the people being measured could not see any of it. */}
+        <MyWorkRecordCard />
         <EmployeeDashboard
           employeeName={user.name}
           stats={data.stats}

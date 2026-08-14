@@ -24,6 +24,14 @@
     {
       "path": "/api/cron/retainer-billing",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/workforce-sweep",
+      "schedule": "45 18 * * *"
+    },
+    {
+      "path": "/api/cron/attendance-check",
+      "schedule": "0 6 * * *"
     }
   ],
   "headers": [

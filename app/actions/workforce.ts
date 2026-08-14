@@ -1,7 +1,10 @@
 "use server"
 
-import { requirePartnerOrManager } from "@/lib/auth/guards"
+import { revalidatePath } from "next/cache"
+
+import { requireAuth, requirePartnerOrManager } from "@/lib/auth/guards"
 import { prisma } from "@/lib/prisma"
+import { liveSessionMinutes, presenceStatus, utilisation } from "@/lib/workforce/presence"
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, startOfQuarter, subDays, format } from "date-fns"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -81,7 +84,6 @@ export async function getWorkforceDashboard() {
   const todayStart = startOfDay(now)
   const todayEnd = endOfDay(now)
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
-  const idleThresholdMs = 15 * 60 * 1000 // 15 minutes
 
   const employees = await prisma.employee.findMany({
     where: { isActive: true },
@@ -135,20 +137,42 @@ export async function getWorkforceDashboard() {
     weekSessions.map((s) => [s.employeeId, s._sum.durationMinutes ?? 0])
   )
 
+  // Who is away today.
+  //
+  // The dashboard used to read this from AttendanceRecord.status === ON_LEAVE,
+  // which nothing anywhere ever wrote — so the "on leave" count was
+  // permanently zero and approved leave showed as plain absence. EmployeeLeave
+  // is the table that actually holds it.
+  const leaveToday = await prisma.employeeLeave.findMany({
+    where: {
+      status: { in: ["REQUESTED", "APPROVED"] },
+      startDate: { lte: todayEnd },
+      endDate: { gte: todayStart },
+    },
+    select: { employeeId: true },
+  })
+  const onLeaveToday = new Set(leaveToday.map((l) => l.employeeId))
+
   const statusCards: EmployeeStatusCard[] = employees.map((emp) => {
     const activeSession = emp.sessions[0] ?? null
     let status: EmployeeStatus = "OFFLINE"
 
-    if (activeSession) {
-      const idleSince = now.getTime() - new Date(activeSession.lastActiveAt).getTime()
-      status = idleSince > idleThresholdMs ? "IDLE" : "ONLINE"
-    } else if (emp.attendanceRecords[0]?.status === "ON_LEAVE") {
+    // Leave wins over a stale session: somebody on approved leave who left a
+    // tab open last week is on leave, not online.
+    if (onLeaveToday.has(emp.id)) {
       status = "ON_LEAVE"
+    } else if (activeSession) {
+      status = presenceStatus(activeSession.lastActiveAt, now)
     }
 
-    // Add active session duration to today total
+    // Minutes for a session still open. This used to be `now - loginAt`, so a
+    // tab forgotten on Friday reported seventy-two hours on Monday and added
+    // all of it to the week. Accumulated beats cannot run away like that.
     const activeMins = activeSession
-      ? Math.round((now.getTime() - new Date(activeSession.loginAt).getTime()) / 60000)
+      ? liveSessionMinutes(
+          { activeMinutes: activeSession.activeMinutes, lastActiveAt: activeSession.lastActiveAt },
+          now
+        )
       : 0
 
     return {
@@ -417,12 +441,17 @@ export async function getEmployeeDetail(employeeId: string) {
     where: { employeeId, isActive: true },
   })
 
-  const idleThresholdMs = 15 * 60 * 1000
-  let status: EmployeeStatus = "OFFLINE"
-  if (activeSession) {
-    const idleSince = now.getTime() - new Date(activeSession.lastActiveAt).getTime()
-    status = idleSince > idleThresholdMs ? "IDLE" : "ONLINE"
-  }
+  // Same presence rule as the team dashboard, from the one place that knows it.
+  let status: EmployeeStatus = presenceStatus(activeSession?.lastActiveAt, now)
+  const onLeave = await prisma.employeeLeave.count({
+    where: {
+      employeeId,
+      status: { in: ["REQUESTED", "APPROVED"] },
+      startDate: { lte: now },
+      endDate: { gte: startOfDay(now) },
+    },
+  })
+  if (onLeave > 0) status = "ON_LEAVE"
 
   return {
     employee,
@@ -732,5 +761,156 @@ export async function recordHeartbeat() {
   const employee = await getEmployeeByUserId(session.user.id)
   if (employee) {
     await updateSessionLastActive(employee.id)
+  }
+}
+
+// ─── Correcting the record ───────────────────────────────────────────────────
+
+/**
+ * Fix a day's attendance by hand.
+ *
+ * Attendance is inferred from logins, and inference is wrong often enough that
+ * an uncorrectable record is not a record at all: somebody works from a
+ * client's office all day, a laptop dies, a half-day gets taken, the sweep
+ * books a session that ended earlier than it looked. Until now there was no way
+ * to say so — the only attendance writers were the login handler and the
+ * logout handler.
+ *
+ * Every correction is attributed and dated in the note, because a changed
+ * attendance record with no author is worse than a wrong one.
+ */
+export async function correctAttendance(input: {
+  employeeId: string
+  /** The day being corrected, ISO date. */
+  date: string
+  status: "PRESENT" | "ABSENT" | "LATE_LOGIN" | "HALF_DAY" | "ON_LEAVE"
+  /** Worked minutes for the day. Omit to leave whatever was measured. */
+  workMinutes?: number
+  note?: string
+}): Promise<{ success: boolean; error?: string }> {
+  let session
+  try {
+    session = await requirePartnerOrManager()
+  } catch {
+    return { success: false, error: "You do not have permission to change attendance." }
+  }
+
+  const day = new Date(input.date)
+  if (Number.isNaN(day.getTime())) {
+    return { success: false, error: "That is not a valid date." }
+  }
+  if (input.workMinutes != null && (input.workMinutes < 0 || input.workMinutes > 1440)) {
+    return { success: false, error: "Worked minutes must be between 0 and 1440." }
+  }
+
+  const { toDateKey } = await import("@/lib/workforce/tracker")
+  const dateKey = toDateKey(day)
+
+  const stamp = `${new Date().toISOString().slice(0, 10)} — corrected by ${session.user.name}`
+  const note = input.note?.trim() ? `${input.note.trim()} (${stamp})` : stamp
+
+  try {
+    await prisma.attendanceRecord.upsert({
+      where: { employeeId_date: { employeeId: input.employeeId, date: dateKey } },
+      create: {
+        employeeId: input.employeeId,
+        date: dateKey,
+        status: input.status,
+        workMinutes: input.workMinutes ?? null,
+        notes: note,
+      },
+      update: {
+        status: input.status,
+        ...(input.workMinutes != null ? { workMinutes: input.workMinutes } : {}),
+        notes: note,
+      },
+    })
+
+    revalidatePath("/workforce")
+    return { success: true }
+  } catch (error) {
+    console.error("Failed to correct attendance:", error)
+    return { success: false, error: "Could not save the correction." }
+  }
+}
+
+// ─── The employee's own record ───────────────────────────────────────────────
+
+export type MyWorkRecord = {
+  todayMinutes: number
+  weekMinutes: number
+  monthMinutes: number
+  /** Minutes booked to clients this month, from the timesheet. */
+  bookedThisMonth: number
+  /** Booked as a share of time present. Null when nothing was recorded. */
+  utilisationPct: number | null
+  daysPresent: number
+  daysLate: number
+  isOnline: boolean
+}
+
+/**
+ * What the app has recorded about me.
+ *
+ * The workforce module is Partner and Manager only, so the people being
+ * measured could not see any of it — and being judged on numbers you cannot
+ * check is the fastest way to lose faith in a tool. It also meant nobody was
+ * positioned to notice when the old login/logout arithmetic silently recorded
+ * their day as zero.
+ */
+export async function getMyWorkRecord(): Promise<MyWorkRecord | null> {
+  const session = await requireAuth()
+  const { getEmployeeByUserId } = await import("@/lib/workforce/tracker")
+  const employee = await getEmployeeByUserId(session.user.id)
+  if (!employee) return null
+
+  const now = new Date()
+  const todayStart = startOfDay(now)
+  const weekStart = new Date(todayStart)
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  const [today, week, month, attendance, activeSession, booked] = await Promise.all([
+    prisma.employeeSession.aggregate({
+      where: { employeeId: employee.id, loginAt: { gte: todayStart } },
+      _sum: { durationMinutes: true },
+    }),
+    prisma.employeeSession.aggregate({
+      where: { employeeId: employee.id, loginAt: { gte: weekStart } },
+      _sum: { durationMinutes: true },
+    }),
+    prisma.employeeSession.aggregate({
+      where: { employeeId: employee.id, loginAt: { gte: monthStart } },
+      _sum: { durationMinutes: true },
+    }),
+    prisma.attendanceRecord.findMany({
+      where: { employeeId: employee.id, date: { gte: monthStart } },
+      select: { status: true },
+    }),
+    prisma.employeeSession.findFirst({
+      where: { employeeId: employee.id, isActive: true },
+      select: { activeMinutes: true, lastActiveAt: true },
+    }),
+    prisma.timeEntry.aggregate({
+      // TimeEntry is keyed on when the work started, not a separate date.
+      where: { employeeId: employee.id, startedAt: { gte: monthStart } },
+      _sum: { minutes: true },
+    }),
+  ])
+
+  // A session still open is not in the sums yet, so add what it holds.
+  const live = activeSession ? liveSessionMinutes(activeSession, now) : 0
+  const monthMinutes = (month._sum.durationMinutes ?? 0) + live
+  const bookedThisMonth = booked._sum.minutes ?? 0
+
+  return {
+    todayMinutes: (today._sum.durationMinutes ?? 0) + live,
+    weekMinutes: (week._sum.durationMinutes ?? 0) + live,
+    monthMinutes,
+    bookedThisMonth,
+    utilisationPct: utilisation({ presentMinutes: monthMinutes, bookedMinutes: bookedThisMonth }),
+    daysPresent: attendance.filter((a) => a.status !== "ABSENT" && a.status !== "ON_LEAVE").length,
+    daysLate: attendance.filter((a) => a.status === "LATE_LOGIN").length,
+    isOnline: presenceStatus(activeSession?.lastActiveAt, now) === "ONLINE",
   }
 }
