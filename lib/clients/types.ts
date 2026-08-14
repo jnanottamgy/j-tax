@@ -15,6 +15,12 @@ export type ClientListItem = {
   isIncorporated: boolean
   code: string
   gstin: string | null
+  /**
+   * "UNREGISTERED" once someone has confirmed the client has no GST
+   * registration. Only meaningful when `gstin` is null — it is what separates
+   * "correctly B2C" from "nobody has asked", which a blank GSTIN alone cannot.
+   */
+  gstRegistration: string | null
   pan: string | null
   email: string | null
   phone: string | null

@@ -101,6 +101,7 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
     isIncorporated: data.client.isIncorporated ?? true,
     code: data.client.clientCode,
     gstin: data.client.gstin ?? null,
+    gstRegistration: data.client.gstRegistration ?? null,
     pan: data.client.pan ?? null,
     email: data.client.email ?? null,
     phone: data.client.phone ?? null,

@@ -21,6 +21,9 @@ import {
 } from "@/lib/validations/client"
 import { logClientActivity } from "@/lib/activity/logger"
 import { toUserError } from "@/lib/forms/errors"
+import { GST_UNREGISTERED } from "@/lib/clients/gst-registration"
+import { panFromGstin, stateCodeFromGstin } from "@/lib/clients/derive"
+import { validateGSTIN } from "@/lib/india/validators"
 
 export type ClientActionState = {
   success?: boolean
@@ -358,5 +361,169 @@ export async function deleteClient(clientId: string): Promise<ClientActionState>
       return { error: toUserError(error) }
     }
     return { error: "Failed to delete client. Please try again." }
+  }
+}
+
+export type UnreachableClient = {
+  id: string
+  name: string
+  clientCode: string
+  phone: string | null
+  assignedEmployeeName: string | null
+  /** Deadlines in the next 30 days that will get no reminder. */
+  upcomingDeadlines: number
+  /** Unpaid invoices that will get no reminder. */
+  openInvoices: number
+}
+
+/**
+ * Active clients the app cannot email.
+ *
+ * Every automated client message goes by email, and every send site skips a
+ * client without one — correctly, since a cron run must not die on one bad
+ * row, but silently. A client with no email address quietly stops receiving
+ * deadline reminders, invoice reminders and portal invitations, and the first
+ * anyone hears of it is a late fee.
+ *
+ * The counts are the point: "no email" is a shrug, "no email and four
+ * deadlines in the next month" is a job for someone this week.
+ */
+export async function getUnreachableClients(): Promise<UnreachableClient[]> {
+  await requirePartnerOrManager()
+  const { prisma } = await import("@/lib/prisma")
+
+  const clients = await prisma.client.findMany({
+    where: {
+      status: "ACTIVE",
+      deletedAt: null,
+      OR: [{ email: null }, { email: "" }],
+    },
+    select: {
+      id: true,
+      name: true,
+      clientCode: true,
+      phone: true,
+      whatsapp: true,
+      assignedEmployeeName: true,
+    },
+    orderBy: { name: "asc" },
+  })
+  if (clients.length === 0) return []
+
+  const ids = clients.map((c) => c.id)
+  const horizon = new Date()
+  horizon.setDate(horizon.getDate() + 30)
+
+  const [deadlines, invoices] = await Promise.all([
+    prisma.complianceEvent.groupBy({
+      by: ["clientId"],
+      where: {
+        clientId: { in: ids },
+        status: { in: ["PENDING", "OVERDUE"] },
+        dueDate: { lte: horizon },
+      },
+      _count: { _all: true },
+    }),
+    prisma.invoice.groupBy({
+      by: ["clientId"],
+      where: {
+        clientId: { in: ids },
+        status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] },
+        deletedAt: null,
+      },
+      _count: { _all: true },
+    }),
+  ])
+
+  const deadlineBy = new Map(deadlines.map((d) => [d.clientId, d._count._all]))
+  const invoiceBy = new Map(invoices.map((i) => [i.clientId, i._count._all]))
+
+  return clients.map((c) => ({
+    id: c.id,
+    name: c.name,
+    clientCode: c.clientCode,
+    // WhatsApp is a phone number too — it is what someone would actually dial.
+    phone: c.phone ?? c.whatsapp ?? null,
+    assignedEmployeeName: c.assignedEmployeeName,
+    upcomingDeadlines: deadlineBy.get(c.id) ?? 0,
+    openInvoices: invoiceBy.get(c.id) ?? 0,
+  }))
+}
+
+/**
+ * Record whether a client is registered under GST, from wherever the question
+ * came up — in practice, the moment an invoice is being raised for them.
+ *
+ * Two answers, one action: a GSTIN, or "they are not registered". Both close
+ * the gap; only the first changes what appears on the invoice. Saving the
+ * GSTIN also fills in the PAN and state code it encodes, because re-typing
+ * facts the GSTIN already contains is how they end up inconsistent.
+ */
+export async function setClientGstRegistration(
+  clientId: string,
+  input: { gstin: string } | { unregistered: true }
+): Promise<{ success?: boolean; error?: string; gstin?: string | null }> {
+  try {
+    const session = await requirePartnerOrManager()
+    const { prisma } = await import("@/lib/prisma")
+
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, name: true, pan: true, stateCode: true },
+    })
+    if (!client) return { error: "Client not found." }
+
+    if ("unregistered" in input) {
+      await prisma.client.update({
+        where: { id: clientId },
+        data: { gstRegistration: GST_UNREGISTERED },
+      })
+      await logClientActivity(
+        clientId,
+        "UPDATED",
+        `${client.name} recorded as not registered under GST`,
+        session.user.id,
+        session.user.name
+      )
+      revalidatePath("/clients")
+      revalidatePath(`/clients/${clientId}`)
+      return { success: true, gstin: null }
+    }
+
+    const gstin = input.gstin.trim().toUpperCase()
+    const check = validateGSTIN(gstin)
+    if (!check.valid) {
+      return { error: check.error ?? "That does not look like a valid GSTIN." }
+    }
+
+    await prisma.client.update({
+      where: { id: clientId },
+      data: {
+        gstin,
+        // A GSTIN carries the PAN and the state; only fill blanks, never
+        // overwrite something a person entered deliberately.
+        ...(client.pan ? {} : { pan: panFromGstin(gstin) ?? undefined }),
+        ...(client.stateCode ? {} : { stateCode: stateCodeFromGstin(gstin) ?? undefined }),
+        // The registration question is settled by the GSTIN itself now.
+        gstRegistration: null,
+      },
+    })
+
+    await logClientActivity(
+      clientId,
+      "UPDATED",
+      `GSTIN ${gstin} added to ${client.name}`,
+      session.user.id,
+      session.user.name
+    )
+
+    revalidatePath("/clients")
+    revalidatePath(`/clients/${clientId}`)
+    return { success: true, gstin }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Forbidden")) {
+      return { error: "You do not have permission to edit clients." }
+    }
+    return { error: toUserError(error) }
   }
 }

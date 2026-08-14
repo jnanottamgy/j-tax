@@ -6,6 +6,7 @@ import { notificationService } from "@/lib/messaging/notification-service"
 import { isWhatsAppConfigured } from "@/lib/messaging/whatsapp-api"
 import { getFirmSettings, type FirmConfig } from "@/lib/firm-settings"
 import { tenantContext } from "@/lib/tenant/context"
+import { notifyRoles, notifyUser } from "@/lib/notifications/notify"
 
 function safeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false
@@ -25,6 +26,67 @@ function safeCompare(a: string, b: string): boolean {
  * Unset env var or missing credentials → silently skipped; the email is the
  * canonical reminder either way.
  */
+/**
+ * Tell a human that a reminder could not be sent.
+ *
+ * The app knows two things at once here: a statutory deadline is inside a week,
+ * and this client cannot be emailed. That combination is exactly when somebody
+ * should pick up the phone, so it goes to whoever owns the client — falling
+ * back to the partners when nobody does, because an unassigned uncontactable
+ * client is worse, not better.
+ *
+ * Deduped per event on the same 8-day window the email reminder uses (7-day
+ * window plus a day of slack for cron drift), so a daily cron raises this once
+ * per deadline rather than every morning until the due date.
+ */
+async function notifyUnreachableClient(
+  event: {
+    id: string
+    title: string
+    dueDate: Date
+    client: { id: string; name: string; phone: string | null; assignedEmployeeId: string | null } | null
+  },
+  now: Date
+): Promise<void> {
+  const client = event.client
+  if (!client) return
+
+  const already = await prisma.notification.findFirst({
+    where: {
+      entityType: "COMPLIANCE",
+      entityId: event.id,
+      type: "WARNING",
+      createdAt: { gte: addDays(now, -8) },
+    },
+    select: { id: true },
+  })
+  if (already) return
+
+  const reach = client.phone
+    ? `No email address on record — call ${client.phone}.`
+    : "No email address and no phone number on record."
+  const payload = {
+    title: `Reminder not sent: ${client.name} has no email address`,
+    message: `${event.title} is due on ${format(event.dueDate, "dd MMM yyyy")} and the automatic reminder could not be sent. ${reach}`,
+    type: "WARNING" as const,
+    entityType: "COMPLIANCE" as const,
+    entityId: event.id,
+  }
+
+  if (client.assignedEmployeeId) {
+    const employee = await prisma.employee.findUnique({
+      where: { id: client.assignedEmployeeId },
+      select: { userId: true },
+    })
+    if (employee?.userId) {
+      await notifyUser(employee.userId, payload)
+      return
+    }
+  }
+
+  await notifyRoles(["PARTNER"], payload)
+}
+
 async function sendWhatsAppReminderIfEnabled(opts: {
   templateEnv: "WHATSAPP_TEMPLATE_COMPLIANCE_REMINDER"
   to: string | null | undefined
@@ -85,6 +147,8 @@ export async function GET(request: Request) {
       overdueAlerts: 0,
       whatsappReminders: 0,
       noticeAlerts: 0,
+      /** Deadlines whose client has no email address, so no reminder went out. */
+      unreachableClients: 0,
       errors: [] as string[],
     }
 
@@ -121,10 +185,32 @@ export async function GET(request: Request) {
           },
         },
       },
+      // Deterministic order so the per-event dedupe below behaves the same way
+      // on every run.
+      orderBy: {
+        dueDate: "asc",
+      },
     })
 
     for (const event of upcomingEvents) {
-      if (!event.client?.email) continue
+      // No email address, no reminder. Skipping is right — a nightly cron must
+      // not die on one incomplete client row — but it used to end here, and
+      // that was the whole failure: the client heard nothing, the firm heard
+      // nothing, and the deadline arrived anyway. The reminder becomes a job
+      // for whoever owns the client instead of disappearing.
+      if (!event.client?.email) {
+        results.unreachableClients++
+        try {
+          await notifyUnreachableClient(event, now)
+        } catch (err) {
+          results.errors.push(
+            `Unreachable-client alert for ${event.client?.name ?? "unknown client"}: ${
+              err instanceof Error ? err.message : "Unknown"
+            }`
+          )
+        }
+        continue
+      }
 
       try {
         // Dedupe: send at most one reminder per event per 7-day window. An event

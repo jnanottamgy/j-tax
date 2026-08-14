@@ -29,7 +29,9 @@ import { toast } from "sonner"
 import { deleteClient } from "@/app/actions/clients"
 import {
   ClientPriorityBadge,
+  ClientReachabilityBadge,
   ClientStatusBadge,
+  GstRegistrationHint,
 } from "@/components/clients/client-badges"
 import { ClientsEmptyState } from "@/components/clients/clients-empty-state"
 import { EditClientDialog } from "@/components/clients/edit-client-dialog"
@@ -695,18 +697,28 @@ export function ClientsTable({
                         <span className="font-mono text-[11px] text-muted-foreground sm:hidden">
                           {client.code}
                         </span>
-                        {client.email && (
+                        {/* An absent email used to render as nothing at all,
+                            which is exactly how a client stops receiving every
+                            reminder without anyone noticing. */}
+                        {client.email ? (
                           <span className="text-[11px] text-muted-foreground/80">
                             {client.email}
                           </span>
+                        ) : (
+                          <ClientReachabilityBadge client={client} />
                         )}
                       </div>
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">
                       {client.code}
                     </TableCell>
+                    {/* A dash meant both "not registered, and we know it" and
+                        "nobody has asked" — the second costs the client their
+                        input credit the next time we invoice them. */}
                     <TableCell className="hidden font-mono text-xs md:table-cell">
-                      {client.gstin ?? "—"}
+                      {client.gstin ?? (
+                        <GstRegistrationHint gstRegistration={client.gstRegistration} />
+                      )}
                     </TableCell>
                     <TableCell className="hidden xl:table-cell">
                       <ServiceBadgeList services={client.services} max={2} />

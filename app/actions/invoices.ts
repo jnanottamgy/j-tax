@@ -209,10 +209,12 @@ export async function getInvoicesData() {
   }))
 
   // gstin/stateCode ride along so the New Invoice dialog can auto-default the
-  // place of supply as soon as a client is picked.
+  // place of supply as soon as a client is picked. gstRegistration comes too,
+  // so the dialog can tell "not registered, B2C is correct" apart from "nobody
+  // ever asked" — only the second is worth interrupting for.
   const clients = await prisma.client.findMany({
     where: { status: "ACTIVE" },
-    select: { id: true, name: true, gstin: true, stateCode: true },
+    select: { id: true, name: true, gstin: true, stateCode: true, gstRegistration: true },
     orderBy: { name: "asc" },
   })
 

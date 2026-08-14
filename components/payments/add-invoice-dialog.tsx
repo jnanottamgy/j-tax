@@ -35,6 +35,8 @@ import {
   stateFromGstin,
 } from "@/lib/invoices/gst"
 import { GST_RATES, invoiceSchema } from "@/lib/validations/invoice"
+import { GST_UNREGISTERED, placeOfSupplyIsAssumed } from "@/lib/clients/gst-registration"
+import { RecipientGstinGap } from "@/components/payments/recipient-gstin-gap"
 
 type AddInvoiceDialogProps = {
   open: boolean
@@ -45,6 +47,8 @@ type AddInvoiceDialogProps = {
     name: string
     gstin?: string | null
     stateCode?: string | null
+    /** "UNREGISTERED" when the firm has asked and they are genuinely not registered. */
+    gstRegistration?: string | null
   }>
   /** Firm's own GST state code — drives the CGST/SGST vs IGST preview. */
   firmState?: string | null
@@ -125,6 +129,11 @@ export function AddInvoiceDialog({
   // Only set when the user actually bills the hours — otherwise the entries
   // stay unbilled and show up on the next invoice, which is correct.
   const [billTime, setBillTime] = useState(false)
+  // A GSTIN filled in from the warning below writes straight to the client
+  // record, but the `clients` prop was rendered by the server before that. Hold
+  // the answer locally so the warning clears and the place of supply corrects
+  // itself immediately, instead of after a refresh.
+  const [gstFix, setGstFix] = useState<{ gstin: string | null } | null>(null)
 
   const { submit, getError, isPending, formError, clearErrors } = useValidatedForm({
     schema: invoiceSchema,
@@ -207,6 +216,7 @@ export function AddInvoiceDialog({
     setFormData((prev) => ({ ...prev, clientId, placeOfSupply: autoState }))
     setEngagements([])
     setUnbilled(null)
+    setGstFix(null)
     if (clientId) {
       getClientEngagements(clientId)
         .then(setEngagements)
@@ -234,6 +244,20 @@ export function AddInvoiceDialog({
   }
 
   const activeEngagement = engagements.find((e) => e.serviceType === formData.serviceType)
+
+  const selectedClient = clients.find((c) => c.id === formData.clientId)
+  const clientGstin = gstFix ? gstFix.gstin : (selectedClient?.gstin ?? null)
+  // Once a GSTIN has been saved from the warning the registration question is
+  // settled; before that, whatever the client record says.
+  const clientGstRegistration = gstFix
+    ? gstFix.gstin
+      ? null
+      : GST_UNREGISTERED
+    : (selectedClient?.gstRegistration ?? null)
+  const placeOfSupplyAssumed =
+    Boolean(selectedClient) &&
+    placeOfSupplyIsAssumed({ gstin: clientGstin, stateCode: selectedClient?.stateCode }) &&
+    formData.placeOfSupply === (firmState ?? "")
 
   // Live billing breakdown: total payable = professional fee + GST
   const fee = parseFloat(formData.professionalFee) || 0
@@ -511,6 +535,16 @@ export function AddInvoiceDialog({
                   </option>
                 ))}
               </select>
+              {/* With no client GSTIN and no saved state, the auto-fill above
+                  used the firm's own state — which quietly makes every such
+                  invoice intra-state CGST+SGST. Right for a local client,
+                  wrong tax heads for anyone else. */}
+              {placeOfSupplyAssumed && (
+                <p className="mt-1.5 text-xs text-amber-400">
+                  Assumed from your firm&apos;s state — this client has no GSTIN or state on
+                  record. Confirm it before issuing.
+                </p>
+              )}
             </FormField>
 
             <FormField label="HSN/SAC" htmlFor="hsnSac" error={getError("hsnSac")}>
@@ -526,6 +560,31 @@ export function AddInvoiceDialog({
               />
             </FormField>
           </div>
+
+          {/* The recipient's GSTIN never blocked anything, so invoices went out
+              without one and the client silently lost the input credit. Asked
+              here, where it is still free to fix. */}
+          {formData.clientId && selectedClient && (
+            <RecipientGstinGap
+              // Keyed per client so switching clients resets the half-typed
+              // GSTIN and the "saved" confirmation — otherwise client B inherits
+              // the answer just given for client A.
+              key={formData.clientId}
+              clientId={formData.clientId}
+              clientName={selectedClient.name}
+              gstin={clientGstin}
+              gstRegistration={clientGstRegistration}
+              taxAmount={gst}
+              disabled={isPending}
+              onResolved={(saved) => {
+                setGstFix({ gstin: saved })
+                // A GSTIN carries the state, so the place of supply the form
+                // guessed from the firm can now be replaced with the real one.
+                const state = stateFromGstin(saved)
+                if (state) setFormData((prev) => ({ ...prev, placeOfSupply: state }))
+              }}
+            />
+          )}
 
           {/* Live billing breakdown */}
           <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm space-y-1">

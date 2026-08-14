@@ -69,7 +69,12 @@ export async function GET(
       firmLogo,
       clientName: invoice.client.name,
       clientEmail: invoice.client.email,
-      clientGstin: invoice.client.gstin,
+      // The snapshot taken when the invoice was issued, not the client's
+      // GSTIN as it stands today. An issued tax invoice is a fixed document —
+      // adding a GSTIN to the client months later must not silently change
+      // what an already-reported invoice prints. The live value is the
+      // fallback only for rows raised before the snapshot column existed.
+      clientGstin: invoice.clientGstin ?? invoice.client.gstin,
       clientAddress: invoice.client.address,
       amount: Number(invoice.amount),
       paidAmount: Number(invoice.paidAmount),

@@ -1,4 +1,5 @@
 import { ClientsPageClient } from "@/components/clients/clients-page-client"
+import { UnreachableClientsBanner } from "@/components/clients/unreachable-clients-banner"
 import { PageContainer } from "@/components/layout/page-container"
 import { Breadcrumb } from "@/components/navigation/breadcrumb"
 import { getClientsData } from "@/app/actions/clients"
@@ -32,11 +33,16 @@ export default async function ClientsPage() {
           {error}
         </div>
       ) : (
-        <ClientsPageClient
-          initialClients={clients}
-          employees={employees}
-          canManage={canManage}
-        />
+        <>
+          {/* Clients the app cannot email — every automated reminder is being
+              skipped for them, silently, until someone is told. */}
+          {canManage && <UnreachableClientsBanner />}
+          <ClientsPageClient
+            initialClients={clients}
+            employees={employees}
+            canManage={canManage}
+          />
+        </>
       )}
     </PageContainer>
   )

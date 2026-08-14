@@ -259,6 +259,13 @@ model Client {
   entityTypeCustom     String?
   /// GST place-of-supply state (falls back to the state encoded in gstin)
   stateCode            String?
+  /// Only meaningful when `gstin` is blank: "UNREGISTERED" means the firm has
+  /// asked and this client is genuinely not registered under GST, so a B2C
+  /// invoice with no recipient GSTIN is correct. Null means nobody has asked.
+  /// A blank GSTIN used to cover both, and invoices went out identically —
+  /// but an invoice with no recipient GSTIN costs a *registered* client their
+  /// input credit, and they only find out at reconciliation.
+  gstRegistration      String?
 
   // ── Accounting year ───────────────────────────────────────────────────────
   /// Month the client's financial year ends, 1–12. Defaults to 3 (31 March),

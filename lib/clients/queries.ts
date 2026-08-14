@@ -36,6 +36,7 @@ function mapClientToListItem(
     isIncorporated: client.isIncorporated,
     code: client.clientCode,
     gstin: client.gstin,
+    gstRegistration: client.gstRegistration,
     pan: client.pan,
     email: client.email,
     phone: client.phone,
