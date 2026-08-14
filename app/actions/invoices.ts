@@ -22,6 +22,7 @@ import { invoiceNeedsApproval } from "@/lib/auth/delegation"
 import type { AppRole } from "@/lib/auth/types"
 import { toUserError } from "@/lib/forms/errors"
 import { serviceLabel } from "@/lib/clients/constants"
+import { applySettlement } from "@/lib/billing/tds"
 
 const VALID_INVOICE_STATUSES = [
   "DRAFT", "SENT", "PARTIALLY_PAID", "PAID", "OVERDUE", "DISPUTED", "WAIVED",
@@ -462,6 +463,8 @@ export async function recordPayment(
 
   const parsed = recordPaymentSchema.safeParse({
     amount: formData.get("amount"),
+    tdsAmount: formData.get("tdsAmount") ?? "",
+    tdsSection: formData.get("tdsSection") ?? "",
     method: formData.get("method") ?? "",
     reference: formData.get("reference") ?? "",
   })
@@ -471,6 +474,8 @@ export async function recordPayment(
   }
 
   const amount = parseFloat(parsed.data.amount)
+  const tdsAmount = parsed.data.tdsAmount ? parseFloat(parsed.data.tdsAmount) : 0
+  const tdsSection = parsed.data.tdsSection?.trim() || undefined
   const method = parsed.data.method?.trim() || undefined
   const reference = parsed.data.reference?.trim() || undefined
 
@@ -492,26 +497,34 @@ export async function recordPayment(
       return { error: "This invoice is disputed. Resolve the dispute before recording payments." }
     }
 
-    // Validate payment amount does not exceed outstanding amount
-    const outstandingAmount = Number(invoice.outstandingAmount)
-    if (amount > outstandingAmount) {
-      return { error: `Payment amount (₹${amount.toLocaleString("en-IN")}) exceeds outstanding amount (₹${outstandingAmount.toLocaleString("en-IN")}).` }
-    }
+    // TDS settles the invoice exactly as cash does: the money left the client
+    // and reached the government against the firm's PAN, and returns as a 26AS
+    // credit. Counting only the cash is what left invoices permanently
+    // PARTIALLY_PAID by the deducted amount and overstated every receivables
+    // report the firm ran.
+    const settlement = applySettlement({
+      invoiceTotal: Number(invoice.amount),
+      alreadySettled: Number(invoice.paidAmount),
+      received: amount,
+      tdsDeducted: tdsAmount,
+    })
+    if (!settlement.ok) return { error: settlement.error }
 
-    const newPaid = Number(invoice.paidAmount) + amount
-    const newOutstanding = Math.max(0, Number(invoice.amount) - newPaid)
-    const newStatus =
-      newOutstanding === 0
-        ? "PAID"
-        : newPaid > 0
-        ? "PARTIALLY_PAID"
-        : invoice.status
+    const newPaid = settlement.paidToDate
+    const newOutstanding = settlement.outstanding
+    const newStatus = settlement.fullySettled
+      ? "PAID"
+      : newPaid > 0
+      ? "PARTIALLY_PAID"
+      : invoice.status
 
     await prisma.$transaction([
       prisma.paymentReceipt.create({
         data: {
           invoiceId,
           amount,
+          tdsAmount: tdsAmount > 0 ? tdsAmount : null,
+          tdsSection: tdsAmount > 0 ? (tdsSection ?? "194J") : null,
           method: method ?? null,
           reference: reference ?? null,
         },

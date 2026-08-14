@@ -46,6 +46,7 @@ import { AddInvoiceDialog } from "@/components/payments/add-invoice-dialog"
 import { useValidatedForm } from "@/hooks/use-validated-form"
 import { stateName } from "@/lib/invoices/gst"
 import { followUpSchema, recordPaymentSchema } from "@/lib/validations/invoice"
+import { TDS_SECTIONS } from "@/lib/billing/tds"
 
 interface Payment {
   id: string
@@ -139,6 +140,9 @@ export function InvoiceDetailClient({
   // Payment dialog
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState("")
+  // TDS the client withheld on this payment; settles the invoice like cash.
+  const [paymentTds, setPaymentTds] = useState("")
+  const [paymentTdsSection, setPaymentTdsSection] = useState("194J")
   const [paymentMethod, setPaymentMethod] = useState("")
   const [paymentRef, setPaymentRef] = useState("")
   // Follow-up dialog
@@ -153,6 +157,8 @@ export function InvoiceDetailClient({
     onSuccess: () => {
       setPaymentOpen(false)
       setPaymentAmount("")
+      setPaymentTds("")
+      setPaymentTdsSection("194J")
       setPaymentMethod("")
       setPaymentRef("")
       router.refresh()
@@ -160,6 +166,8 @@ export function InvoiceDetailClient({
     onSubmit: async (data) => {
       const fd = new FormData()
       fd.set("amount", data.amount)
+      fd.set("tdsAmount", data.tdsAmount ?? "")
+      fd.set("tdsSection", data.tdsSection ?? "")
       fd.set("method", data.method ?? "")
       fd.set("reference", data.reference ?? "")
       return recordPayment(invoice.id, {}, fd)
@@ -196,6 +204,8 @@ export function InvoiceDetailClient({
     e.preventDefault()
     paymentForm.submit({
       amount: paymentAmount,
+      tdsAmount: paymentTds,
+      tdsSection: paymentTdsSection,
       method: paymentMethod,
       reference: paymentRef,
     })
@@ -612,16 +622,70 @@ export function InvoiceDetailClient({
                 id="pay-amount"
                 type="number"
                 step="0.01"
-                min="0.01"
+                min="0"
                 max={invoice.outstandingAmount}
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
-                placeholder="Enter amount"
+                placeholder="Amount received in the bank"
                 className="h-10 rounded-xl"
                 disabled={paymentForm.isPending}
                 aria-invalid={!!paymentForm.getError("amount")}
               />
             </FormField>
+
+            {/* TDS the client withheld. It settles the invoice exactly as cash
+                does — the money reached the government against the firm's PAN
+                and comes back as a 26AS credit. Recording only the net is what
+                left invoices PARTIALLY_PAID by the deducted amount for ever. */}
+            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+              <p className="text-xs text-muted-foreground">
+                If the client deducted TDS, enter it here — the invoice settles for the
+                full amount, and the deduction is carried to the 26AS reconciliation.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <FormField
+                  label="TDS deducted (₹)"
+                  htmlFor="pay-tds"
+                  error={paymentForm.getError("tdsAmount")}
+                >
+                  <Input
+                    id="pay-tds"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={paymentTds}
+                    onChange={(e) => setPaymentTds(e.target.value)}
+                    placeholder="0.00"
+                    className="h-9 rounded-lg"
+                    disabled={paymentForm.isPending}
+                  />
+                </FormField>
+                <FormField label="Section" htmlFor="pay-tds-section">
+                  <select
+                    id="pay-tds-section"
+                    value={paymentTdsSection}
+                    onChange={(e) => setPaymentTdsSection(e.target.value)}
+                    className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                    disabled={paymentForm.isPending}
+                  >
+                    {TDS_SECTIONS.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              </div>
+              {Number(paymentTds) > 0 && (
+                <p className="mt-2 text-xs text-emerald-400">
+                  Settles ₹
+                  {(
+                    (parseFloat(paymentAmount) || 0) + (parseFloat(paymentTds) || 0)
+                  ).toLocaleString("en-IN")}{" "}
+                  against this invoice.
+                </p>
+              )}
+            </div>
             <FormField label="Payment Method" htmlFor="pay-method" error={paymentForm.getError("method")}>
               <select
                 id="pay-method"

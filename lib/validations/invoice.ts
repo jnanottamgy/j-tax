@@ -110,14 +110,28 @@ export const PAYMENT_METHODS = [
 ] as const
 
 export const recordPaymentSchema = z.object({
+  // Zero is allowed now: a client can settle an invoice entirely by TDS where
+  // the whole fee was withheld, and refusing that would leave the invoice
+  // permanently open. The combined settlement is checked in applySettlement.
   amount: z
     .string()
     .trim()
     .min(1, "Payment amount is required")
     .refine((v) => {
       const n = parseFloat(v)
-      return !Number.isNaN(n) && n > 0
-    }, "Payment amount must be a positive number"),
+      return !Number.isNaN(n) && n >= 0
+    }, "Payment amount cannot be negative"),
+  /// Tax the client deducted at source. Settles the invoice exactly as cash does.
+  tdsAmount: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => {
+      if (!v) return true
+      const n = parseFloat(v)
+      return !Number.isNaN(n) && n >= 0
+    }, "TDS must be a positive number"),
+  tdsSection: z.string().trim().optional().or(z.literal("")),
   method: z.string().trim().optional().or(z.literal("")),
   reference: z.string().trim().optional().or(z.literal("")),
 })

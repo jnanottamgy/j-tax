@@ -68,9 +68,26 @@ describe("recordPaymentSchema", () => {
   test("accepts a positive payment", () => {
     assert.equal(recordPaymentSchema.safeParse({ amount: "500" }).success, true)
   })
-  test("rejects a zero / negative payment", () => {
-    assert.equal(recordPaymentSchema.safeParse({ amount: "0" }).success, false)
+  test("rejects a negative payment", () => {
     assert.equal(recordPaymentSchema.safeParse({ amount: "-1" }).success, false)
+  })
+
+  test("allows a zero cash amount, because TDS can settle an invoice on its own", () => {
+    // This used to be rejected alongside negatives. A client can withhold the
+    // whole fee as TDS, and refusing that left the invoice permanently open
+    // with no honest way to close it. The real "did anything settle?" check is
+    // applySettlement, which sees cash and TDS together.
+    assert.equal(
+      recordPaymentSchema.safeParse({ amount: "0", tdsAmount: "10000" }).success,
+      true
+    )
+  })
+
+  test("rejects a negative TDS deduction", () => {
+    assert.equal(
+      recordPaymentSchema.safeParse({ amount: "100", tdsAmount: "-5" }).success,
+      false
+    )
   })
 })
 
