@@ -12,6 +12,11 @@ import { TaskTable } from "@/components/work-tracker/task-table"
 import { TaskDetailDrawer } from "@/components/work-tracker/task-detail-drawer"
 import { TaskFilters, type TaskFilterValues } from "@/components/work-tracker/task-filters"
 import { ListEmptyState } from "@/components/ui/list-empty-state"
+import {
+  RecordFilingDialog,
+  type FilingPrefill,
+} from "@/components/work-tracker/record-filing-dialog"
+import { financialYearOf } from "@/lib/india/format"
 import { DUE_WINDOW_LABELS } from "@/lib/filters/due-window"
 import { serviceLabel } from "@/lib/clients/constants"
 import { AddTaskDialog, type EditableTask } from "@/components/work-tracker/add-task-dialog"
@@ -26,13 +31,19 @@ export function WorkTrackerClient() {
   const [tasks, setTasks] = useState<any[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [clients, setClients] = useState<Array<{ id: string; name: string; gstin?: string | null }>>([])
-  // Task→invoice popup: opens after a manager marks a task Filed/Done.
-  const [invoicePrefill, setInvoicePrefill] = useState<{
+  // Task→invoice popup: opens after a manager marks a task Filed/Done — but
+  // only once the filing prompt has been answered, so the two never stack.
+  type InvoicePrefill = {
     clientId: string
     serviceType?: string
     serviceDescription: string
     sourceTaskId: string
-  } | null>(null)
+  }
+  const [invoicePrefill, setInvoicePrefill] = useState<InvoicePrefill | null>(null)
+  const [pendingInvoice, setPendingInvoice] = useState<InvoicePrefill | null>(null)
+  // Task→filing capture: the acknowledgement number, asked while it is still
+  // on screen rather than days later from the client's history tab.
+  const [filingPrefill, setFilingPrefill] = useState<FilingPrefill | null>(null)
   const [user, setUser] = useState<any>(null)
   const [selectedTask, setSelectedTask] = useState<any>(null)
   const [userNameMap, setUserNameMap] = useState<Record<string, string>>({})
@@ -106,14 +117,30 @@ export function WorkTrackerClient() {
       const result = await updateTaskStatus(taskId, newStatus)
       if (result.success) {
         toast.success("Task status updated")
-        // Task completed by a manager → offer to raise an invoice for the work.
         const completed = tasks.find((t) => t.id === taskId)
         if (newStatus === "FILED_DONE" && canManage && completed?.client?.id) {
-          setInvoicePrefill({
+          // Two things follow a completed filing: proof it happened, and a bill
+          // for doing it. The acknowledgement number comes first because it is
+          // the one that stops being available — it is on screen now, and in a
+          // week it is buried in a portal. The invoice is held until the filing
+          // prompt is answered so the two dialogs don't stack.
+          setPendingInvoice({
             clientId: completed.client.id,
             serviceType: completed.serviceType ?? undefined,
             serviceDescription: completed.title ?? "",
             sourceTaskId: taskId,
+          })
+          setFilingPrefill({
+            taskId,
+            taskTitle: completed.title ?? "this task",
+            clientName: completed.client.name ?? "",
+            filingType: completed.serviceType
+              ? serviceLabel(completed.serviceType as Parameters<typeof serviceLabel>[0])
+              : "",
+            financialYear: financialYearOf(
+              completed.dueDate ? new Date(completed.dueDate) : new Date()
+            ).short,
+            period: "",
           })
         }
         await loadData()
@@ -373,6 +400,20 @@ export function WorkTrackerClient() {
         clients={clients}
         task={editingTask}
         initialClientId={initialClientId}
+      />
+
+      {/* Filing capture — asked first, because the ARN is on screen now and
+          buried in a portal by next week. Answering or skipping it releases the
+          invoice prompt behind it. */}
+      <RecordFilingDialog
+        prefill={filingPrefill}
+        open={filingPrefill !== null}
+        onOpenChange={(open) => !open && setFilingPrefill(null)}
+        onDone={() => {
+          setFilingPrefill(null)
+          setInvoicePrefill(pendingInvoice)
+          setPendingInvoice(null)
+        }}
       />
 
       {/* Task→invoice popup — opens after a manager marks a task Filed/Done */}

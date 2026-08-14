@@ -56,6 +56,7 @@ import { ClientTimeline } from "@/components/clients/client-timeline"
 import { EditClientDialog } from "@/components/clients/edit-client-dialog"
 import { PortalAccessCard } from "@/components/clients/portal-access-card"
 import { EngagementTab } from "@/components/clients/engagement-tab"
+import { RetainerBillingCard } from "@/components/clients/retainer-billing-card"
 import { WorkpapersTab } from "@/components/clients/workpapers-tab"
 import { DocumentRequests } from "@/components/clients/document-requests"
 import { WhatsAppButton } from "@/components/messaging/whatsapp-button"
@@ -444,7 +445,12 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
                 exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.2 }}
               >
-                <EngagementTab clientId={clientId} canManage={canManage} />
+                <div className="space-y-6">
+                  {/* The engagement's commercial terms already live here; this
+                      is the switch that makes them bill themselves. */}
+                  {canManage && <RetainerBillingCard clientId={clientId} />}
+                  <EngagementTab clientId={clientId} canManage={canManage} />
+                </div>
               </motion.div>
             )}
 

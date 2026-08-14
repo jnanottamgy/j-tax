@@ -69,7 +69,17 @@ export type UdinRow = {
   remarks: string | null
 }
 
-export type FirmUdinRow = UdinRow & { clientName: string | null }
+export type FirmUdinRow = UdinRow & {
+  clientName: string | null
+  /**
+   * The filing this number was signed against, once one is linked.
+   *
+   * The register could list what had been generated and never say which signed
+   * document each number belonged to — which is the only thing anyone opens it
+   * to find out.
+   */
+  filing: { id: string; filingType: string; period: string | null } | null
+}
 
 export type RegisterSummary = {
   credentials: number
@@ -295,14 +305,18 @@ export async function listAllUdinRecords(): Promise<{
 
     const rows = await prisma.udinRecord.findMany({
       where: { OR: [{ clientId: null }, { client: { deletedAt: null } }] },
-      include: { client: { select: { name: true } } },
+      include: {
+        client: { select: { name: true } },
+        filingRecord: { select: { id: true, filingType: true, period: true } },
+      },
       orderBy: { documentDate: "desc" },
     })
 
     return {
-      udins: rows.map(({ client, ...row }) => ({
+      udins: rows.map(({ client, filingRecord, ...row }) => ({
         ...row,
         clientName: client?.name ?? null,
+        filing: filingRecord,
       })),
     }
   } catch (error) {

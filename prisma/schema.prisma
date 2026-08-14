@@ -373,6 +373,21 @@ model ClientService {
   /// When the fee was last agreed or revised — the renewal anchor.
   feeAgreedAt          DateTime?
 
+  // ── Retainer billing ──────────────────────────────────────────────────────
+  // Everything needed to bill a monthly engagement has been on this row since
+  // the fee columns landed, and nothing ever did it: a firm with sixty monthly
+  // GST clients raised sixty invoices by hand every month, from memory, and the
+  // missed ones surfaced in the receivables report or not at all.
+  /// Raise this engagement's invoice automatically each cycle. Off by default —
+  /// billing a client without being asked to is not a safe assumption.
+  autoInvoice          Boolean           @default(false)
+  /// The date the next invoice is due to be raised. Advanced by one cycle each
+  /// time one is generated, so a cron that misses a night catches up rather
+  /// than skipping a month.
+  nextBillingDate      DateTime?
+  /// When this engagement last produced an invoice automatically.
+  lastAutoInvoicedAt   DateTime?
+
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -1719,6 +1734,10 @@ model FilingRecord {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// UDINs signed against this filing. Usually one; an amended return signed a
+  /// second time is why it is not modelled as a single field.
+  udinRecords UdinRecord[]
+
   @@index([clientId, financialYear])
   @@index([taskId])
   @@index([firmId])
@@ -1860,10 +1879,21 @@ model UdinRecord {
   id           String    @id @default(cuid())
   clientId     String?
   client       Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  udin         String   
+  udin         String
   /// Tax Audit Report, Certificate, Statutory Audit, GST Audit…
   documentType String
   documentDate DateTime
+  /// The filing this UDIN was generated against.
+  ///
+  /// A UDIN exists *because* a specific document was signed. The register held
+  /// the number, the client and a free-text document type, and nothing that
+  /// pointed at the work — so it could list what had been generated but never
+  /// answer the question ICAI actually asks, which is which signed document
+  /// each number belongs to. FilingRecord already carries the task, the
+  /// acknowledgement and the PDF, so one link joins the whole chain:
+  /// UDIN → filing → task → client.
+  filingRecordId String?
+  filingRecord   FilingRecord? @relation(fields: [filingRecordId], references: [id], onDelete: SetNull)
   /// Signing partner / membership number
   generatedBy  String?
   remarks      String?
