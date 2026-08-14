@@ -18,6 +18,13 @@ import type { SessionInfo } from "@/lib/auth/types"
  *
  * Memoised per request: the layout and the page both call it, and they must
  * agree on the answer.
+ *
+ * This is the ONLY place a portal visitor is identified. Two other call sites
+ * used to repeat the email match themselves — sending a portal message, and
+ * downloading an invoice PDF — which meant a client invited under an address
+ * different from the one on their record could read the portal but not write to
+ * it, and two client records sharing an address could each pull the other's
+ * invoices. Both now come through here.
  */
 
 export type PortalClient = {
@@ -47,13 +54,24 @@ const SELECT = {
 export const resolvePortalClient = cache(
   async (session: SessionInfo): Promise<PortalResolution> => {
     // 1. The explicit grant.
-    const linked = await prisma.client.findFirst({
+    //
+    //    `take: 2`, not findFirst. This query is normally firm-scoped, but on
+    //    the very first visit from a hand-provisioned login there is no User
+    //    row yet, so the tenant resolver has nothing to scope by and it runs
+    //    across every firm. findFirst would then return whichever row the
+    //    database offered first — and if a person is a client of two
+    //    subscribing firms that both granted portal access, "whichever" is the
+    //    wrong answer half the time, silently. Two grants is a question with no
+    //    honest answer, so it refuses.
+    const linked = await prisma.client.findMany({
       where: { portalUserId: session.user.id, deletedAt: null },
       select: SELECT,
+      take: 2,
     })
-    if (linked) {
-      void touchLastSeen(linked.id)
-      return { ok: true, client: linked }
+    if (linked.length > 1) return { ok: false, reason: "ambiguous" }
+    if (linked.length === 1) {
+      void touchLastSeen(linked[0].id)
+      return { ok: true, client: linked[0] }
     }
 
     // 2. Legacy: a CLIENT login created by hand before portal invites existed.

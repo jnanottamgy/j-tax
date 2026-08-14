@@ -2,6 +2,11 @@ import { getSession } from "@/lib/auth/session"
 import { canAccessRoute, hasMinimumRole, ROLE_LEVEL } from "@/lib/auth/roles"
 import { logAccessDenied } from "@/lib/security"
 import { tenantContext } from "@/lib/tenant/context"
+import { primeRequestFirmId } from "@/lib/tenant/resolve"
+import {
+  AMBIGUOUS_CLIENT_IDENTITY,
+  chooseAdoptionFirm,
+} from "@/lib/auth/portal-identity"
 
 /**
  * Enhanced Authentication & Authorization Guards
@@ -60,24 +65,53 @@ export async function requireAuth(context?: GuardContext) {
   })
 
   // Client-portal users can sign in before a mirror row exists: adopt them
-  // into the firm that owns their (unambiguous) client record.
+  // into the firm that owns their client record.
+  //
+  // Both lookups below are deliberately cross-firm — there is no tenant yet,
+  // and working out which firm owns this login is the entire point.
+  //
+  // The explicit `Client.portalUserId` grant is consulted FIRST. Adoption used
+  // to go by email alone, which is a guess: `Client.email` is not unique, and a
+  // person who is on the books of two subscribing firms has one address and one
+  // login. Two matches meant no firm at all, so a client whose firm had
+  // actually invited them was locked out by the existence of a stranger's
+  // record somewhere else on the platform.
   if (!userRow && session.user.role === "CLIENT") {
-    const matches = await prisma.client.findMany({
-      where: { email: session.user.email, deletedAt: null },
-      select: { firmId: true },
-      take: 2,
+    const [linked, byEmail] = await Promise.all([
+      prisma.client.findMany({
+        where: { portalUserId: session.user.id, deletedAt: null },
+        select: { id: true, firmId: true },
+        take: 2,
+      }),
+      session.user.email
+        ? prisma.client.findMany({
+            where: { email: session.user.email, deletedAt: null },
+            select: { id: true, firmId: true },
+            take: 2,
+          })
+        : Promise.resolve([] as Array<{ id: string; firmId: string }>),
+    ])
+
+    const decision = chooseAdoptionFirm({
+      linked: linked.map((c) => ({ clientId: c.id, firmId: c.firmId })),
+      byEmail: byEmail.map((c) => ({ clientId: c.id, firmId: c.firmId })),
     })
-    if (matches.length === 1) {
+
+    if (decision.ok) {
       userRow = await prisma.user.create({
         data: {
           id: session.user.id,
           email: session.user.email,
           name: session.user.name,
           role: "CLIENT",
-          firmId: matches[0].firmId,
+          firmId: decision.firmId,
         },
         select: { firmId: true, firm: { select: { status: true } } },
       })
+    } else if (decision.reason === "ambiguous") {
+      // Distinct from "no firm at all", because the two need different answers
+      // and the old shared message described neither.
+      throw new Error(AMBIGUOUS_CLIENT_IDENTITY)
     }
   }
 
@@ -99,6 +133,11 @@ export async function requireAuth(context?: GuardContext) {
 
   session.user.firmId = userRow.firmId
   tenantContext.enterWith({ firmId: userRow.firmId })
+  // enterWith() does not survive the await back into the caller, and the
+  // resolver may have already memoized a null for this request (a portal login
+  // whose User row we just created). Priming makes the firm we settled on the
+  // answer for every query that follows.
+  primeRequestFirmId(userRow.firmId)
 
   return session
 }

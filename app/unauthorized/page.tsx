@@ -19,6 +19,7 @@ export default async function UnauthorizedPage({
 }: UnauthorizedPageProps) {
   const params = await searchParams
   const session = await getSession()
+  const isAmbiguous = params.reason === "ambiguous_client"
 
   return (
     <div className="dashboard-gradient flex min-h-svh items-center justify-center p-6">
@@ -31,12 +32,19 @@ export default async function UnauthorizedPage({
         </div>
 
         <h1 className="text-gradient text-2xl font-semibold tracking-tight">
-          Access denied
+          {isAmbiguous ? "We can't tell which account this is" : "Access denied"}
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-          {params.reason === "missing_role"
-            ? "Your account does not have an assigned role. Contact your administrator."
-            : "You do not have permission to view this page with your current role."}
+          {/* The portal redirects here with reason=ambiguous_client when a login
+              resolves to more than one client record — most often because the
+              same person is a client of two firms using this platform. It used
+              to land on the generic message below, which described a permission
+              problem it isn't and gave nobody a way to fix it. */}
+          {isAmbiguous
+            ? "This sign-in matches more than one client record, so we can't safely decide whose portal to show you. Please contact your accountant and ask them to send a portal invitation to an email address used only for their firm — that makes the link exact."
+            : params.reason === "missing_role"
+              ? "Your account does not have an assigned role. Contact your administrator."
+              : "You do not have permission to view this page with your current role."}
         </p>
 
         {session && (
@@ -56,9 +64,14 @@ export default async function UnauthorizedPage({
         )}
 
         <div className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-          <Button asChild className="btn-glow h-10 rounded-xl px-5">
-            <Link href="/">Go to dashboard</Link>
-          </Button>
+          {/* "Go to dashboard" sends a client straight back to the portal that
+              just refused them, which bounces to this page again. Signing out is
+              the only move that goes anywhere. */}
+          {!isAmbiguous && (
+            <Button asChild className="btn-glow h-10 rounded-xl px-5">
+              <Link href="/">Go to dashboard</Link>
+            </Button>
+          )}
           <form action={signOut}>
             <Button
               type="submit"

@@ -14,6 +14,8 @@ export function toUserError(error: unknown): string {
   if (msg === "Unauthorized") return "You must be signed in to perform this action."
   if (msg === "FirmSuspended")
     return "This workspace is suspended. Please contact your provider to reactivate it."
+  if (msg === "AmbiguousClientIdentity")
+    return "This sign-in matches more than one client record, so we can't tell which account it is. Please contact your accountant."
   if (msg.startsWith("Forbidden")) return "You do not have permission to perform this action."
   if (msg.includes("connect") || msg.includes("ECONNREFUSED"))
     return "Service temporarily unavailable. Please try again."

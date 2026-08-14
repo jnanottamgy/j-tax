@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { requireSession } from "@/lib/auth/session"
+import { resolvePortalClient } from "@/lib/client-portal/resolve"
 import type { FormActionState } from "@/lib/forms/types"
 import { prisma } from "@/lib/prisma"
 
@@ -44,27 +45,33 @@ export async function sendClientMessage(
     return { fieldErrors: parsed.error.flatten().fieldErrors }
   }
 
-  // Same client resolution as the portal layout — by login email.
+  // The same resolution the portal layout uses, not a second copy of it.
   //
-  // Client.email is not unique, so an ambiguous match must be refused rather
-  // than silently binding the sender to whichever record comes back first.
-  const matches = await prisma.client.findMany({
-    where: { email: session.user.email, deletedAt: null },
+  // This used to repeat the email match by hand, which ignored the explicit
+  // Client.portalUserId grant entirely: a client invited under an address
+  // different from the one on their record could read every page of the portal
+  // and then be told no account was linked to their login the moment they tried
+  // to reply.
+  const resolved = await resolvePortalClient(session)
+  if (!resolved.ok) {
+    return {
+      error:
+        resolved.reason === "ambiguous"
+          ? "Your login matches more than one client record. Please contact your firm."
+          : "No client account is linked to your login.",
+    }
+  }
+
+  const client = await prisma.client.findUnique({
+    where: { id: resolved.client.id },
     select: {
       id: true,
       name: true,
       firmId: true,
       assignedEmployee: { select: { userId: true } },
     },
-    take: 2,
   })
-  if (matches.length === 0) {
-    return { error: "No client account is linked to your login." }
-  }
-  if (matches.length > 1) {
-    return { error: "Your login matches more than one client record. Please contact your firm." }
-  }
-  const client = matches[0]
+  if (!client) return { error: "No client account is linked to your login." }
 
   try {
     await prisma.message.create({

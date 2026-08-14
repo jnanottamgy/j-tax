@@ -19,7 +19,38 @@ import { cache } from "react"
  * IMPORTANT: uses `basePrisma` (the unextended client) — resolving through
  * the extended client would recurse into this resolver.
  */
-export const resolveRequestFirmId = cache(async (): Promise<string | null> => {
+/**
+ * Per-request slot for a firm the guard has already established.
+ *
+ * `cache()` on a sync factory gives one object per request, so writing to it is
+ * a request-local assignment.
+ */
+const requestFirmSlot = cache((): { firmId: string | null } => ({ firmId: null }))
+
+/**
+ * Tell the resolver the firm, when a guard has just worked it out.
+ *
+ * Needed because the lookup below memoizes its answer for the whole request,
+ * including a `null`. A client-portal login signing in for the first time has
+ * no `User` row yet — that row is what the guard is about to create — so the
+ * resolver returns null, caches it, and every query for the rest of that
+ * request runs unscoped. Priming closes that window, and does the same job for
+ * `tenantContext.enterWith()`, whose store does not survive the await back out
+ * of the guard.
+ *
+ * Only ever narrows to a real firm; there is no way to prime it to null.
+ */
+export function primeRequestFirmId(firmId: string): void {
+  if (!firmId) return
+  try {
+    requestFirmSlot().firmId = firmId
+  } catch {
+    // Outside a request scope (cron, scripts) there is nothing to prime —
+    // those paths carry explicit scope via tenantContext.run().
+  }
+}
+
+const lookupRequestFirmId = cache(async (): Promise<string | null> => {
   try {
     const { getSession } = await import("@/lib/auth/session")
     const session = await getSession()
@@ -37,3 +68,17 @@ export const resolveRequestFirmId = cache(async (): Promise<string | null> => {
     return null
   }
 })
+
+export async function resolveRequestFirmId(): Promise<string | null> {
+  let slot: { firmId: string | null } | null = null
+  try {
+    slot = requestFirmSlot()
+  } catch {
+    slot = null
+  }
+  if (slot?.firmId) return slot.firmId
+
+  const resolved = await lookupRequestFirmId()
+  if (resolved && slot) slot.firmId = resolved
+  return resolved
+}

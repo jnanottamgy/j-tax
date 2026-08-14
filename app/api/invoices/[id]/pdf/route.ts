@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { getSession } from "@/lib/auth/session"
+import { resolvePortalClient } from "@/lib/client-portal/resolve"
 import { getFirmSettings, getFirmLogo } from "@/lib/firm-settings"
 import { generateInvoicePDF } from "@/lib/invoices/pdf-generator"
 import { prisma } from "@/lib/prisma"
@@ -38,14 +39,18 @@ export async function GET(
   if (!invoice) return new NextResponse("Not found", { status: 404 })
 
   // Invoices are a PARTNER/MANAGER feature (EMPLOYEE is blocked from the whole
-  // payments module). CLIENT users may download only their own invoice,
-  // matched the same way the portal resolves its client record (by login email).
+  // payments module). CLIENT users may download only their own invoice.
+  //
+  // Ownership is the resolved client record, not a string comparison of email
+  // addresses. Comparing emails was wrong twice over: a client invited under a
+  // different address from the one on their record was refused their own
+  // invoice, and two client records sharing an address could each download the
+  // other's — fees, bank details and all — without either firm doing anything
+  // unusual. resolvePortalClient is the one place that answers "who is this".
   const role = session.user.role
   if (role === "CLIENT") {
-    if (
-      !invoice.client.email ||
-      invoice.client.email.toLowerCase() !== session.user.email.toLowerCase()
-    ) {
+    const resolved = await resolvePortalClient(session)
+    if (!resolved.ok || resolved.client.id !== invoice.clientId) {
       return new NextResponse("Forbidden", { status: 403 })
     }
   } else if (!["PARTNER", "MANAGER"].includes(role)) {
