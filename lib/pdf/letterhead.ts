@@ -54,7 +54,13 @@ type Doc = any
  * LLP"). Unconstrained they wrapped to three 22pt lines that ran straight out
  * of the header band and over the invoice meta block below it.
  */
-function textOneLine(doc: Doc, text: string, x: number, y: number, maxWidth: number): void {
+export function textOneLine(
+  doc: Doc,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number
+): void {
   if (doc.widthOfString(text) <= maxWidth) {
     doc.text(text, x, y, { lineBreak: false })
     return

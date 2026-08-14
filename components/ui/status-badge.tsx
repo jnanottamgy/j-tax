@@ -1,10 +1,27 @@
 import { cn } from "@/lib/utils"
 import type { LucideIcon } from "lucide-react"
+import {
+  CLIENT_STATUS_MEANING_FOR_BADGE,
+  COMPLIANCE_STATUS_MEANING,
+  INVOICE_STATUS_MEANING,
+  TASK_STATUS_MEANING,
+  statusMeaning,
+} from "@/lib/status/consequences"
 
 interface StatusBadgeProps {
   status: string
   icon?: LucideIcon
   className?: string
+  /**
+   * Which domain this status belongs to.
+   *
+   * Status strings collide across domains — PENDING is a client status and a
+   * compliance status, OVERDUE is an invoice status and a compliance status —
+   * so the consequence cannot be looked up from the string alone. Passing the
+   * kind turns the chip from a colour into a statement of what the app will
+   * and won't do. Omitted, the badge renders exactly as it always did.
+   */
+  kind?: "task" | "invoice" | "compliance" | "client"
 }
 
 const statusConfig: Record<string, { label: string; variant: "default" | "success" | "warning" | "destructive" }> = {
@@ -53,9 +70,17 @@ const variantStyles = {
   destructive: "bg-red-500/12 text-red-300 border-red-500/25",
 }
 
-export function StatusBadge({ status, icon: Icon, className }: StatusBadgeProps) {
+const MEANING_BY_KIND = {
+  task: TASK_STATUS_MEANING,
+  invoice: INVOICE_STATUS_MEANING,
+  compliance: COMPLIANCE_STATUS_MEANING,
+  client: CLIENT_STATUS_MEANING_FOR_BADGE,
+} as const
+
+export function StatusBadge({ status, icon: Icon, className, kind }: StatusBadgeProps) {
   const config = statusConfig[status] || { label: status, variant: "default" as const }
   const styles = variantStyles[config.variant]
+  const meaning = kind ? statusMeaning(MEANING_BY_KIND[kind], status) : null
 
   return (
     <span
@@ -64,9 +89,19 @@ export function StatusBadge({ status, icon: Icon, className }: StatusBadgeProps)
         styles,
         className
       )}
+      title={meaning?.consequence}
     >
       {Icon && <Icon className="size-3" />}
       {config.label}
+      {/* The statuses where the app stops doing something on its own. That is
+          the difference worth seeing without hovering, because it is the one
+          that turns into a missed deadline. */}
+      {meaning && !meaning.automated && (
+        <span
+          aria-label="No automatic reminders in this status"
+          className="inline-block size-1.5 rounded-full bg-current opacity-60"
+        />
+      )}
     </span>
   )
 }

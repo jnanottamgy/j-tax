@@ -18,6 +18,7 @@ import { canSignOffTask } from "@/lib/auth/delegation"
 import { prisma } from "@/lib/prisma"
 import { notifyRoles, notifyUser } from "@/lib/notifications/notify"
 import { parseCreateTaskFormData, taskBaseSchema } from "@/lib/validations/task"
+import { dueWindowPrismaFilter, type DueWindow } from "@/lib/filters/due-window"
 import { recordTimelineEvent } from "@/lib/timeline/events"
 
 export type TaskActionState = FormActionState
@@ -30,6 +31,8 @@ export async function getTasksData(filters?: {
   assignedEmployeeId?: string
   search?: string
   serviceType?: string
+  /** Slice by when the work is due rather than by how it is progressing. */
+  dueWindow?: DueWindow
 }) {
   const session = await requireAuth()
   const executiveEmployeeId = await getExecutiveEmployeeId(session)
@@ -58,6 +61,14 @@ export async function getTasksData(filters?: {
   
   if (filters?.serviceType) {
     where.serviceType = filters.serviceType
+  }
+
+  // Due-date windows. NO_DATE is not a range — a task with no due date is a
+  // real category (and worth finding, since nothing will ever chase it), so it
+  // is expressed as a null check rather than a bound.
+  if (filters?.dueWindow) {
+    const range = dueWindowPrismaFilter(filters.dueWindow, new Date())
+    where.dueDate = range === null ? null : range
   }
   
   if (executiveEmployeeId) {

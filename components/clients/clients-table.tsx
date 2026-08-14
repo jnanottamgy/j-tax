@@ -72,6 +72,13 @@ import {
 import { CLIENT_TYPE_OPTIONS, ENTITY_TYPE_LABELS } from "@/lib/clients/master-data"
 import type { ClientListItem, EmployeeOption } from "@/lib/clients/types"
 
+/**
+ * Sentinel for "nobody owns this client" in the owner filter. A real employee
+ * id can never collide with it, and an unowned client is the case worth
+ * filtering *to* — nothing chases a client with no owner.
+ */
+const UNASSIGNED = "__unassigned__"
+
 const ONBOARDED_OPTIONS = [
   { value: "30", label: "Last 30 days" },
   { value: "90", label: "Last 90 days" },
@@ -258,6 +265,7 @@ export function ClientsTable({
   const [typeFilter, setTypeFilter] = useState<string[]>([])
   const [gstFilter, setGstFilter] = useState<"" | "registered" | "unregistered">("")
   const [onboardedWithin, setOnboardedWithin] = useState<"" | "30" | "90" | "365">("")
+  const [employeeFilter, setEmployeeFilter] = useState<string[]>([])
   const [sortKey, setSortKey] = useState<SortKey | null>("dueDate")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [page, setPage] = useState(1)
@@ -269,7 +277,8 @@ export function ClientsTable({
     serviceFilter.length > 0 ||
     typeFilter.length > 0 ||
     gstFilter !== "" ||
-    onboardedWithin !== ""
+    onboardedWithin !== "" ||
+    employeeFilter.length > 0
 
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -310,6 +319,14 @@ export function ClientsTable({
       const matchesOnboarded =
         !onboardedCutoff || parseISO(client.createdAt) >= onboardedCutoff
 
+      // "Whose clients are these" was the one slice the list could not do, and
+      // it is the first question asked when someone goes on leave or leaves.
+      // UNASSIGNED is its own option because an unowned client is the case
+      // worth finding, not an absence to scroll past.
+      const matchesEmployee =
+        employeeFilter.length === 0 ||
+        employeeFilter.includes(client.assignedEmployeeId ?? UNASSIGNED)
+
       return (
         matchesSearch &&
         matchesStatus &&
@@ -317,7 +334,8 @@ export function ClientsTable({
         matchesService &&
         matchesType &&
         matchesGst &&
-        matchesOnboarded
+        matchesOnboarded &&
+        matchesEmployee
       )
     })
 
@@ -337,6 +355,7 @@ export function ClientsTable({
     typeFilter,
     gstFilter,
     onboardedWithin,
+    employeeFilter,
     sortKey,
     sortDirection,
   ])
@@ -395,6 +414,13 @@ export function ClientsTable({
     setPage(1)
   }
 
+  function toggleEmployee(id: string) {
+    setEmployeeFilter((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    )
+    setPage(1)
+  }
+
   function clearFilters() {
     setSearch("")
     setStatusFilter([])
@@ -403,6 +429,7 @@ export function ClientsTable({
     setTypeFilter([])
     setGstFilter("")
     setOnboardedWithin("")
+    setEmployeeFilter([])
     setPage(1)
   }
 
@@ -480,6 +507,40 @@ export function ClientsTable({
                   onCheckedChange={() => togglePriority(priority)}
                 >
                   {CLIENT_PRIORITY_LABELS[priority]}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Whose clients these are. The list could slice by status, priority,
+              service, type, GST and age, but not by owner — which is the first
+              question asked when someone goes on leave. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="input-premium h-9 gap-1.5 rounded-xl border-white/[0.07] bg-transparent">
+                <Filter className="size-3.5" />
+                Owner
+                {employeeFilter.length > 0 && (
+                  <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">{employeeFilter.length}</Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-72 w-56 overflow-y-auto">
+              <DropdownMenuLabel>Filter by assigned employee</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={employeeFilter.includes(UNASSIGNED)}
+                onCheckedChange={() => toggleEmployee(UNASSIGNED)}
+              >
+                Unassigned
+              </DropdownMenuCheckboxItem>
+              {employees.map((e) => (
+                <DropdownMenuCheckboxItem
+                  key={e.id}
+                  checked={employeeFilter.includes(e.id)}
+                  onCheckedChange={() => toggleEmployee(e.id)}
+                >
+                  {e.name}
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>

@@ -382,6 +382,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     })}
                   </div>
                 )}
+
+                {/* Each result type is capped at five here, and it used to stop
+                    there — so a query matching eleven clients looked exactly
+                    like one matching five, and the honest conclusion from the
+                    palette was that the other six did not exist. */}
+                {query.length >= 2 && results.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false)
+                      router.push(`/search?q=${encodeURIComponent(query)}`)
+                    }}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.06] px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-white/[0.04] hover:text-foreground"
+                  >
+                    See all results for “{query}”
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
               {/* Footer */}

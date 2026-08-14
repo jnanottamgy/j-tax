@@ -60,10 +60,23 @@ function fuzzyMatch(text: string, query: string): number {
   return score
 }
 
-export async function globalSearch(query: string) {
+/**
+ * @param opts.limit  Rows per result type. The palette wants a handful it can
+ *   show without scrolling; the search page wants everything that matches.
+ *   Five was hard-coded at six call sites, which made search a jump tool: it
+ *   could take you to a client you could already name, and silently hid the
+ *   sixth match from anyone trying to find one they couldn't.
+ */
+export async function globalSearch(
+  query: string,
+  opts?: { limit?: number }
+) {
   const session = await requireAuth()
   const user = session.user
   const role = user.role
+
+  // Bounded so a crafted limit cannot turn search into a table scan.
+  const limit = Math.min(Math.max(opts?.limit ?? 5, 1), 50)
 
   // LOW-02: reject oversized queries before hitting the DB
   if (query.length > MAX_QUERY_LENGTH) {
@@ -115,7 +128,7 @@ export async function globalSearch(query: string) {
         // EMPLOYEE with no linked employee record sees nothing
       } else {
         clientWhere.assignedEmployeeId = executiveEmployeeId
-        const clients = await prisma.client.findMany({ where: clientWhere as any, take: 5 })
+        const clients = await prisma.client.findMany({ where: clientWhere as any, take: limit })
         clients.forEach((client) => {
           results.push({
             type: "CLIENT",
@@ -134,7 +147,7 @@ export async function globalSearch(query: string) {
         })
       }
     } else {
-      const clients = await prisma.client.findMany({ where: clientWhere as any, take: 5 })
+      const clients = await prisma.client.findMany({ where: clientWhere as any, take: limit })
       clients.forEach((client) => {
         results.push({
           type: "CLIENT",
@@ -174,7 +187,7 @@ export async function globalSearch(query: string) {
     const tasks = await prisma.task.findMany({
       where: taskWhere as any,
       include: { client: true, assignedEmployee: true },
-      take: 5,
+      take: limit,
     })
     tasks.forEach((task) => {
       results.push({
@@ -207,7 +220,7 @@ export async function globalSearch(query: string) {
     const invoices = await prisma.invoice.findMany({
       where: invoiceWhere as any,
       include: { client: true },
-      take: 5,
+      take: limit,
     })
     invoices.forEach((invoice) => {
       results.push({
@@ -235,7 +248,7 @@ export async function globalSearch(query: string) {
           { department: { contains: query, mode: "insensitive" } },
         ],
       },
-      take: 5,
+      take: limit,
     })
     employees.forEach((employee) => {
       results.push({
@@ -266,7 +279,7 @@ export async function globalSearch(query: string) {
     const complianceEvents = await prisma.complianceEvent.findMany({
       where: compWhere as any,
       include: { client: true },
-      take: 5,
+      take: limit,
     })
     complianceEvents.forEach((event) => {
       results.push({

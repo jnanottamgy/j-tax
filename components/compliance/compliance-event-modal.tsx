@@ -10,6 +10,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { COMPLIANCE_STATUS_MEANING, statusMeaning } from "@/lib/status/consequences"
 import { Label } from "@/components/ui/label"
 import {
   ComplianceTypeBadge,
@@ -127,7 +128,13 @@ export function ComplianceEventModal({
                 <DialogTitle className="text-xl font-semibold mb-2 pr-8">{event.title}</DialogTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   <ComplianceTypeBadge type={event.type} />
-                  <Badge variant="outline" className={STATUS_BADGE[event.status]}>
+                  {/* CANCELLED reads like a tidy-up but stops the reminder
+                      entirely — the one status here where the app goes quiet. */}
+                  <Badge
+                    variant="outline"
+                    className={STATUS_BADGE[event.status]}
+                    title={statusMeaning(COMPLIANCE_STATUS_MEANING, event.status)?.consequence}
+                  >
                     {event.status}
                   </Badge>
                   {event.isStatutory && (

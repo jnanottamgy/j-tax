@@ -21,6 +21,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { INVOICE_STATUS_MEANING, statusMeaning } from "@/lib/status/consequences"
+import { ListEmptyState } from "@/components/ui/list-empty-state"
 
 type InvoicesPageClientProps = {
   initialInvoices: any[]
@@ -154,18 +156,21 @@ export function InvoicesPageClient({
               <TableRow>
                 <TableCell colSpan={8} className="h-32 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <Receipt className="size-8 opacity-30" aria-hidden />
-                    {invoices.length === 0 ? (
-                      <>
-                        <p className="font-medium text-foreground">No invoices yet</p>
-                        <p className="text-sm">Create your first invoice to start tracking billing.</p>
-                        <Button size="sm" className="mt-1" onClick={() => setAddDialogOpen(true)}>
-                          <Plus className="mr-1.5 size-3.5" /> New Invoice
-                        </Button>
-                      </>
-                    ) : (
-                      <p className="text-sm">No invoices match the current filters.</p>
-                    )}
+                    <ListEmptyState
+                      icon={Receipt}
+                      filtered={invoices.length > 0}
+                      noun="invoices"
+                      emptyHint="Invoices are how work becomes revenue — raise one against a client to start tracking what is owed."
+                      activeFilters={[
+                        statusFilter !== "ALL" && `status “${statusFilter.replace("_", " ").toLowerCase()}”`,
+                        search.trim() && `search “${search.trim()}”`,
+                      ].filter(Boolean) as string[]}
+                      onClearFilters={() => {
+                        setStatusFilter("ALL")
+                        setSearch("")
+                      }}
+                      action={{ label: "New Invoice", onClick: () => setAddDialogOpen(true) }}
+                    />
                   </div>
                 </TableCell>
               </TableRow>
@@ -287,9 +292,20 @@ function StatusBadge({ status }: { status: string }) {
       break
   }
 
+  // The chip carried a colour and nothing else. DISPUTED and WAIVED both refuse
+  // payments, and WAIVED also drops the amount out of the client's outstanding
+  // balance — that is money given up, and it read the same as "Draft".
+  const meaning = statusMeaning(INVOICE_STATUS_MEANING, status)
+
   return (
-    <Badge variant={variant} className={className}>
+    <Badge variant={variant} className={className} title={meaning?.consequence}>
       {status.replace("_", " ")}
+      {meaning && !meaning.automated && (
+        <span
+          aria-label="Not chased automatically in this status"
+          className="ml-1.5 inline-block size-1.5 rounded-full bg-current opacity-60"
+        />
+      )}
     </Badge>
   )
 }

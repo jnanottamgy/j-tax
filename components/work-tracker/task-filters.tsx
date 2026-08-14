@@ -3,7 +3,13 @@
 import { useState } from "react"
 
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback"
-import { Search, Filter, X } from "lucide-react"
+import { Search, Filter, X, CalendarClock } from "lucide-react"
+
+import {
+  DUE_WINDOW_LABELS,
+  DUE_WINDOW_OPTIONS,
+  type DueWindow,
+} from "@/lib/filters/due-window"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,14 +31,21 @@ interface Employee {
   name: string
 }
 
+export type TaskFilterValues = {
+  status?: string
+  priority?: string
+  assignedEmployeeId?: string
+  search?: string
+  serviceType?: string
+  /**
+   * Slice by when the work is due, not by how it is going. A task can be
+   * IN_PROGRESS and three weeks late, and a status filter will never show that.
+   */
+  dueWindow?: DueWindow
+}
+
 interface TaskFiltersProps {
-  onFiltersChange: (filters: {
-    status?: string
-    priority?: string
-    assignedEmployeeId?: string
-    search?: string
-    serviceType?: string
-  }) => void
+  onFiltersChange: (filters: TaskFilterValues) => void
   employees: Employee[]
 }
 
@@ -42,6 +55,7 @@ export function TaskFilters({ onFiltersChange, employees }: TaskFiltersProps) {
   const [selectedPriority, setSelectedPriority] = useState<string | undefined>()
   const [selectedEmployee, setSelectedEmployee] = useState<string | undefined>()
   const [selectedServiceType, setSelectedServiceType] = useState<string | undefined>()
+  const [selectedDueWindow, setSelectedDueWindow] = useState<DueWindow | undefined>()
 
   const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
     { value: "NOT_STARTED", label: "Not Started" },
@@ -81,6 +95,21 @@ export function TaskFilters({ onFiltersChange, employees }: TaskFiltersProps) {
     })
   })
 
+  // Every handler used to restate the whole filter object, so each new filter
+  // meant editing five call sites and any one of them could quietly drop a
+  // field. One emit, one override.
+  const emit = (patch: Partial<TaskFilterValues>) => {
+    onFiltersChange({
+      status: selectedStatus,
+      priority: selectedPriority,
+      assignedEmployeeId: selectedEmployee,
+      serviceType: selectedServiceType,
+      dueWindow: selectedDueWindow,
+      search: search || undefined,
+      ...patch,
+    })
+  }
+
   const handleSearchChange = (value: string) => {
     setSearch(value)
     emitSearch(value)
@@ -88,46 +117,27 @@ export function TaskFilters({ onFiltersChange, employees }: TaskFiltersProps) {
 
   const handleStatusChange = (status: string | undefined) => {
     setSelectedStatus(status)
-    onFiltersChange({
-      status,
-      priority: selectedPriority,
-      assignedEmployeeId: selectedEmployee,
-      serviceType: selectedServiceType,
-      search: search || undefined,
-    })
+    emit({ status })
   }
 
   const handlePriorityChange = (priority: string | undefined) => {
     setSelectedPriority(priority)
-    onFiltersChange({
-      status: selectedStatus,
-      priority,
-      assignedEmployeeId: selectedEmployee,
-      serviceType: selectedServiceType,
-      search: search || undefined,
-    })
+    emit({ priority })
   }
 
   const handleEmployeeChange = (employeeId: string | undefined) => {
     setSelectedEmployee(employeeId)
-    onFiltersChange({
-      status: selectedStatus,
-      priority: selectedPriority,
-      assignedEmployeeId: employeeId,
-      serviceType: selectedServiceType,
-      search: search || undefined,
-    })
+    emit({ assignedEmployeeId: employeeId })
   }
 
   const handleServiceTypeChange = (serviceType: string | undefined) => {
     setSelectedServiceType(serviceType)
-    onFiltersChange({
-      status: selectedStatus,
-      priority: selectedPriority,
-      assignedEmployeeId: selectedEmployee,
-      serviceType,
-      search: search || undefined,
-    })
+    emit({ serviceType })
+  }
+
+  const handleDueWindowChange = (dueWindow: DueWindow | undefined) => {
+    setSelectedDueWindow(dueWindow)
+    emit({ dueWindow })
   }
 
   const clearAllFilters = () => {
@@ -136,10 +146,17 @@ export function TaskFilters({ onFiltersChange, employees }: TaskFiltersProps) {
     setSelectedPriority(undefined)
     setSelectedEmployee(undefined)
     setSelectedServiceType(undefined)
+    setSelectedDueWindow(undefined)
     onFiltersChange({})
   }
 
-  const hasActiveFilters = selectedStatus || selectedPriority || selectedEmployee || selectedServiceType || search
+  const hasActiveFilters =
+    selectedStatus ||
+    selectedPriority ||
+    selectedEmployee ||
+    selectedServiceType ||
+    selectedDueWindow ||
+    search
 
   return (
     <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
@@ -277,6 +294,47 @@ export function TaskFilters({ onFiltersChange, employees }: TaskFiltersProps) {
               key={option.value}
               onClick={() => handleServiceTypeChange(selectedServiceType === option.value ? undefined : option.value)}
               className={cn(selectedServiceType === option.value && "bg-accent")}
+            >
+              {option.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Due Window Filter — "what's overdue" and "what's due this week" are
+          the questions a manager opens this page to answer, and neither of them
+          is a status. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              "h-10 rounded-xl gap-2",
+              selectedDueWindow && "bg-primary/10 border-primary/20 text-primary"
+            )}
+          >
+            <CalendarClock className="h-4 w-4" />
+            Due
+            {selectedDueWindow && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                {DUE_WINDOW_LABELS[selectedDueWindow]}
+              </Badge>
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-48">
+          <DropdownMenuLabel>Filter by Due Date</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {DUE_WINDOW_OPTIONS.map((option) => (
+            <DropdownMenuItem
+              key={option.value}
+              onClick={() =>
+                handleDueWindowChange(
+                  selectedDueWindow === option.value ? undefined : option.value
+                )
+              }
+              className={cn(selectedDueWindow === option.value && "bg-accent")}
             >
               {option.label}
             </DropdownMenuItem>

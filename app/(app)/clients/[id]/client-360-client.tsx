@@ -28,6 +28,7 @@ import {
   Sparkles,
   FileSignature,
   GitCompareArrows,
+  FileDown,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -271,6 +272,24 @@ export function Client360Client({ initialData, clientId, firmName }: Client360Cl
                 </Link>
               </Button>
             ))}
+            {/* The document a partner actually hands the client at a review
+                meeting. Everything else printable — invoices, quotations — is
+                something the client already has. */}
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              className="input-premium h-9 gap-2 rounded-xl border-white/[0.07] bg-transparent"
+            >
+              <a
+                href={`/api/clients/${data.client.id}/compliance-report`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileDown className="h-4 w-4" />
+                Compliance report
+              </a>
+            </Button>
           </div>
         </div>
       </div>

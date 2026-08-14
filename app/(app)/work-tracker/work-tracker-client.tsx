@@ -10,7 +10,10 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TaskTable } from "@/components/work-tracker/task-table"
 import { TaskDetailDrawer } from "@/components/work-tracker/task-detail-drawer"
-import { TaskFilters } from "@/components/work-tracker/task-filters"
+import { TaskFilters, type TaskFilterValues } from "@/components/work-tracker/task-filters"
+import { ListEmptyState } from "@/components/ui/list-empty-state"
+import { DUE_WINDOW_LABELS } from "@/lib/filters/due-window"
+import { serviceLabel } from "@/lib/clients/constants"
 import { AddTaskDialog, type EditableTask } from "@/components/work-tracker/add-task-dialog"
 import { AddInvoiceDialog } from "@/components/payments/add-invoice-dialog"
 import { getTasksData, getTaskDetail, updateTaskStatus, acceptTask, declineTask, deleteTask, addComment, deleteComment, deleteAttachment } from "@/app/actions/tasks"
@@ -42,13 +45,9 @@ export function WorkTrackerClient() {
   const [editingTask, setEditingTask] = useState<EditableTask | null>(null)
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState<{
-    status?: string
-    priority?: string
-    assignedEmployeeId?: string
-    search?: string
-    serviceType?: string
-  }>({})
+  const [filters, setFilters] = useState<TaskFilterValues>({})
+  // Bumped to remount TaskFilters when filters are cleared from outside it.
+  const [filtersKey, setFiltersKey] = useState(0)
 
   const loadData = useCallback(async () => {
     try {
@@ -214,6 +213,27 @@ export function WorkTrackerClient() {
     }
   }
 
+  // Named for the empty state, so "no results" can say what is hiding them
+  // rather than leaving someone to conclude their tasks are gone.
+  const activeFilterLabels = [
+    filters.status && `status “${filters.status.replace(/_/g, " ").toLowerCase()}”`,
+    filters.priority && `priority “${filters.priority.toLowerCase()}”`,
+    filters.assignedEmployeeId &&
+      `assignee “${employees.find((e) => e.id === filters.assignedEmployeeId)?.name ?? "selected"}”`,
+    filters.serviceType &&
+      `service “${serviceLabel(filters.serviceType as Parameters<typeof serviceLabel>[0])}”`,
+    filters.dueWindow && `due ${DUE_WINDOW_LABELS[filters.dueWindow].toLowerCase()}`,
+    filters.search && `search “${filters.search}”`,
+  ].filter(Boolean) as string[]
+
+  // TaskFilters keeps its own control state, so clearing from out here has to
+  // remount it — otherwise the dropdowns keep showing filters that no longer
+  // apply.
+  const handleClearFilters = () => {
+    setFilters({})
+    setFiltersKey((k) => k + 1)
+  }
+
   const handleFiltersChange = (newFilters: typeof filters) => {
     setFilters(newFilters)
   }
@@ -283,6 +303,7 @@ export function WorkTrackerClient() {
       {/* Filters */}
       <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
         <TaskFilters
+          key={filtersKey}
           onFiltersChange={handleFiltersChange}
           employees={employees}
         />
@@ -291,20 +312,24 @@ export function WorkTrackerClient() {
       {/* Task View — table only */}
       {tasks.length === 0 ? (
         <GlassCard hover={false} className="p-12">
-          <EmptyState
+          {/* The list is filtered on the server, so an empty result says nothing
+              about whether any tasks exist. It used to answer "create your first
+              task" to someone holding two hundred of them behind a status
+              filter. The filters themselves are the only way to tell. */}
+          <ListEmptyState
             icon={CheckSquare}
-            title="No tasks found"
-            description={
+            filtered={activeFilterLabels.length > 0}
+            noun="tasks"
+            emptyHint={
               canManage
-                ? "Create your first task to start tracking filings and reviews"
-                : "Tasks assigned to you by a Manager or Partner will appear here"
+                ? "Tasks are the unit of work in the firm — create one to start tracking a filing or a review."
+                : "Tasks assigned to you by a Manager or Partner will appear here."
             }
+            activeFilters={activeFilterLabels}
+            onClearFilters={handleClearFilters}
             action={
               canManage
-                ? {
-                    label: "Create Task",
-                    onClick: () => setAddTaskDialogOpen(true),
-                  }
+                ? { label: "Create Task", onClick: () => setAddTaskDialogOpen(true) }
                 : undefined
             }
           />

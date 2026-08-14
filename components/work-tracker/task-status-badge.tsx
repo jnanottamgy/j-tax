@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-
-type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DATA_AWAITED" | "UNDER_REVIEW" | "FILED_DONE" | "ON_HOLD"
+import { TASK_STATUS_MEANING, type TaskStatus } from "@/lib/status/consequences"
 
 const statusConfig: Record<TaskStatus, { label: string; className: string }> = {
   NOT_STARTED: {
@@ -37,10 +36,24 @@ interface TaskStatusBadgeProps {
 
 export function TaskStatusBadge({ status, className }: TaskStatusBadgeProps) {
   const config = statusConfig[status]
+  const meaning = TASK_STATUS_MEANING[status]
 
   return (
-    <Badge variant="outline" className={cn(config.className, className)}>
+    <Badge
+      variant="outline"
+      className={cn(config.className, className)}
+      // The chip used to carry a colour and nothing else, and the rule behind
+      // it is not guessable: UNDER_REVIEW and ON_HOLD both stop the overdue
+      // alert, so a task can go quiet by sitting in a status that looks active.
+      title={meaning.consequence}
+    >
       {config.label}
+      {!meaning.automated && (
+        <span
+          aria-label="No automatic alerts in this status"
+          className="ml-1.5 inline-block size-1.5 rounded-full bg-current opacity-60"
+        />
+      )}
     </Badge>
   )
 }
