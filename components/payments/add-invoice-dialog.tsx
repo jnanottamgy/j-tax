@@ -8,6 +8,11 @@ import {
   getClientEngagements,
   type ClientEngagement,
 } from "@/app/actions/invoices"
+import {
+  getUnbilledTime,
+  markTimeBilled,
+  type UnbilledTime,
+} from "@/app/actions/time-entries"
 import { FormAlert } from "@/components/forms/form-alert"
 import { FormField } from "@/components/forms/form-field"
 import { SubmitButton } from "@/components/forms/submit-button"
@@ -115,6 +120,11 @@ export function AddInvoiceDialog({
   const [formData, setFormData] = useState(seed)
   // What this client is actually engaged for, and at what fee.
   const [engagements, setEngagements] = useState<ClientEngagement[]>([])
+  // Billable hours logged against this client that nobody has invoiced yet.
+  const [unbilled, setUnbilled] = useState<UnbilledTime | null>(null)
+  // Only set when the user actually bills the hours — otherwise the entries
+  // stay unbilled and show up on the next invoice, which is correct.
+  const [billTime, setBillTime] = useState(false)
 
   const { submit, getError, isPending, formError, clearErrors } = useValidatedForm({
     schema: invoiceSchema,
@@ -138,7 +148,18 @@ export function AddInvoiceDialog({
       fd.set("status", data.status)
       fd.set("remarks", data.remarks ?? "")
       if (sourceTaskId) fd.set("sourceTaskId", sourceTaskId)
-      return isRevision ? createRevisedInvoice(revisedFromId!, fd) : createInvoice({}, fd)
+      const result = isRevision
+        ? await createRevisedInvoice(revisedFromId!, fd)
+        : await createInvoice({}, fd)
+
+      // Stamp the hours only once the invoice exists, and only against its
+      // real id — marking them first, or against a placeholder, would lose the
+      // time if the invoice then failed to save.
+      const invoiceId = result?.data?.invoiceId
+      if (result?.success && billTime && data.clientId && typeof invoiceId === "string") {
+        await markTimeBilled(data.clientId, invoiceId).catch(() => {})
+      }
+      return result
     },
   })
 
@@ -152,10 +173,14 @@ export function AddInvoiceDialog({
       // engagements for that path too, or the fee prompt silently goes missing
       // in exactly the flow it is most useful in.
       setEngagements([])
+      setUnbilled(null)
       if (fresh.clientId) {
         getClientEngagements(fresh.clientId)
           .then(setEngagements)
           .catch(() => { /* manual fee entry still works */ })
+        getUnbilledTime(fresh.clientId)
+          .then(setUnbilled)
+          .catch(() => { /* hours are a prompt, not a requirement */ })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,10 +206,14 @@ export function AddInvoiceDialog({
       ""
     setFormData((prev) => ({ ...prev, clientId, placeOfSupply: autoState }))
     setEngagements([])
+    setUnbilled(null)
     if (clientId) {
       getClientEngagements(clientId)
         .then(setEngagements)
         .catch(() => { /* the form still works with a manually typed fee */ })
+      getUnbilledTime(clientId)
+        .then(setUnbilled)
+        .catch(() => { /* hours are a prompt, not a requirement */ })
     }
   }
 
@@ -323,6 +352,63 @@ export function AddInvoiceDialog({
               </select>
             </FormField>
           </div>
+
+          {/* Hours logged and never priced. TimeEntry.billable existed from the
+              start with no rate to multiply it by, so the timesheet measured
+              cost and never touched revenue. */}
+          {unbilled && unbilled.minutes > 0 && (
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {(unbilled.minutes / 60).toFixed(1)} unbilled hours on this client
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {unbilled.byEmployee
+                      .map(
+                        (e) =>
+                          `${e.employeeName} ${(e.minutes / 60).toFixed(1)}h${
+                            e.ratePerHour ? ` @ ₹${e.ratePerHour.toLocaleString("en-IN")}` : ""
+                          }`
+                      )
+                      .join(" · ")}
+                  </p>
+                  {unbilled.hasUnratedTime && (
+                    <p className="mt-1.5 text-xs text-amber-400">
+                      Some of this time has no hourly rate set, so it is not included in
+                      the total. Set rates on the Employees page.
+                    </p>
+                  )}
+                </div>
+                {unbilled.amount > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => {
+                      setBillTime(true)
+                      setFormData((prev) => ({
+                        ...prev,
+                        professionalFee: String(unbilled.amount),
+                        serviceDescription:
+                          prev.serviceDescription ||
+                          `Professional services — ${(unbilled.minutes / 60).toFixed(1)} hours`,
+                      }))
+                    }}
+                  >
+                    Bill {formatINR(unbilled.amount)}
+                  </Button>
+                )}
+              </div>
+              {billTime && (
+                <p className="mt-3 text-xs text-emerald-400">
+                  These hours will be marked billed against this invoice, so they
+                  won&apos;t appear on the next one.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField

@@ -39,6 +39,7 @@ export async function getEmployeesData() {
       name: true,
       email: true,
       department: true,
+      billingRatePerHour: true,
       isActive: true,
       createdAt: true,
       updatedAt: true,
@@ -47,8 +48,10 @@ export async function getEmployeesData() {
     orderBy: { createdAt: "desc" },
   })
 
-  const employees = rows.map(({ user, ...rest }) => ({
+  const employees = rows.map(({ user, billingRatePerHour, ...rest }) => ({
     ...rest,
+    // Decimal can't cross the server → client boundary.
+    billingRatePerHour: billingRatePerHour != null ? Number(billingRatePerHour) : null,
     role:
       user?.role === "MANAGER" || user?.role === "EMPLOYEE" ? user.role : null,
   }))
@@ -108,6 +111,9 @@ export async function createEmployee(
         name: data.name,
         email: data.email,
         department: data.department?.trim() ? data.department : null,
+        billingRatePerHour: data.billingRatePerHour?.trim()
+          ? Number(data.billingRatePerHour)
+          : null,
         isActive: data.isActive,
         userId: provisioned.userId,
       },
@@ -190,6 +196,9 @@ export async function updateEmployee(
         name: data.name,
         email: data.email,
         department: data.department?.trim() ? data.department : null,
+        billingRatePerHour: data.billingRatePerHour?.trim()
+          ? Number(data.billingRatePerHour)
+          : null,
         isActive: data.isActive,
       },
     })

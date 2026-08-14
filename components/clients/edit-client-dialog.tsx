@@ -4,7 +4,7 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { Check, Loader2, Pencil } from "lucide-react"
 import { toast } from "sonner"
-import type { ServiceFrequency, ServiceType } from "@prisma/client"
+import type { ClientStatus, ServiceFrequency, ServiceType } from "@prisma/client"
 
 import {
   updateClient,
@@ -36,6 +36,7 @@ import {
   ALL_SERVICE_TYPES,
   CLIENT_PRIORITY_LABELS,
   CLIENT_STATUS_LABELS,
+  CLIENT_STATUS_MEANING,
   SERVICE_FREQUENCY_LABELS,
   SERVICE_TYPE_LABELS,
 } from "@/lib/clients/constants"
@@ -82,6 +83,7 @@ export function EditClientDialog({
     initialState
   )
   const [clientType, setClientType] = useState(client.clientType ?? "")
+  const [status, setStatus] = useState<ClientStatus>(client.status)
   // Uncontrolled inputs elsewhere in this form, but these three interlock: a
   // GSTIN carries the PAN and the state, and a PAN encodes the constitution.
   const [gstin, setGstin] = useState(client.gstin ?? "")
@@ -153,6 +155,7 @@ export function EditClientDialog({
   useEffect(() => {
     if (!actualOpen) return
     setClientType(client.clientType ?? "")
+    setStatus(client.status)
     setGstin(client.gstin ?? "")
     setPan(client.pan ?? "")
     setIsIncorporated(client.isIncorporated ?? true)
@@ -314,16 +317,31 @@ export function EditClientDialog({
                   <select
                     id="status"
                     name="status"
-                    defaultValue={client.status}
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as ClientStatus)}
                     disabled={isPending}
                     className="input-premium h-10 w-full rounded-xl px-3 text-sm"
                   >
-                    {ALL_CLIENT_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {CLIENT_STATUS_LABELS[status]}
+                    {ALL_CLIENT_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {CLIENT_STATUS_LABELS[s]}
+                        {CLIENT_STATUS_MEANING[s].generatesFilings ? "" : " — no filings"}
                       </option>
                     ))}
                   </select>
+                  {/* The consequence, at the moment of choosing. Three of the
+                      four statuses stop automatic compliance, and the chip
+                      alone never said so. */}
+                  <p
+                    className={cn(
+                      "mt-1.5 text-xs",
+                      CLIENT_STATUS_MEANING[status].generatesFilings
+                        ? "text-muted-foreground"
+                        : "text-amber-400"
+                    )}
+                  >
+                    {CLIENT_STATUS_MEANING[status].consequence}
+                  </p>
                 </Field>
                 <Field label="GSTIN" name="gstin" error={state.fieldErrors?.gstin?.[0]}>
                   <Input

@@ -3,6 +3,8 @@ export interface EmployeeListItem {
   name: string
   email: string
   department: string | null
+  /** Hourly rate the firm charges for this person, or null if not hourly. */
+  billingRatePerHour?: number | null
   isActive: boolean
   createdAt: Date
   updatedAt: Date

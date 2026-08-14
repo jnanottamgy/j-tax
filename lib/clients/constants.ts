@@ -14,6 +14,46 @@ export const CLIENT_STATUS_LABELS: Record<ClientStatus, string> = {
   ON_HOLD: "On Hold",
 }
 
+/**
+ * What each status actually does.
+ *
+ * These render as a coloured chip and nothing else, so nobody could tell that
+ * three of the four switch off automatic compliance. That is exactly how every
+ * client sat on PENDING with no filings being generated and no one noticing —
+ * a status with a visible consequence would have shown it on day one.
+ *
+ * `generatesFilings` mirrors the query in generateRecurringComplianceTasks: it
+ * serves ACTIVE and nothing else.
+ */
+export const CLIENT_STATUS_MEANING: Record<
+  ClientStatus,
+  { generatesFilings: boolean; consequence: string }
+> = {
+  ACTIVE: {
+    generatesFilings: true,
+    consequence: "Deadlines and filing tasks are generated automatically each month.",
+  },
+  PENDING: {
+    generatesFilings: false,
+    consequence:
+      "No deadlines or filing tasks are generated. Use this only before an engagement has started.",
+  },
+  ON_HOLD: {
+    generatesFilings: false,
+    consequence:
+      "No deadlines or filing tasks are generated while the engagement is paused. Existing work stays.",
+  },
+  INACTIVE: {
+    generatesFilings: false,
+    consequence: "No deadlines or filing tasks are generated. Use this when the client has left.",
+  },
+}
+
+/** One-line summary for a chip tooltip or a form hint. */
+export function clientStatusHint(status: ClientStatus): string {
+  return CLIENT_STATUS_MEANING[status].consequence
+}
+
 export const CLIENT_PRIORITY_LABELS: Record<ClientPriority, string> = {
   LOW: "Low",
   MEDIUM: "Medium",

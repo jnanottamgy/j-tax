@@ -44,6 +44,7 @@ const emptyForm = {
   name: "",
   email: "",
   department: "",
+  billingRatePerHour: "",
   role: "EMPLOYEE" as "EMPLOYEE" | "MANAGER",
   isActive: true,
 }
@@ -77,6 +78,7 @@ export function AddEmployeeDialog({
       fd.set("name", data.name)
       fd.set("email", data.email)
       fd.set("department", data.department ?? "")
+      fd.set("billingRatePerHour", data.billingRatePerHour ?? "")
       fd.set("role", data.role)
       fd.set("isActive", String(data.isActive))
       if (isEdit && employee) {
@@ -96,6 +98,8 @@ export function AddEmployeeDialog({
             name: employee.name,
             email: employee.email,
             department: employee.department ?? "",
+            billingRatePerHour:
+              employee.billingRatePerHour != null ? String(employee.billingRatePerHour) : "",
             role: employee.role ?? "EMPLOYEE",
             isActive: employee.isActive,
           }
@@ -243,6 +247,29 @@ export function AddEmployeeDialog({
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     placeholder="Tax, Audit, etc."
                     className="input-premium h-10 rounded-xl"
+                    disabled={isPending}
+                  />
+                </FormField>
+
+                <FormField
+                  label="Billing rate (₹/hour)"
+                  htmlFor="billingRatePerHour"
+                  error={getError("billingRatePerHour")}
+                >
+                  {/* TimeEntry.billable has existed from the start with nothing
+                      to multiply it by, so hours were tracked and never priced.
+                      Blank is a real answer for a fixed-fee practice. */}
+                  <Input
+                    id="billingRatePerHour"
+                    type="number"
+                    min="0"
+                    step="50"
+                    value={formData.billingRatePerHour}
+                    onChange={(e) =>
+                      setFormData({ ...formData, billingRatePerHour: e.target.value })
+                    }
+                    placeholder="Not billed hourly"
+                    className="input-premium h-10 rounded-xl tabular-nums"
                     disabled={isPending}
                   />
                 </FormField>

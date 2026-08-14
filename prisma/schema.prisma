@@ -169,6 +169,11 @@ model Employee {
   email      String  
   department String?
   isActive   Boolean  @default(true)
+  /// What the firm charges per hour for this person's time, excluding GST.
+  /// TimeEntry.billable has always existed with nothing to multiply it by, so
+  /// hours were tracked and never priced. Null = not chargeable by the hour,
+  /// which is the honest default for a firm that bills fixed fees.
+  billingRatePerHour Decimal? @db.Decimal(10, 2)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -897,6 +902,8 @@ model Invoice {
   revisedFromId      String?
   revisedFrom        Invoice?      @relation("InvoiceRevisions", fields: [revisedFromId], references: [id], onDelete: SetNull)
   revisions          Invoice[]     @relation("InvoiceRevisions")
+  /// Time entries billed on this invoice, when it was raised from the timesheet.
+  timeEntries        TimeEntry[]
   revisionNumber     Int           @default(0)
   /// The task this invoice was auto-created from (task→invoice workflow).
   sourceTaskId       String?
@@ -1928,6 +1935,12 @@ model TimeEntry {
   /// Derived duration, stored for reporting
   minutes     Int       @default(0)
   billable    Boolean   @default(true)
+  /// The invoice this time was billed on. Set when an invoice is raised from
+  /// the timesheet; without it the same hours could be billed twice, which is
+  /// the one mistake a client actually notices.
+  invoiceId   String?
+  invoice     Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  invoicedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

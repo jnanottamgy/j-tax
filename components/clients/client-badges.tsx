@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import {
   CLIENT_PRIORITY_LABELS,
   CLIENT_STATUS_LABELS,
+  CLIENT_STATUS_MEANING,
 } from "@/lib/clients/constants"
 import { cn } from "@/lib/utils"
 
@@ -22,12 +23,22 @@ const priorityStyles: Record<ClientPriority, string> = {
 }
 
 export function ClientStatusBadge({ status }: { status: ClientStatus }) {
+  const meaning = CLIENT_STATUS_MEANING[status]
   return (
     <Badge
       variant="outline"
       className={cn("font-medium", statusStyles[status])}
+      // The chip said "Pending" and nothing else, so three of the four statuses
+      // silently switched off automatic compliance with no way to tell.
+      title={meaning.consequence}
     >
       {CLIENT_STATUS_LABELS[status]}
+      {!meaning.generatesFilings && (
+        <span
+          aria-label="No automatic filings"
+          className="ml-1.5 inline-block size-1.5 rounded-full bg-current opacity-60"
+        />
+      )}
     </Badge>
   )
 }

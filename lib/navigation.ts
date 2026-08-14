@@ -333,13 +333,22 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
         items: [
           { title: "My Dashboard", href: "/", icon: LayoutDashboard, description: "Your personal dashboard" },
           { title: "My Tasks", href: "/work-tracker", icon: ClipboardList, description: "Tasks assigned to you" },
-          { title: "My Timesheet", href: "/timesheet", icon: Timer, description: "Log your hours" },
           { title: "My Clients", href: "/clients", icon: Building2, description: "Clients you manage" },
+          { title: "My Timesheet", href: "/timesheet", icon: Timer, description: "Log your hours" },
+          { title: "Firm Calendar", href: "/calendar", icon: CalendarDays, description: "Firm-set due dates" },
+        ],
+      },
+      {
+        // Same split as the partner nav: these four are per-client work
+        // products, not places you go. Nine items in one group is a list you
+        // read rather than a menu you scan.
+        id: "workpapers",
+        label: "Workpapers",
+        items: [
           { title: "GST Recon", href: "/gst-reconciliation", icon: GitCompareArrows, description: "Reconcile your clients' GSTR-2B" },
           { title: "ITR Computation", href: "/itr-computation", icon: Calculator, description: "Tax computations for your clients" },
-          { title: "Notices", href: "/notices", icon: FileWarning, description: "Notices for your clients" },
           { title: "Financial Statements", href: "/financial-statements", icon: BookOpenCheck, description: "Statements for your clients" },
-          { title: "Firm Calendar", href: "/calendar", icon: CalendarDays, description: "Firm-set due dates" },
+          { title: "Notices", href: "/notices", icon: FileWarning, description: "Notices for your clients" },
         ],
       },
       {

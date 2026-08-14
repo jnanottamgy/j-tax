@@ -321,7 +321,9 @@ export async function createInvoice(
     revalidatePath("/payments/invoices")
     revalidatePath("/payments")
     revalidatePath(`/clients/${data.clientId}`)
-    return { success: true }
+    // The id goes back so the caller can attach things to the invoice it just
+    // made — billing a client's unbilled hours needs somewhere to point them.
+    return { success: true, data: { invoiceId: newInvoice.id } }
   } catch (error) {
     console.error("Failed to create invoice:", error)
     return { error: "Failed to create invoice. Please try again." }

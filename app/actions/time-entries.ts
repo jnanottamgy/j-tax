@@ -721,3 +721,129 @@ export async function getMyActiveTasks(): Promise<ActiveTaskDays[]> {
     acceptedAt: t.acceptedAt ? t.acceptedAt.toISOString() : null,
   }))
 }
+
+// ─── Billing time ────────────────────────────────────────────────────────────
+
+export type UnbilledTime = {
+  clientId: string
+  clientName: string
+  /** Billable, not-yet-invoiced minutes. */
+  minutes: number
+  /** minutes × the person's rate, summed. Zero where nobody has a rate set. */
+  amount: number
+  byEmployee: Array<{
+    employeeId: string
+    employeeName: string
+    minutes: number
+    ratePerHour: number | null
+    amount: number
+  }>
+  /** True when some of the time cannot be priced — the caller must say so. */
+  hasUnratedTime: boolean
+}
+
+/**
+ * Billable time on a client that has not been invoiced yet.
+ *
+ * TimeEntry.billable has existed from the start with nothing to multiply it by
+ * — no rate on the employee, no rate on the engagement, and no route from
+ * minutes to an invoice line. So the timesheet measured cost and never touched
+ * revenue.
+ */
+export async function getUnbilledTime(clientId: string): Promise<UnbilledTime | null> {
+  const session = await requirePartnerOrManager()
+  if (!clientId) return null
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { id: true, name: true },
+  })
+  if (!client) return null
+
+  const entries = await prisma.timeEntry.findMany({
+    where: {
+      // TimeEntry carries a firmId of its own, so the tenant extension scopes
+      // this; clientId narrows it to the one client.
+      clientId,
+      billable: true,
+      invoiceId: null,
+      endedAt: { not: null },
+    },
+    select: {
+      minutes: true,
+      employeeId: true,
+      employee: { select: { name: true, billingRatePerHour: true } },
+    },
+  })
+
+  const byEmployee = new Map<
+    string,
+    { employeeId: string; employeeName: string; minutes: number; ratePerHour: number | null }
+  >()
+
+  for (const e of entries) {
+    const existing = byEmployee.get(e.employeeId)
+    if (existing) {
+      existing.minutes += e.minutes
+    } else {
+      byEmployee.set(e.employeeId, {
+        employeeId: e.employeeId,
+        employeeName: e.employee.name,
+        minutes: e.minutes,
+        ratePerHour:
+          e.employee.billingRatePerHour != null
+            ? Number(e.employee.billingRatePerHour)
+            : null,
+      })
+    }
+  }
+
+  const rows = [...byEmployee.values()].map((r) => ({
+    ...r,
+    // Rounded to the paisa, not the rupee — an invoice total that doesn't
+    // reconcile to its own lines is worse than an awkward number.
+    amount: r.ratePerHour ? Math.round((r.minutes / 60) * r.ratePerHour * 100) / 100 : 0,
+  }))
+
+  void session
+  return {
+    clientId: client.id,
+    clientName: client.name,
+    minutes: rows.reduce((s, r) => s + r.minutes, 0),
+    amount: rows.reduce((s, r) => s + r.amount, 0),
+    byEmployee: rows.sort((a, b) => b.minutes - a.minutes),
+    hasUnratedTime: rows.some((r) => r.ratePerHour == null && r.minutes > 0),
+  }
+}
+
+/**
+ * Attach a client's unbilled time to an invoice.
+ *
+ * Called after the invoice exists, so the entries carry its id and can never be
+ * billed a second time. Deliberately marks ALL currently-unbilled billable time
+ * for the client: partial selection would leave the remainder looking unbilled
+ * when it had in fact been folded into the same fee.
+ */
+export async function markTimeBilled(
+  clientId: string,
+  invoiceId: string
+): Promise<{ success: boolean; entries: number; error?: string }> {
+  try {
+    await requirePartnerOrManager()
+  } catch {
+    return { success: false, entries: 0, error: "Permission denied." }
+  }
+
+  try {
+    const result = await prisma.timeEntry.updateMany({
+      where: { clientId, billable: true, invoiceId: null, endedAt: { not: null } },
+      data: { invoiceId, invoicedAt: new Date() },
+    })
+    revalidatePath("/timesheet")
+    revalidatePath(`/clients/${clientId}`)
+    return { success: true, entries: result.count }
+  } catch (error) {
+    console.error("Failed to mark time billed:", error)
+    return { success: false, entries: 0, error: "Could not link the time to the invoice." }
+  }
+}
