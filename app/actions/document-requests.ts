@@ -51,6 +51,16 @@ export type DocumentRequestItemRow = {
   title: string
   status: string
   rejectionReason: string | null
+  /**
+   * The file the client sent, once they have.
+   *
+   * Without it a reviewer saw the word "UPLOADED" and had no way to open what
+   * had arrived — so the request tracked its own progress while the document
+   * itself stayed invisible.
+   */
+  documentId: string | null
+  fileName: string | null
+  fileSize: number | null
 }
 
 export type DocumentRequestRow = {
@@ -75,7 +85,13 @@ function serialize(r: {
   notes: string | null
   lastRemindedAt: Date | null
   createdAt: Date
-  items: Array<{ id: string; title: string; status: string; rejectionReason: string | null }>
+  items: Array<{
+    id: string
+    title: string
+    status: string
+    rejectionReason: string | null
+    document?: { id: string; fileName: string; fileSize: number } | null
+  }>
 }): DocumentRequestRow {
   const outstanding = r.items.filter((i) => i.status !== "ACCEPTED").length
   return {
@@ -86,14 +102,25 @@ function serialize(r: {
     notes: r.notes,
     lastRemindedAt: r.lastRemindedAt?.toISOString() ?? null,
     createdAt: r.createdAt.toISOString(),
-    items: r.items,
+    items: r.items.map((i) => ({
+      id: i.id,
+      title: i.title,
+      status: i.status,
+      rejectionReason: i.rejectionReason,
+      documentId: i.document?.id ?? null,
+      fileName: i.document?.fileName ?? null,
+      fileSize: i.document?.fileSize ?? null,
+    })),
     outstanding,
     overdue: Boolean(r.dueDate && r.dueDate.getTime() < Date.now() && outstanding > 0),
   }
 }
 
 const REQUEST_INCLUDE = {
-  items: { orderBy: { sortOrder: "asc" } },
+  items: {
+    orderBy: { sortOrder: "asc" },
+    include: { document: { select: { id: true, fileName: true, fileSize: true } } },
+  },
 } as const
 
 export async function getDocumentRequests(
@@ -362,4 +389,46 @@ export async function getMyOutstandingDocuments(clientId: string): Promise<
       items: r.items.filter((i) => i.status !== "ACCEPTED").map((i) => i.title),
     }))
     .filter((r) => r.items.length > 0)
+}
+
+/**
+ * A short-lived link to open what the client sent.
+ *
+ * Signed rather than public: these are bank statements and tax records, and the
+ * bucket must not be readable by anyone holding a guessed path. Ten minutes is
+ * enough to open or save the file and short enough that a link pasted into a
+ * chat stops working.
+ *
+ * Scoped through the request's own client, so an employee who cannot see the
+ * client cannot fetch their documents by item id.
+ */
+export async function getRequestedDocumentUrl(
+  itemId: string
+): Promise<{ url?: string; fileName?: string; error?: string }> {
+  const session = await getSession()
+  if (!session) return { error: "Not signed in." }
+  if (session.user.role === "CLIENT") return { error: "Not available." }
+
+  const item = await prisma.documentRequestItem.findUnique({
+    where: { id: itemId },
+    include: {
+      request: { select: { clientId: true } },
+      document: { select: { storagePath: true, fileName: true, deletedAt: true } },
+    },
+  })
+  if (!item?.request) return { error: "Not found." }
+  if (!(await canAccessClientById(session, item.request.clientId))) {
+    return { error: "Not found." }
+  }
+  if (!item.document || item.document.deletedAt) {
+    return { error: "That file is no longer available." }
+  }
+
+  const { getSignedUrl } = await import("@/lib/storage/storage")
+  const signed = await getSignedUrl(item.document.storagePath, 600)
+  if (signed.error || !signed.data?.signedUrl) {
+    return { error: signed.error ?? "Could not open that file." }
+  }
+
+  return { url: signed.data.signedUrl, fileName: item.document.fileName }
 }

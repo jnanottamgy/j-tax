@@ -22,6 +22,7 @@ import {
   Plus,
   Send,
   X,
+  FileText,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -46,6 +47,7 @@ import {
   getDocumentRequests,
   sendDocumentRequestReminder,
   setRequestItemStatus,
+  getRequestedDocumentUrl,
   type DocumentRequestRow,
 } from "@/app/actions/document-requests"
 import { cn } from "@/lib/utils"
@@ -80,6 +82,19 @@ export function DocumentRequests({
     } finally {
       setBusyItem(null)
     }
+  }
+
+  /**
+   * Signed links expire, so one is fetched at the moment of the click rather
+   * than rendered into the page for every row.
+   */
+  async function openDocument(itemId: string) {
+    const result = await getRequestedDocumentUrl(itemId)
+    if (result.error || !result.url) {
+      toast.error(result.error ?? "Could not open that file.")
+      return
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer")
   }
 
   async function remind(requestId: string) {
@@ -234,6 +249,26 @@ export function DocumentRequests({
                           <Loader2 className="size-3 animate-spin text-muted-foreground" />
                         )}
                       </button>
+
+                      {/* What the client actually sent. Until the portal could
+                          upload, an item only ever had a tick-box; now a
+                          reviewer needs to open the file before accepting it,
+                          and "UPLOADED" with nothing to click was the gap. */}
+                      {item.fileName && (
+                        <div className="ml-8 flex items-center gap-2 pb-1 text-xs text-muted-foreground">
+                          <FileText className="size-3 shrink-0" aria-hidden />
+                          <button
+                            type="button"
+                            className="truncate underline-offset-4 hover:text-foreground hover:underline"
+                            onClick={() => void openDocument(item.id)}
+                          >
+                            {item.fileName}
+                          </button>
+                          {item.status === "UPLOADED" && (
+                            <span className="shrink-0 text-amber-400">waiting on review</span>
+                          )}
+                        </div>
+                      )}
                     </li>
                   )
                 })}

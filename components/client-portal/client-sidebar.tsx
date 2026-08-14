@@ -42,6 +42,13 @@ const mainNavItems = [
     icon: FileText,
   },
   {
+    // The `Upload` icon has been imported and unused since the portal was
+    // built — this is the entry it was for.
+    title: "Documents",
+    href: "/client/documents",
+    icon: Upload,
+  },
+  {
     title: "Invoices",
     href: "/client/invoices",
     icon: Receipt,

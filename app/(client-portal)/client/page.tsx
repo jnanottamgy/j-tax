@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { format } from "date-fns"
-import { Calendar as CalendarIcon, FileText, Receipt, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react"
+import { Calendar as CalendarIcon, FileText, Receipt, CheckCircle2, AlertCircle, MessageSquare, Upload } from "lucide-react"
 
 import { getSession } from "@/lib/auth/session"
 import { resolvePortalClient } from "@/lib/client-portal/resolve"
@@ -167,8 +167,8 @@ export default async function ClientDashboardPage() {
               Documents we still need from you
             </CardTitle>
             <CardDescription>
-              Reply to our email with these attached, or send them over however
-              suits you.
+              Send them from the Documents page — they go straight to the person
+              handling your file.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -195,6 +195,14 @@ export default async function ClientDashboardPage() {
                 </ul>
               </div>
             ))}
+            {/* This list used to end here, which is why the copy above told
+                clients to email their files instead. */}
+            <Button asChild size="sm" className="mt-1">
+              <Link href="/client/documents">
+                <Upload className="mr-1.5 size-3.5" />
+                Send these documents
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       )}
