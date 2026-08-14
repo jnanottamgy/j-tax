@@ -206,6 +206,12 @@ export const navigationGroups: NavGroup[] = [
         description: "Invoice-level revenue ledger & Excel export",
       },
       {
+        title: "Fee Realisation",
+        href: "/reports/realisation",
+        icon: IndianRupee,
+        description: "Quoted vs invoiced vs collected, by client and service",
+      },
+      {
         title: "Audit Logs",
         href: "/activity",
         icon: Activity,
@@ -317,6 +323,7 @@ export function getNavigationForRole(role: AppRole): NavGroup[] {
           { title: "Registers", href: "/registers", icon: KeyRound, description: "Credentials, DSC, UDIN & registrations" },
           { title: "Reports", href: "/reports", icon: PieChart, description: "Analytics & exports" },
           { title: "Revenue", href: "/reports/revenue", icon: IndianRupee, description: "Invoice-level revenue ledger & Excel export" },
+          { title: "Fee Realisation", href: "/reports/realisation", icon: IndianRupee, description: "Quoted vs invoiced vs collected, by client and service" },
           { title: "Notifications", href: "/notifications", icon: Bell, description: "Alerts & reminders" },
           { title: "Settings", href: "/settings", icon: Settings, description: "Account settings" },
         ],
