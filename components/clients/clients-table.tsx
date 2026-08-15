@@ -265,6 +265,14 @@ export function ClientsTable({
   const [typeFilter, setTypeFilter] = useState<string[]>([])
   const [gstFilter, setGstFilter] = useState<"" | "registered" | "unregistered">("")
   const [onboardedWithin, setOnboardedWithin] = useState<"" | "30" | "90" | "365">("")
+
+  // Read the clock once, not on every render. Date.now() during render makes
+  // the same props produce different output, which React 19 flags because a
+  // concurrent re-render can tear. It also means the "onboarded in the last 30
+  // days" boundary moves while you are typing in the search box, so a client
+  // sitting exactly on the edge can vanish between keystrokes. Fixing it to
+  // mount time makes the filter hold still; a page refresh moves it on.
+  const [nowMs] = useState(() => Date.now())
   const [employeeFilter, setEmployeeFilter] = useState<string[]>([])
   const [sortKey, setSortKey] = useState<SortKey | null>("dueDate")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
@@ -285,7 +293,7 @@ export function ClientsTable({
     const onboardedCutoff =
       onboardedWithin === ""
         ? null
-        : new Date(Date.now() - Number(onboardedWithin) * 86_400_000)
+        : new Date(nowMs - Number(onboardedWithin) * 86_400_000)
 
     let result = clients.filter((client) => {
       const matchesSearch =
@@ -358,6 +366,7 @@ export function ClientsTable({
     employeeFilter,
     sortKey,
     sortDirection,
+    nowMs,
   ])
 
   const totalPages = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE))

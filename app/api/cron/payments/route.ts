@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "crypto"
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { overdueSweepFilter } from "@/lib/billing/overdue"
 import { tenantContext } from "@/lib/tenant/context"
 
 // HIGH-05: constant-time comparison to prevent timing attacks on the cron secret
@@ -32,15 +33,15 @@ export async function GET(request: Request) {
     // invoice queries and Partner/Manager lookups never cross firms.
     const firms = await prisma.firm.findMany({ where: { status: "ACTIVE" }, select: { id: true } })
     let totalOverdue = 0
+    let totalRecovered = 0
     for (const firm of firms) {
       await tenantContext.run({ firmId: firm.id }, async () => {
 
-    // 1. Find all unpaid invoices past their due date that aren't already marked OVERDUE (or DISPUTED/WAIVED)
+    // 1. Invoices that have actually been issued and are past their due date.
+    // Selection lives in lib/billing/overdue.ts: the old exclusion filter here
+    // swept in DRAFT invoices, which the client has never been sent.
     const overdueInvoices = await prisma.invoice.findMany({
-      where: {
-        dueDate: { lt: now },
-        status: { notIn: ["PAID", "OVERDUE", "DISPUTED", "WAIVED"] },
-      },
+      where: overdueSweepFilter(now),
       include: { client: true },
     })
 
@@ -60,7 +61,8 @@ export async function GET(request: Request) {
         where: { role: { in: ["PARTNER", "MANAGER"] } },
       })
 
-      // 4. Create internal notifications
+      // 4. Create internal notifications, linked to the invoice so the alert
+      // opens the thing it is about rather than dead-ending on the dashboard.
       const notifications = []
       for (const inv of overdueInvoices) {
         for (const user of managers) {
@@ -69,6 +71,8 @@ export async function GET(request: Request) {
             title: "Invoice Overdue",
             message: `Invoice ${inv.invoiceNumber} for ${inv.client.name} is now overdue (₹${inv.outstandingAmount}).`,
             type: "ALERT" as const,
+            entityType: "INVOICE" as const,
+            entityId: inv.id,
           })
         }
       }
@@ -80,13 +84,26 @@ export async function GET(request: Request) {
       }
     }
 
+    // 5. The other direction. OVERDUE was a one-way flag: nothing anywhere
+    // cleared it, so extending a due date — the ordinary answer to "can we
+    // have another fortnight" — left the invoice permanently late, and every
+    // ageing report counted it. Put back the ones that are no longer true.
+    const recovered = await prisma.invoice.updateMany({
+      where: {
+        status: "OVERDUE",
+        OR: [{ dueDate: { gte: now } }, { outstandingAmount: { lte: 0 } }],
+      },
+      data: { status: "SENT" },
+    })
+    totalRecovered += recovered.count
+
     totalOverdue += overdueInvoices.length
       }) // tenantContext.run
     } // firms loop
 
     return NextResponse.json({
       success: true,
-      message: `Processed ${totalOverdue} newly overdue invoices across ${firms.length} firm(s).`,
+      message: `Processed ${totalOverdue} newly overdue and cleared ${totalRecovered} no-longer-overdue invoice(s) across ${firms.length} firm(s).`,
     })
   } catch (error: unknown) {
     // Log full detail server-side; return a generic message so internal

@@ -11,7 +11,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "env:check": "tsx scripts/check-env.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
