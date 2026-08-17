@@ -419,7 +419,14 @@ export function ClientOnboardingWizard({
 
             {/* min-h-0 so this column can shrink inside the capped dialog; the
                 560px floor only applies where there is room for it. */}
-            <main className="flex min-h-0 flex-col overflow-hidden lg:min-h-[560px]">
+            {/* The min-height keeps the dialog from resizing as you move between
+                steps. It has to yield to the viewport though: a flat 560px is
+                taller than this dialog gets on a 1366x768 laptop, and since both
+                this and DialogContent are overflow-hidden, the excess was cut off
+                — taking the footer with it. The buttons were rendered, correctly
+                enabled, and clipped out of sight, so onboarding could be filled
+                in completely and never submitted. */}
+            <main className="flex min-h-0 flex-col overflow-hidden lg:min-h-[min(560px,68dvh)]">
               <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-7">
                 <AnimatePresence mode="wait">
                   <motion.div
@@ -478,7 +485,9 @@ export function ClientOnboardingWizard({
                 </p>
               )}
 
-              <div className="flex flex-col-reverse gap-2 border-t border-white/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
+              {/* shrink-0 so the footer is never the thing that gives way when
+                  space is tight — the way out of a form must always be visible. */}
+              <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-white/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
                 <div className="flex gap-2">
                   <Button
                     type="button"
