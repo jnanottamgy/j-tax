@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { requirePartner } from "@/lib/auth/guards"
+import { getSession } from "@/lib/auth/session"
 import { basePrisma } from "@/lib/prisma"
 import { tenantContext } from "@/lib/tenant/context"
 
@@ -47,21 +47,61 @@ async function check(name: string, fn: () => Promise<unknown>): Promise<Check> {
 }
 
 export async function GET() {
-  let firmId: string
-  try {
-    const session = await requirePartner()
-    firmId = session.user.firmId ?? ""
-  } catch {
+  // Gated on the Supabase session alone, which reads the signed JWT and touches
+  // no database.
+  //
+  // The first version used requirePartner, and that defeated the whole point:
+  // requireAuth queries the user's row to resolve their firm, so a broken
+  // database made this endpoint answer "Partner access required" — reporting an
+  // access problem for what is actually the failure it exists to find. A
+  // diagnostic must not depend on the thing it is diagnosing.
+  const session = await getSession()
+  if (!session) {
+    return NextResponse.json({ error: "Sign in first." }, { status: 401 })
+  }
+  if (session.user.role !== "PARTNER") {
     return NextResponse.json({ error: "Partner access required." }, { status: 403 })
   }
 
   const now = new Date()
+
+  // Resolve the firm directly rather than through the guard, and report it as a
+  // check rather than letting it decide whether anything runs at all.
+  let firmId = ""
+  let firmLookup: Check
+  try {
+    const row = await basePrisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { firmId: true },
+    })
+    firmId = row?.firmId ?? ""
+    firmLookup = row?.firmId
+      ? { name: "your user row resolves to a firm", ok: true }
+      : {
+          name: "your user row resolves to a firm",
+          ok: false,
+          error: "Signed in, but no user row or no firm linked to it.",
+        }
+  } catch (err) {
+    firmLookup = { name: "your user row resolves to a firm", ok: false, ...sanitise(err) }
+  }
 
   // basePrisma throughout: this must report on the database itself, not on
   // whether tenant scoping happens to resolve.
   const checks: Check[] = []
 
   checks.push(await check("database connection", () => basePrisma.$queryRaw`SELECT 1`))
+  checks.push(firmLookup)
+
+  // requireAuth is what the layout and every page call, so whatever it throws
+  // is the error the product is actually dying on. Run it and report it rather
+  // than letting it decide whether this endpoint answers.
+  checks.push(
+    await check("requireAuth (what every page calls)", async () => {
+      const { requireAuth } = await import("@/lib/auth/guards")
+      return requireAuth()
+    })
+  )
 
   // One read per model the dashboard touches. A model whose table or enum is
   // missing from the database fails here and names itself.
