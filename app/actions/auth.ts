@@ -179,6 +179,10 @@ export async function signUp(
         // Public signup is for firm owners — team members are provisioned by
         // the Partner from the Employees page and get EMPLOYEE/MANAGER roles.
         role: "PARTNER",
+        // Kept on the auth account so that if firm provisioning below fails,
+        // the recovery path in requireAuth can still create the firm they
+        // actually typed rather than inventing a name for it.
+        firm_name: parsed.data.firmName.trim(),
       },
       emailRedirectTo: `${appUrl}/auth/callback`,
     },
@@ -197,50 +201,23 @@ export async function signUp(
   // account can't limp into a half-provisioned state.
   if (data.user) {
     try {
-      const { prisma } = await import("@/lib/prisma")
-      const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-      await prisma.$transaction(async (tx) => {
-        const firm = await tx.firm.create({
-          data: {
-            name: parsed.data.firmName.trim(),
-            plan: "TRIAL",
-            status: "ACTIVE",
-            trialEndsAt,
-          },
-        })
-        await tx.user.upsert({
-          where: { email: parsed.data.email },
-          update: { name: parsed.data.name, role: "PARTNER", firmId: firm.id },
-          create: {
-            id: data.user!.id,
-            email: parsed.data.email,
-            name: parsed.data.name,
-            role: "PARTNER",
-            firmId: firm.id,
-          },
-        })
-        await tx.firmSettings.create({
-          data: { firmId: firm.id, firmName: parsed.data.firmName.trim() },
-        })
-        // The founding Partner gets an Employee row too.
-        //
-        // Everything in the workforce module keys on having one — sessions,
-        // attendance, hours, capacity — so without it the person who owns the
-        // firm was the only member of staff invisible in their own team
-        // report, and their own hours were never recorded at all.
-        await tx.employee.create({
-          data: {
-            firmId: firm.id,
-            name: parsed.data.name,
-            email: parsed.data.email,
-            userId: data.user!.id,
-            isActive: true,
-          },
-        })
+      const { provisionFirmForPartner } = await import("@/lib/auth/provision-firm")
+      await provisionFirmForPartner({
+        userId: data.user.id,
+        email: parsed.data.email,
+        name: parsed.data.name,
+        firmName: parsed.data.firmName,
       })
     } catch (err) {
       console.error("[signup] firm provisioning failed:", err)
-      return { error: "Sign up failed while setting up your firm. Please try again." }
+      // Not a dead end any more. The auth account exists and carries the firm
+      // name, so signing in finishes the job — say so, instead of sending them
+      // back to a signup form that will now refuse the email as taken.
+      return {
+        error:
+          "Your account was created, but setting up the firm did not finish. " +
+          "Please sign in — it will complete automatically.",
+      }
     }
   }
 

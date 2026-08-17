@@ -11,6 +11,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
+    "db:check": "prisma migrate diff --from-url \"$DATABASE_URL\" --to-schema-datamodel prisma/schema.prisma --exit-code",
     "env:check": "tsx scripts/check-env.ts"
   },
   "dependencies": {

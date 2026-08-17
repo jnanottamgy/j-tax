@@ -115,6 +115,30 @@ export async function requireAuth(context?: GuardContext) {
     }
   }
 
+  // A Partner with a login but no firm is an interrupted signup, not an
+  // intruder. Supabase creates the auth account before the firm is provisioned,
+  // so anything that failed in between left a real person holding a real login
+  // with nothing behind it — locked out both ways, because signing up again is
+  // refused as a duplicate email and every page throws here. Finish what signup
+  // started instead of stranding them.
+  if (!userRow?.firmId && session.user.role === "PARTNER") {
+    // Dynamic, like the prisma import above — this module is reachable from
+    // edge middleware and must not pull the server client in statically.
+    const { createClient } = await import("@/lib/supabase/server")
+    const supabase = await createClient()
+    const { data: authUser } = await supabase.auth.getUser()
+    const meta = (authUser?.user?.user_metadata ?? {}) as Record<string, unknown>
+
+    const { provisionFirmForPartner } = await import("@/lib/auth/provision-firm")
+    const { firmId } = await provisionFirmForPartner({
+      userId: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      firmName: typeof meta.firm_name === "string" ? meta.firm_name : "",
+    })
+    userRow = { firmId, firm: { status: "ACTIVE" } }
+  }
+
   if (!userRow?.firmId) {
     throw new Error("Unauthorized: account is not linked to a firm")
   }
