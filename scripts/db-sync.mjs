@@ -84,27 +84,81 @@ async function databaseIsEmpty(connectionString) {
   }
 }
 
-const state = await databaseIsEmpty(url)
-const args = ["prisma", "db", "push", "--url", url]
+/**
+ * Not every warning Prisma calls "data loss" destroys anything.
+ *
+ * Adding a unique constraint is flagged because it FAILS when duplicates
+ * already exist — it does not delete rows. Dropping a column is a different
+ * thing entirely, and the two arrive under the same heading and the same
+ * --accept-data-loss flag.
+ *
+ * Reading the warnings tells them apart, so an additive change can go through
+ * on a database with real data in it while a genuinely destructive one still
+ * stops the build.
+ */
+function warningsAreAdditiveOnly(output) {
+  const bullets = output
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("•") || l.startsWith("-"))
 
-if (state.empty) {
-  console.log("[db-sync] no clients, invoices or tasks yet — lossy changes are about nothing, accepting them")
-  args.push("--accept-data-loss")
-} else if (state.unknown) {
-  console.log(`[db-sync] could not check whether the database holds data (${state.reason}) — refusing to accept lossy changes`)
-} else {
-  console.log(
-    `[db-sync] ${state.table} holds ${state.count} row(s) — NOT accepting lossy changes. ` +
-      "If the push fails on a data-loss warning, stop pushing from the build and " +
-      "switch to migrations. See docs/DEPLOY.md."
+  if (bullets.length === 0) return { additiveOnly: false, bullets }
+
+  const destructive = bullets.filter((l) =>
+    /\b(drop|dropped|dropping|delete|deleted|removed|lose|lost|truncat)/i.test(l)
   )
+  const additive = bullets.filter((l) => /will be added|be created/i.test(l))
+
+  return {
+    additiveOnly: destructive.length === 0 && additive.length === bullets.length,
+    bullets,
+    destructive,
+  }
 }
 
-const result = spawnSync("npx", args, {
-  stdio: "inherit",
-  timeout: TIMEOUT_MS,
-  env: process.env,
-})
+const state = await databaseIsEmpty(url)
+if (state.empty) {
+  console.log("[db-sync] no clients, invoices or tasks yet")
+} else if (state.unknown) {
+  console.log(`[db-sync] could not inspect the database (${state.reason}) — treating it as holding real data`)
+} else {
+  console.log(`[db-sync] ${state.table} holds ${state.count} row(s) — destructive changes will NOT be applied`)
+}
+
+function push(extraArgs = []) {
+  const r = spawnSync("npx", ["prisma", "db", "push", "--url", url, ...extraArgs], {
+    timeout: TIMEOUT_MS,
+    env: process.env,
+    encoding: "utf8",
+  })
+  const output = `${r.stdout ?? ""}${r.stderr ?? ""}`
+  process.stdout.write(output)
+  return { ...r, output }
+}
+
+let result = push()
+
+if (result.status !== 0 && /accept-data-loss/.test(result.output)) {
+  const verdict = warningsAreAdditiveOnly(result.output)
+
+  if (state.empty) {
+    console.log("\n[db-sync] database is empty — the warnings are about nothing. Retrying.\n")
+    result = push(["--accept-data-loss"])
+  } else if (verdict.additiveOnly) {
+    console.log(
+      "\n[db-sync] every warning above is something being ADDED, not removed — " +
+        "nothing can be lost by applying them. Retrying.\n"
+    )
+    result = push(["--accept-data-loss"])
+  } else {
+    console.error(
+      "\n[db-sync] REFUSING to continue. These changes would destroy data:\n" +
+        verdict.destructive.map((l) => `    ${l}`).join("\n") +
+        "\n\nThe database holds real work. Stop pushing the schema from the build " +
+        "and move to migrations — see docs/DEPLOY.md.\n"
+    )
+  }
+}
 
 if (result.error?.code === "ETIMEDOUT" || result.signal === "SIGTERM") {
   console.error(
