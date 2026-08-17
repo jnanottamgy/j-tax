@@ -1,5 +1,7 @@
 import type { ZodError } from "zod"
 
+import { reportError } from "@/lib/observability/report-error"
+
 /**
  * Maps internal errors to safe user-facing messages.
  * LOW-05: prevents Prisma constraint details and stack traces from reaching the client.
@@ -19,7 +21,14 @@ export function toUserError(error: unknown): string {
   if (msg.startsWith("Forbidden")) return "You do not have permission to perform this action."
   if (msg.includes("connect") || msg.includes("ECONNREFUSED"))
     return "Service temporarily unavailable. Please try again."
-  return "An unexpected error occurred. Please try again."
+
+  // Nothing above matched, so this is an error nobody anticipated — exactly the
+  // kind worth keeping. Until now this line was the end of it: the message told
+  // the user nothing and the error was never logged anywhere, so a failing
+  // action left no trace on the server at all and could only be diagnosed by
+  // guessing at the source. Log it, and hand back an id that can be found.
+  const ref = reportError(error, { source: "toUserError", severity: "error" })
+  return `Something went wrong on our side. Quote this to support: ${ref}`
 }
 
 /** First message per field from Zod flatten output. */

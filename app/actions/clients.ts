@@ -21,6 +21,7 @@ import {
 } from "@/lib/validations/client"
 import { logClientActivity } from "@/lib/activity/logger"
 import { toUserError } from "@/lib/forms/errors"
+import { reportError } from "@/lib/observability/report-error"
 import { GST_UNREGISTERED } from "@/lib/clients/gst-registration"
 import { panFromGstin, stateCodeFromGstin } from "@/lib/clients/derive"
 import { validateGSTIN } from "@/lib/india/validators"
@@ -31,6 +32,13 @@ export type ClientActionState = {
   fieldErrors?: Record<string, string[]>
   /** Set when the add was blocked because a matching client already exists. */
   duplicate?: { clientId: string; clientName: string }
+  /**
+   * The action succeeded, but something after the fact did not — the client
+   * exists and one of its follow-on steps needs doing by hand. Distinct from
+   * `error`, because telling somebody a save failed when it did not is what
+   * makes them save it a second time.
+   */
+  warning?: string
 }
 
 export async function getClientsData() {
@@ -145,19 +153,31 @@ export async function createClient(
       }
     }
 
-    // Best-effort welcome email (no-op without an email; never throws).
-    const { sendClientWelcomeEmail } = await import("@/lib/clients/welcome-email")
-    await sendClientWelcomeEmail({ name: client.name, email: client.email })
+    // Everything from here down runs AFTER the client exists, and none of it is
+    // the client. The block above already says a bookkeeping failure must not
+    // fail the onboarding; these three were left unguarded, so any one of them
+    // throwing returned "an unexpected error occurred" for a client that had
+    // been created successfully — and the natural response to that message is
+    // to fill the form in again, which is how duplicates get made.
+    try {
+      const { sendClientWelcomeEmail } = await import("@/lib/clients/welcome-email")
+      await sendClientWelcomeEmail({ name: client.name, email: client.email })
+    } catch (mailErr) {
+      reportError(mailErr, { source: "createClient:welcomeEmail", extra: { clientId: client.id } })
+    }
 
-    // Log activity
-    await logClientActivity(
-      client.id,
-      "CREATED",
-      `Client "${client.name}" was created`,
-      session.user.id,
-      session.user.name,
-      { services: parsed.data.services }
-    )
+    try {
+      await logClientActivity(
+        client.id,
+        "CREATED",
+        `Client "${client.name}" was created`,
+        session.user.id,
+        session.user.name,
+        { services: parsed.data.services }
+      )
+    } catch (logErr) {
+      reportError(logErr, { source: "createClient:activityLog", extra: { clientId: client.id } })
+    }
 
     // Workforce tracking
     try {
@@ -176,14 +196,29 @@ export async function createClient(
       }
     } catch (logErr) { console.error("activity log failed:", logErr) }
 
-    // Auto-generate compliance events for all assigned services
-    const { generateComplianceEventsForClient } = await import("@/app/actions/compliance")
-    const serviceTypes = parsed.data.services.map((s) => s.serviceType)
-    await generateComplianceEventsForClient(client.id, serviceTypes)
-    
+    // Auto-generate compliance events for all assigned services. Also after the
+    // fact, and also not worth losing the client over — the deadlines can be
+    // regenerated, a re-typed client cannot be un-created.
+    let complianceWarning: string | undefined
+    try {
+      const { generateComplianceEventsForClient } = await import("@/app/actions/compliance")
+      const serviceTypes = parsed.data.services.map((s) => s.serviceType)
+      await generateComplianceEventsForClient(client.id, serviceTypes)
+    } catch (compErr) {
+      const ref = reportError(compErr, {
+        source: "createClient:complianceEvents",
+        extra: { clientId: client.id },
+      })
+      complianceWarning =
+        "The client was created, but their compliance deadlines could not be " +
+        `set up automatically. Add them from the client's Compliance tab. (Ref: ${ref})`
+    }
+
     revalidatePath("/clients")
 
-    return { success: true }
+    return complianceWarning
+      ? { success: true, warning: complianceWarning }
+      : { success: true }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { fieldErrors: error.flatten().fieldErrors }
