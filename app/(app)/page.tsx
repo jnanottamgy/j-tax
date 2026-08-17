@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache"
+import { tenantContext } from "@/lib/tenant/context"
 import { redirect } from "next/navigation"
 
 // Dashboard components
@@ -28,10 +29,20 @@ import { prisma } from "@/lib/prisma"
 
 // ─── PARTNER / full-firm dashboard fetcher ────────────────────────────────────
 
-function makePartnerDashboardFetcher(userId: string) {
+// Every fetcher below takes the firm explicitly and runs its queries inside
+// tenantContext.
+//
+// The tenant extension normally works out the firm from the request's auth
+// cookie. That cannot work in here: unstable_cache runs its callback in a
+// cached scope where reading cookies throws, and the extension's fallback when
+// it cannot resolve a firm is to run the query UNSCOPED — which on this page
+// would mean a dashboard aggregating every firm on the platform. Passing the
+// firm in removes both the crash and that possibility.
+function makePartnerDashboardFetcher(userId: string, firmId: string) {
   const todayKey = new Date().toISOString().slice(0, 10)
   return unstable_cache(
-    async () => {
+    async () =>
+      tenantContext.run({ firmId }, async () => {
       const now = new Date()
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
@@ -221,18 +232,19 @@ function makePartnerDashboardFetcher(userId: string) {
             riskReason: `${c._count.tasks} overdue`,
           })),
       }
-    },
-    [`dashboard-partner-${userId}-${todayKey}`],
+      }),
+    [`dashboard-partner-${userId}-${firmId}-${todayKey}`],
     { revalidate: 60, tags: ["dashboard", `dashboard-${userId}`] }
   )
 }
 
 // ─── MANAGER dashboard fetcher ────────────────────────────────────────────────
 
-function makeManagerDashboardFetcher(userId: string) {
+function makeManagerDashboardFetcher(userId: string, firmId: string) {
   const todayKey = new Date().toISOString().slice(0, 10)
   return unstable_cache(
-    async () => {
+    async () =>
+      tenantContext.run({ firmId }, async () => {
       const now = new Date()
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
@@ -377,18 +389,19 @@ function makeManagerDashboardFetcher(userId: string) {
           entityType: a.entityType,
         })),
       }
-    },
-    [`dashboard-manager-${userId}-${todayKey}`],
+      }),
+    [`dashboard-manager-${userId}-${firmId}-${todayKey}`],
     { revalidate: 60, tags: ["dashboard", `dashboard-${userId}`] }
   )
 }
 
 // ─── EMPLOYEE personal dashboard fetcher ─────────────────────────────────────
 
-function makeEmployeeDashboardFetcher(userId: string) {
+function makeEmployeeDashboardFetcher(userId: string, firmId: string) {
   const todayKey = new Date().toISOString().slice(0, 10)
   return unstable_cache(
-    async () => {
+    async () =>
+      tenantContext.run({ firmId }, async () => {
       const now = new Date()
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
@@ -498,8 +511,8 @@ function makeEmployeeDashboardFetcher(userId: string) {
           client: e.client,
         })),
       }
-    },
-    [`dashboard-employee-${userId}-${todayKey}`],
+      }),
+    [`dashboard-employee-${userId}-${firmId}-${todayKey}`],
     { revalidate: 60, tags: ["dashboard", `dashboard-${userId}`] }
   )
 }
@@ -516,9 +529,17 @@ export default async function DashboardPage() {
   // CLIENT users must use the client portal — never the staff app
   if (role === "CLIENT") redirect("/client")
 
+  // requireAuth, not just getSession, because the fetchers below need the firm
+  // and getSession does not resolve one. It is also what repairs a signup whose
+  // firm never got provisioned.
+  const { requireAuth } = await import("@/lib/auth/guards")
+  const authed = await requireAuth()
+  const firmId = authed.user.firmId
+  if (!firmId) redirect("/unauthorized?reason=no_firm")
+
   // ─── EMPLOYEE dashboard ───────────────────────────────────────────────────
   if (role === "EMPLOYEE") {
-    const fetcher = makeEmployeeDashboardFetcher(user.id)
+    const fetcher = makeEmployeeDashboardFetcher(user.id, firmId)
     const data = await fetcher()
 
     return (
@@ -549,7 +570,7 @@ export default async function DashboardPage() {
 
   // ─── MANAGER dashboard ────────────────────────────────────────────────────
   if (role === "MANAGER") {
-    const fetcher = makeManagerDashboardFetcher(user.id)
+    const fetcher = makeManagerDashboardFetcher(user.id, firmId)
     const data = await fetcher()
 
     return (
@@ -583,7 +604,7 @@ export default async function DashboardPage() {
   }
 
   // ─── PARTNER dashboard (default / full firm view) ─────────────────────────
-  const fetcher = makePartnerDashboardFetcher(user.id)
+  const fetcher = makePartnerDashboardFetcher(user.id, firmId)
   const [data, onboarding] = await Promise.all([fetcher(), getOnboardingStatus()])
 
   const {
