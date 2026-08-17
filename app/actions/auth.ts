@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server"
 import { checkLoginRateLimit } from "@/lib/security/rate-limiter"
 import { logLoginSuccess, logLoginFailure } from "@/lib/security/audit-logger"
 import { parseAppRole } from "@/lib/auth/roles"
+import { reportError } from "@/lib/observability/report-error"
 
 export type AuthActionState = {
   error?: string
@@ -38,7 +39,77 @@ async function getClientIp(): Promise<string> {
   return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? "unknown"
 }
 
+/**
+ * redirect() and notFound() work by throwing. They must reach the framework.
+ */
+function isControlFlowError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "digest" in err &&
+    typeof (err as { digest?: unknown }).digest === "string" &&
+    ((err as { digest: string }).digest.startsWith("NEXT_REDIRECT") ||
+      (err as { digest: string }).digest === "NEXT_NOT_FOUND")
+  )
+}
+
+/**
+ * Nothing thrown out of an auth action is ever useful to the person in front of
+ * it. Signing in and signing up are the two things a customer does before they
+ * can do anything else, and an exception escaping either one renders the blank
+ * "Something went wrong" boundary — no message, no cause, and a reference
+ * number that means nothing without server-log access.
+ *
+ * So these actions return failures instead of throwing them, and name the cause
+ * where it can be told apart. The full error still goes to the server log with
+ * the same reference the user is shown.
+ */
+function authFailure(err: unknown, source: string): AuthActionState {
+  const ref = reportError(err, { source, severity: "fatal" })
+  const message = err instanceof Error ? err.message : String(err)
+
+  // The Supabase client throws rather than returning an error when the request
+  // never reaches the API at all — wrong project URL, DNS, blocked egress.
+  if (
+    /fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|AuthRetryableFetchError/i.test(
+      message
+    )
+  ) {
+    return {
+      error:
+        "Could not reach the sign-in service. Check NEXT_PUBLIC_SUPABASE_URL " +
+        `and that the server has outbound network access. (Ref: ${ref})`,
+    }
+  }
+
+  // Prisma could not connect, or the database is missing something the client
+  // expects — the signature of a schema that was never pushed.
+  if (/P1001|P1000|P1017|P2021|P2022|Can't reach database|does not exist/i.test(message)) {
+    return {
+      error:
+        "Could not reach the database, or its schema is out of date. Run " +
+        `npm run db:check, then npx prisma db push. (Ref: ${ref})`,
+    }
+  }
+
+  return {
+    error: `Something went wrong on our side. Quote this to support: ${ref}`,
+  }
+}
+
 export async function signIn(
+  prevState: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  try {
+    return await signInInner(prevState, formData)
+  } catch (err) {
+    if (isControlFlowError(err)) throw err
+    return authFailure(err, "signin")
+  }
+}
+
+async function signInInner(
   _prevState: AuthActionState,
   formData: FormData
 ): Promise<AuthActionState> {
@@ -134,6 +205,18 @@ export async function signIn(
  * isolation between firms is enforced centrally in lib/prisma.ts.
  */
 export async function signUp(
+  prevState: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  try {
+    return await signUpInner(prevState, formData)
+  } catch (err) {
+    if (isControlFlowError(err)) throw err
+    return authFailure(err, "signup")
+  }
+}
+
+async function signUpInner(
   _prevState: AuthActionState,
   formData: FormData
 ): Promise<AuthActionState> {
