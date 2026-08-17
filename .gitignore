@@ -42,3 +42,10 @@ yarn-error.log*
 next-env.d.ts
 
 /lib/generated/prisma
+
+# Manual HTML is an intermediate render; the PDFs are the deliverable
+docs/manuals/*.html
+
+# Python bytecode
+__pycache__/
+*.pyc
