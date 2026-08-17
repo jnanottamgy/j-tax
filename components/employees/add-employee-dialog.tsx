@@ -108,6 +108,10 @@ export function AddEmployeeDialog({
     )
   }, [open, employee, clearErrors])
 
+  // A login exists once the account has a role; until then the email is only a
+  // record and must stay editable.
+  const emailLocked = isEdit && Boolean(employee?.role)
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     submit(formData)
@@ -227,6 +231,14 @@ export function AddEmployeeDialog({
                 />
               </FormField>
 
+              {/* The email was locked for every edit, with nothing on screen to
+                  say why — a required field you cannot type into reads as a
+                  broken form, and got reported as one.
+                  It only needs locking once a login exists, because from that
+                  point the address IS the sign-in: changing it here would leave
+                  the record saying one thing and the login another. Before a
+                  login is issued it is just a field, and a typo in it has to be
+                  fixable. `role` is null until an account is created. */}
               <FormField label="Email" htmlFor="email" required error={getError("email")}>
                 <Input
                   id="email"
@@ -235,9 +247,16 @@ export function AddEmployeeDialog({
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="john@example.com"
                   className="input-premium h-10 rounded-xl"
-                  disabled={isPending || isEdit}
+                  disabled={isPending || emailLocked}
                   aria-invalid={!!getError("email")}
                 />
+                {emailLocked && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    This is what they sign in with, so it can&apos;t be changed here.
+                    To move them to a new address, remove this team member and add
+                    them again with the new one.
+                  </p>
+                )}
               </FormField>
 
               <div className="grid grid-cols-2 gap-3">

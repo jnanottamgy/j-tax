@@ -174,6 +174,21 @@ export async function updateEmployee(
       return { error: "Employee not found." }
     }
 
+    // Once a login exists the address is the sign-in, and this action only
+    // writes the Employee row — it cannot move the auth account. Letting it
+    // through would leave the record showing one address while the person still
+    // signs in with the old one, which is worse than refusing. Editable freely
+    // until then, so a mistyped address can be corrected.
+    if (existing.user && data.email.trim().toLowerCase() !== existing.email.trim().toLowerCase()) {
+      return {
+        fieldErrors: {
+          email: [
+            "This is what they sign in with, so it can't be changed here. Remove this team member and add them again with the new address.",
+          ],
+        },
+      }
+    }
+
     const emailTaken = await prisma.employee.findFirst({
       where: { email: data.email, NOT: { id: employeeId } },
     })
