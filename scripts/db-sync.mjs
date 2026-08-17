@@ -50,7 +50,57 @@ if (!url) {
 console.log(`[db-sync] ${why}`)
 console.log(`[db-sync] host: ${(() => { try { return new URL(url).host } catch { return "unparseable" } })()}`)
 
-const result = spawnSync("npx", ["prisma", "db", "push", "--url", url], {
+/**
+ * Whether the database still has no real work in it.
+ *
+ * `db push` refuses changes it considers lossy — adding a unique constraint,
+ * dropping a column — and it is right to. But on an empty database those
+ * warnings are about nothing: there are no rows to lose. On a database holding
+ * a firm's clients they are a warning to take seriously.
+ *
+ * So the flag is decided by the data rather than set once and forgotten. This
+ * is what stops `--accept-data-loss` quietly becoming permanent in a build that
+ * will still be running long after anyone remembers adding it.
+ */
+async function databaseIsEmpty(connectionString) {
+  const { default: pg } = await import("pg")
+  const client = new pg.Client({ connectionString })
+  try {
+    await client.connect()
+    for (const table of ["clients", "invoices", "tasks"]) {
+      try {
+        const { rows } = await client.query(`SELECT count(*)::int AS n FROM public."${table}"`)
+        if (rows[0]?.n > 0) return { empty: false, table, count: rows[0].n }
+      } catch {
+        // Table absent is exactly the case this run is here to fix, and an
+        // absent table holds no data.
+      }
+    }
+    return { empty: true }
+  } catch (err) {
+    return { empty: false, unknown: true, reason: err instanceof Error ? err.message : String(err) }
+  } finally {
+    await client.end().catch(() => {})
+  }
+}
+
+const state = await databaseIsEmpty(url)
+const args = ["prisma", "db", "push", "--url", url]
+
+if (state.empty) {
+  console.log("[db-sync] no clients, invoices or tasks yet — lossy changes are about nothing, accepting them")
+  args.push("--accept-data-loss")
+} else if (state.unknown) {
+  console.log(`[db-sync] could not check whether the database holds data (${state.reason}) — refusing to accept lossy changes`)
+} else {
+  console.log(
+    `[db-sync] ${state.table} holds ${state.count} row(s) — NOT accepting lossy changes. ` +
+      "If the push fails on a data-loss warning, stop pushing from the build and " +
+      "switch to migrations. See docs/DEPLOY.md."
+  )
+}
+
+const result = spawnSync("npx", args, {
   stdio: "inherit",
   timeout: TIMEOUT_MS,
   env: process.env,
