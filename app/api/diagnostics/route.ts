@@ -210,6 +210,34 @@ export async function GET() {
     )
   )
 
+  // ── Email ────────────────────────────────────────────────────────────────
+  // Invites and reminders fail quietly: the account is still created, the
+  // password is still shown on screen, and nothing on the page says the message
+  // never left. So report the sender the provider would actually use, and the
+  // provider's own reason when there isn't one.
+  let email: Record<string, unknown> = {}
+  try {
+    const { getFirmSettings, resolveSenderEnvelope } = await import("@/lib/firm-settings")
+    const cfg = await tenantContext.run({ firmId }, () => getFirmSettings())
+    const envelope = resolveSenderEnvelope(cfg)
+    email = {
+      canSend: Boolean(process.env.RESEND_API_KEY) && Boolean(envelope.fromAddress),
+      RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
+      FROM_EMAIL: process.env.FROM_EMAIL || null,
+      PLATFORM_FROM_EMAIL: process.env.PLATFORM_FROM_EMAIL || null,
+      firmSenderEmail: cfg.fromEmail || null,
+      firmDomainVerified: cfg.domainVerified,
+      platformFallbackEnabled: cfg.platformFallbackEnabled,
+      resolvedFrom: envelope.fromAddress || null,
+      reason: envelope.reason,
+      note: envelope.fromAddress
+        ? "A sender resolved. If mail still does not arrive, the provider is rejecting it — an unverified sending domain is the usual cause, and Resend will only deliver to the account owner's own address until a domain is verified."
+        : "No sender could be resolved, so nothing is being sent at all.",
+    }
+  } catch (err) {
+    email = { canSend: false, ...sanitise(err) }
+  }
+
   const failed = checks.filter((c) => !c.ok)
 
   return NextResponse.json(
@@ -229,6 +257,7 @@ export async function GET() {
         CRON_SECRET: Boolean(process.env.CRON_SECRET),
         RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
       },
+      email,
       failures: failed,
       passed: checks.filter((c) => c.ok).map((c) => c.name),
     },
