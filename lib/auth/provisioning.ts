@@ -447,6 +447,59 @@ export async function updateStaffRole(userId: string, role: StaffRole): Promise<
 }
 
 /**
+ * Move a staff member's login to a new email address.
+ *
+ * The address is the sign-in, so changing the Employee row alone would leave
+ * the record showing one address while the person still logs in with the old
+ * one — a silent split that only surfaces the next time they try to get in.
+ * Both sides move together here, and the auth account moves FIRST: if Supabase
+ * refuses (most often because the address already belongs to another account on
+ * the platform), nothing has changed and the caller can say so.
+ *
+ * email_confirm keeps them signed in-able immediately; this is a Partner or
+ * Manager correcting a colleague's address, not a stranger claiming one.
+ */
+export async function updateStaffEmail(
+  userId: string,
+  newEmail: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  let admin
+  try {
+    admin = getAuthAdminClient()
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Email change unavailable." }
+  }
+
+  const email = newEmail.trim()
+
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    email,
+    email_confirm: true,
+  })
+
+  if (error) {
+    const msg = error.message.toLowerCase()
+    if (msg.includes("already") && (msg.includes("registered") || msg.includes("exists"))) {
+      return {
+        ok: false,
+        error:
+          "That email is already registered on this platform. Use a different address for this team member.",
+      }
+    }
+    console.error("[provisioning] staff email change failed:", error.message)
+    return { ok: false, error: "Could not move the login to that address. Please try again." }
+  }
+
+  // The auth account is the source of truth and has already moved; a failure to
+  // mirror here is worth logging but must not report the change as failed.
+  await prisma.user
+    .update({ where: { id: userId }, data: { email } })
+    .catch((err) => console.error("[provisioning] user email mirror failed:", err))
+
+  return { ok: true }
+}
+
+/**
  * Reset a staff member's password to a fresh one-time temporary password and
  * force them to choose a new one at next sign-in (must_change_password). Returns
  * the temp password so the admin can hand it over if email delivery isn't set up.

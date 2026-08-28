@@ -108,9 +108,9 @@ export function AddEmployeeDialog({
     )
   }, [open, employee, clearErrors])
 
-  // A login exists once the account has a role; until then the email is only a
-  // record and must stay editable.
-  const emailLocked = isEdit && Boolean(employee?.role)
+  // A login exists once the account has a role. Not a restriction any more —
+  // just what decides whether changing the address also moves a sign-in.
+  const hasLogin = isEdit && Boolean(employee?.role)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -231,14 +231,13 @@ export function AddEmployeeDialog({
                 />
               </FormField>
 
-              {/* The email was locked for every edit, with nothing on screen to
-                  say why — a required field you cannot type into reads as a
-                  broken form, and got reported as one.
-                  It only needs locking once a login exists, because from that
-                  point the address IS the sign-in: changing it here would leave
-                  the record saying one thing and the login another. Before a
-                  login is issued it is just a field, and a typo in it has to be
-                  fixable. `role` is null until an account is created. */}
+              {/* Editable, including after a login exists. Locking it was the
+                  wrong answer to a real problem: the address IS the sign-in, so
+                  changing only the Employee row would leave the record saying
+                  one thing and the login another. The fix for that is to move
+                  the login too, which updateEmployee now does — not to refuse
+                  the edit and make people delete and re-add a colleague to
+                  correct a typo. */}
               <FormField label="Email" htmlFor="email" required error={getError("email")}>
                 <Input
                   id="email"
@@ -247,14 +246,14 @@ export function AddEmployeeDialog({
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="john@example.com"
                   className="input-premium h-10 rounded-xl"
-                  disabled={isPending || emailLocked}
+                  disabled={isPending}
                   aria-invalid={!!getError("email")}
                 />
-                {emailLocked && (
+                {hasLogin && (
                   <p className="mt-1.5 text-xs text-muted-foreground">
-                    This is what they sign in with, so it can&apos;t be changed here.
-                    To move them to a new address, remove this team member and add
-                    them again with the new one.
+                    This is what they sign in with. Changing it moves their login
+                    too — they&apos;ll use the new address next time, with the same
+                    password.
                   </p>
                 )}
               </FormField>

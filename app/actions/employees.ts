@@ -10,6 +10,7 @@ import {
   provisionStaffAccount,
   resetStaffPassword,
   setStaffLoginBanned,
+  updateStaffEmail,
   updateStaffRole,
 } from "@/lib/auth/provisioning"
 
@@ -174,26 +175,28 @@ export async function updateEmployee(
       return { error: "Employee not found." }
     }
 
-    // Once a login exists the address is the sign-in, and this action only
-    // writes the Employee row — it cannot move the auth account. Letting it
-    // through would leave the record showing one address while the person still
-    // signs in with the old one, which is worse than refusing. Editable freely
-    // until then, so a mistyped address can be corrected.
-    if (existing.user && data.email.trim().toLowerCase() !== existing.email.trim().toLowerCase()) {
-      return {
-        fieldErrors: {
-          email: [
-            "This is what they sign in with, so it can't be changed here. Remove this team member and add them again with the new address.",
-          ],
-        },
-      }
-    }
+    const emailChanged =
+      data.email.trim().toLowerCase() !== existing.email.trim().toLowerCase()
 
+    // Checked before anything moves: rejecting afterwards would leave the login
+    // already migrated to an address the Employee row is then refused.
     const emailTaken = await prisma.employee.findFirst({
       where: { email: data.email, NOT: { id: employeeId } },
     })
     if (emailTaken) {
       return { fieldErrors: { email: ["An employee with this email already exists."] } }
+    }
+
+    // Changing the address of someone who already has a login means moving the
+    // login too, or the record and the sign-in drift apart silently — the record
+    // says one thing and they can only get in with the other. The auth account
+    // goes first: if Supabase refuses, nothing has changed yet and the reason
+    // goes back to the field it belongs to.
+    if (emailChanged && existing.user) {
+      const moved = await updateStaffEmail(existing.user.id, data.email)
+      if (!moved.ok) {
+        return { fieldErrors: { email: [moved.error] } }
+      }
     }
 
     // Role changes (promote/demote between EMPLOYEE and MANAGER) are Partner-only
