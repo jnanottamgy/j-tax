@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { buildGmailComposeUrl, draftQuotationEmail } from "@/lib/messaging/email-link"
 import {
   QuotationDocument,
   type QuotationDocumentFirm,
@@ -70,6 +71,36 @@ export function QuotationDetailClient({
 
   const _APP_URL = process.env.NEXT_PUBLIC_APP_URL || ""
   const publicUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/q/${quotation.token}`
+
+  // Send-it-yourself fallback.
+  //
+  // Delivery through the provider needs a verified sending domain; without one
+  // the quotation is marked Sent, the email history says FAILED, and the client
+  // is still waiting. This opens Gmail with the note already written so the firm
+  // can send from their own mailbox — which also means it arrives from an
+  // address the client recognises and can reply to.
+  //
+  // The link is what goes in the body, not the PDF: no compose URL can attach a
+  // file (a page that could put arbitrary files in your outgoing mail would be a
+  // security hole), and the link is the better thing to send anyway — the client
+  // can accept or decline from it, and opening it marks the quotation Viewed.
+  // Download PDF is right beside this for anyone who wants to attach one by hand.
+  const mailDraft = draftQuotationEmail({
+    clientName: quotation.clientName,
+    quotationNumber: quotation.quotationNumber,
+    firmName: firm.name,
+    publicUrl,
+    total: Number(quotation.total),
+    validUntil: quotation.validUntil,
+  })
+  const gmailUrl = buildGmailComposeUrl({
+    to: quotation.clientEmail ?? "",
+    subject: mailDraft.subject,
+    body: mailDraft.body,
+  })
+  const hasFailedEmail =
+    quotation.emailLogs.length > 0 &&
+    quotation.emailLogs.every((log) => log.status !== "SENT")
 
   const isExpired = new Date(quotation.validUntil) < new Date() && !["ACCEPTED", "REJECTED"].includes(quotation.status)
   const cfg = STATUS_CONFIG[isExpired ? "EXPIRED" : quotation.status] ?? STATUS_CONFIG.DRAFT
@@ -177,6 +208,14 @@ export function QuotationDetailClient({
               <a href={publicUrl} target="_blank" rel="noreferrer">
                 <ExternalLink className="size-3.5 mr-1.5" />
                 Preview
+              </a>
+            </Button>
+          )}
+          {quotation.status !== "DRAFT" && gmailUrl && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={gmailUrl} target="_blank" rel="noreferrer">
+                <Mail className="size-3.5 mr-1.5" />
+                Send via Gmail
               </a>
             </Button>
           )}
@@ -419,6 +458,25 @@ export function QuotationDetailClient({
                       <p className="text-muted-foreground">{format(new Date(log.sentAt), "dd MMM yyyy HH:mm")}</p>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* A FAILED row on its own tells the firm the client is waiting and
+                  nothing else. The way to actually get the quotation to them
+                  belongs here, next to the bad news. */}
+              {hasFailedEmail && gmailUrl && (
+                <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Delivery failed, so {quotation.clientName} has not received this.
+                    Send it from your own mailbox instead — the note and the client
+                    link are filled in already.
+                  </p>
+                  <Button size="sm" variant="outline" className="w-full" asChild>
+                    <a href={gmailUrl} target="_blank" rel="noreferrer">
+                      <Mail className="size-3.5 mr-1.5" />
+                      Send via Gmail
+                    </a>
+                  </Button>
                 </div>
               )}
             </CardContent>
